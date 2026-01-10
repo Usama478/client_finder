@@ -5,3 +5,16 @@ services:
     build: .
     ports:
       - "8000:8000"
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgresql://mvp_user:mvp_pass@db:5432/mvp_db
+
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: mvp_user
+      POSTGRES_PASSWORD: mvp_pass
+      POSTGRES_DB: mvp_db
+    ports:
+      - "5432:5432"
