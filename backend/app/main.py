@@ -1,26 +1,42 @@
+import time
 from fastapi import FastAPI
-from app.db.session import engine, Base
-from app.models.test_model import TestItem
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.exc import OperationalError
+from app.db.session import engine
+from app.db.base import Base
+from app.api import search_routes
 
 app = FastAPI(title="Client Finder MVP")
 
 @app.on_event("startup")
 def startup():
-    Base.metadata.create_all(bind=engine)
+    print("🏗️ Connecting to Database...")
+    
+    # Retry loop: Try to connect 5 times, waiting 2 seconds each time
+    retries = 5
+    while retries > 0:
+        try:
+            Base.metadata.create_all(bind=engine)
+            print("✅ Tables created! Database connection successful.")
+            break
+        except OperationalError:
+            retries -= 1
+            print(f"⏳ Database not ready yet. Retrying in 2 seconds... ({retries} attempts left)")
+            time.sleep(2)
+    
+    if retries == 0:
+        print("❌ Failed to connect to database after multiple attempts.")
 
-@app.get("/health")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(search_routes.router)
+
+@app.get("/")
 def health_check():
-    return {"status": "ok"}
-
-@app.post("/test-db")
-def test_db():
-    from app.db.session import SessionLocal
-
-    db = SessionLocal()
-    item = TestItem(name="DB is working")
-    db.add(item)
-    db.commit()
-    db.refresh(item)
-    db.close()
-
-    return {"id": item.id, "name": item.name}
+    return {"status": "Server is running", "step": "1 - Google Maps Ingestion"}
