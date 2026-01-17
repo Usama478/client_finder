@@ -1,6 +1,6 @@
 from sqlalchemy import (
     Column, Integer, String, ForeignKey, DateTime,
-    Text, Float, JSON
+    Text, Float, JSON, Boolean
 )
 from sqlalchemy.sql import func
 from app.db.base import Base
@@ -34,6 +34,16 @@ class SearchResult(Base):
     verification_status = Column(String, default="pending")
     verification_result = Column(String, nullable=True)
     verification_reason = Column(Text, nullable=True)
+    verification_score = Column(Integer, nullable=True)  # <--- NEW
+    risk_flags = Column(JSON, default=[])         # <--- NEW
+    manual_review = Column(Boolean, default=False) # <--- NEWcd
+
+    # Email agent (Agent 3)
+    email_status = Column(String, default="pending")     # <--- NEW
+    email_found = Column(String, nullable=True)          # <--- NEW
+    email_score = Column(Integer, nullable=True)         # <--- NEW
 
     processed_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
