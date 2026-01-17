@@ -42,6 +42,10 @@ class SearchResult(Base):
     email_status = Column(String, default="pending")     # <--- NEW
     email_found = Column(String, nullable=True)          # <--- NEW
     email_score = Column(Integer, nullable=True)         # <--- NEW
+    outreach_status = Column(String, default="pending") # pending, drafted, sent, skipped
+    email_subject = Column(Text, nullable=True)
+    email_body = Column(Text, nullable=True)
+
 
     processed_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
