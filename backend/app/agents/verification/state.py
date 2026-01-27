@@ -1,35 +1,40 @@
 from typing import TypedDict, Optional, List, Dict, Any
 
 class VerificationAgentState(TypedDict):
-    # Identity
-    result_id: int
-    user_id: int
+    """
+    Central state object for Agent 2 (Verification Agent).
+    """
+    # --- Identity ---
+    business_id: int          
+    search_id: int            
 
-    # Context (Input)
-    business_profile: Dict[str, Any]
-    relevance_reason: str
+    # --- Context (From Agent 1) ---
+    business_name: str
+    website: Optional[str]
+    address: Optional[str]
+    scraped_text_content: Optional[str]
 
-    # Phase 1: Early Checks
+    # --- Early Checks ---
     website_alive: Optional[bool]
     domain_age_years: Optional[int]
 
-    # Phase 2: Deep Verification
-    address_type: Optional[str]
-    traffic_level: Optional[str]
-    about_page_exists: Optional[bool]
-    legitimacy_flags: Optional[List[str]]
+    # --- Deep Verification ---
+    full_site_text: Optional[str]
+    address_validation: Optional[str]   # commercial/residential
+    traffic_level: Optional[str]        # low/medium/high
+    legitimacy_signals: Optional[Dict[str, Any]]
 
-    # Phase 3: Contact Verification
+    # --- Contact Verification ---
     emails_found: Optional[List[str]]
     email_valid: Optional[bool]
-    social_verified: Optional[bool]
+    social_links: Optional[List[str]]
 
-    # Control
+    # --- LLM Control ---
     next_action: Optional[str]
-
-    # Final Output
+    
+    # --- Final Output ---
     verification_score: Optional[int]
     risk_flags: Optional[List[str]]
-    verification_reason: Optional[str]
+    evidence_summary: Optional[str]
     manual_review: Optional[bool]
-    verification_result: Optional[str] # verified, rejected, risky
+    is_finalized: bool

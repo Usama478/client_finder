@@ -1,28 +1,31 @@
 from app.agents.verification.state import VerificationAgentState
 
 def llm_router(state: VerificationAgentState) -> dict:
-    print("🧠 ROUTER: Analyzing Verification Progress...")
+    """
+    Decides the next step in the loop based on data availability.
+    """
+    print("   🤔 AGENT 2 BRAIN: Deciding next step...")
+    
+    # 1. Check if we are done (Score exists)
+    if state.get("verification_score") is not None:
+         return {"next_action": "finalize_verification"}
 
-    # 1. Start with Early Checks
+    # 2. Logic Chain
+    # Step A: If we haven't checked the website yet, do early checks.
     if state.get("website_alive") is None:
-        print("   👉 Direction: Early Checks")
         return {"next_action": "run_early_checks"}
-
-    # 2. Gatekeeper: If website is dead or too new, Stop.
-    if state["website_alive"] is False or state.get("domain_age_years", 0) < 1:
-        print("   👉 Direction: Finalize (Reject)")
+    
+    # Step B: If website is dead, stop immediately.
+    if state.get("website_alive") is False:
         return {"next_action": "finalize_verification"}
 
-    # 3. Move to Deep Verification
-    if state.get("address_type") is None:
-        print("   👉 Direction: Deep Verification")
+    # Step C: If website is alive but we haven't scraped deep details, do deep verification.
+    if state.get("full_site_text") is None:
         return {"next_action": "run_deep_verification"}
-
-    # 4. Move to Contact Verification (Only if Deep checks passed)
+        
+    # Step D: If we have text but haven't checked contacts, do contact verification.
     if state.get("emails_found") is None:
-        print("   👉 Direction: Contact Verification")
         return {"next_action": "run_contact_verification"}
-
-    # 5. Done
-    print("   👉 Direction: Finalize (Complete)")
+        
+    # Step E: If we have everything, finalize.
     return {"next_action": "finalize_verification"}

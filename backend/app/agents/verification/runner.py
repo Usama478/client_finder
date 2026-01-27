@@ -1,49 +1,61 @@
 from sqlalchemy.orm import Session
 from app.models.search_result import SearchResult
-from app.agents.verification.graph import verification_graph
+from app.agents.verification.graph import build_verification_graph
+from app.agents.verification.state import VerificationAgentState
 
 def run_verification_agent(db: Session, business_id: int):
-    print(f"\n🛡️ STARTING DEEP VERIFICATION for Business ID {business_id}...")
-
-    # 1. Fetch Lead
-    lead = db.query(SearchResult).filter(SearchResult.result_id == business_id).first()
+    print(f"\n🚀 VERIFICATION AGENT: Starting for Lead {business_id}...")
     
+    # Fetch Lead
+    lead = db.query(SearchResult).filter(SearchResult.result_id == business_id).first()
     if not lead:
-        print("❌ Error: Business not found.")
+        print("❌ Lead not found.")
         return
 
-    # 2. Build Initial State
-    initial_state = {
-        "result_id": lead.result_id,
-        "user_id": lead.user_id,
-        "business_profile": lead.raw_data or {},
-        "relevance_reason": lead.relevance_reason or "",
+    # Initialize State
+    state: VerificationAgentState = {
+        "business_id": lead.result_id,
+        "search_id": lead.search_id,
+        "business_name": lead.business_name,
+        "website": lead.website,
+        "address": lead.address,
+        "scraped_text_content": lead.scraped_text_content, 
         
-        # All checks start None
+        # Init None
         "website_alive": None,
         "domain_age_years": None,
-        "address_type": None,
+        "full_site_text": None,
+        "address_validation": None,
         "traffic_level": None,
+        "legitimacy_signals": None,
         "emails_found": None,
-        "next_action": None
+        "email_valid": None,
+        "social_links": None,
+        "next_action": None,
+        "verification_score": None,
+        "risk_flags": None,
+        "evidence_summary": None,
+        "manual_review": None,
+        "is_finalized": False,
     }
 
-    # 3. Run Graph
-    final_state = verification_graph.invoke(initial_state)
+    # Run Graph
+    graph = build_verification_graph()
+    final_state = graph.invoke(state)
 
-    print(f"💾 SAVING: {final_state['verification_result'].upper()} (Score: {final_state['verification_score']})")
+    # Save to DB
+    print(f"💾 SAVING: Score {final_state.get('verification_score')} | Emails: {final_state.get('emails_found')}")
     
-    # 4. Save to DB
-    lead.verification_status = final_state["verification_result"]
-    lead.verification_score = final_state["verification_score"]
-    lead.verification_reason = final_state["verification_reason"]
-    lead.risk_flags = final_state["risk_flags"]      # Saves as JSON
-    lead.manual_review = final_state["manual_review"] # Saves as Boolean
+    lead.verification_score = final_state.get("verification_score")
+    lead.verification_result = "verified" if (final_state.get("verification_score") or 0) > 70 else "risky"
+    lead.risk_flags = final_state.get("risk_flags")
+    lead.verification_reason = final_state.get("evidence_summary")
     
-    # Save email if we found one
-    if final_state.get("emails_found"):
-        lead.email_found = final_state["emails_found"][0]
+    # Save Emails for Agent 3
+    emails = final_state.get("emails_found")
+    if emails:
+        lead.email_found = ",".join(emails)
         lead.email_status = "found"
-
+    
     db.commit()
-    print("✅ DEEP VERIFICATION COMPLETE.")
+    print("✅ VERIFICATION COMPLETE.")
