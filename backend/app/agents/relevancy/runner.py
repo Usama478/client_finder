@@ -1,55 +1,86 @@
+from typing import Optional
 from sqlalchemy.orm import Session
+from app.db.session import SessionLocal
 from app.models.search_result import SearchResult
-from app.models.user_context import UserContext
-from app.agents.relevancy.graph import relevancy_graph
+from app.models.search_session import SearchSession
+from app.agents.relevancy.state import RelevancyAgentState
+from app.agents.relevancy.graph import relevancy_graph 
 
-def run_relevancy_agent(db: Session, business_id: int):
-    print(f"\n🚀 STARTING AGENT for Business ID {business_id}...")
+def run_relevancy_agent(db: Session, business_id: int) -> None:
+    """
+    Executes the Relevancy Agent for a single business lead.
+    Flow: DB → State → LangGraph → State → DB
+    """
+    print(f"\n🚀 RUNNER: Starting Relevancy Agent for Business ID {business_id}...")
 
-    # 1. Fetch Data
-    # FIX: Changed .id to .result_id to match your database schema
-    business = db.query(SearchResult).filter(SearchResult.result_id == business_id).first()
-    
-    if not business:
-        print("❌ Error: Business not found.")
-        return
-
-    context = db.query(UserContext).filter(UserContext.user_id == business.user_id).first()
-    
-    if not context:
-        print("❌ Error: User Context not found.")
-        return
-
-    # 2. Initial State
-    initial_state = {
-        # FIX: Changed .id to .result_id here as well
-        "result_id": business.result_id,
-        "user_id": business.user_id,
-        "business_data": business.raw_data or {},
-        "user_context": {
-            "description": context.company_description,
-            "targets": context.target_markets
-        },
-        # Everything else starts Empty/None
-        "website_exists": None,
-        "is_marketplace": None,
-        "homepage_text": None,
-        "next_action": None
-    }
-
-    # 3. Run the Graph!
     try:
+        # 1. Fetch Lead
+        lead = db.query(SearchResult).filter(SearchResult.result_id == business_id).first()
+        if not lead:
+            print(f"❌ Error: SearchResult {business_id} not found.")
+            return
+
+        # 2. Fetch Criteria (The Query)
+        session = db.query(SearchSession).filter(SearchSession.search_id == lead.search_id).first()
+        
+        # FIX 1: Access the attribute on the session object
+        exporter_criteria = session.search_query if session else "General Business"
+
+        # FIX 2: Prepare raw data for safe extraction
+        # We do this because 'category' and 'description' are in the JSON blob, not main columns
+        raw = lead.raw_data if lead.raw_data else {}
+
+        # 3. Initialize State (TypedDict)
+        initial_state: RelevancyAgentState = {
+            # Identity
+            "business_id": lead.result_id,
+            "search_id": lead.search_id,
+            
+            # Context
+            "business_name": lead.business_name,
+            "category": raw.get("category"),       # <--- Safe JSON access
+            "website": lead.website,
+            "address": lead.address,
+            "description": raw.get("description"), # <--- Safe JSON access
+            "exporter_profile": exporter_criteria, 
+
+            # Empty Observations
+            "website_exists": None,
+            "is_marketplace": None,
+            "homepage_text": None,
+            "business_model": None,
+            "extracted_keywords": None,
+            "classified_niche": None,
+
+            # Control
+            "next_action": None,
+            "reasoning_trace": None,
+            
+            # Outputs
+            "relevance_decision": None,
+            "relevance_score": None,
+            "relevance_reason": None,
+            "is_finalized": False,
+        }
+
+        # 4. Run the Graph
         final_state = relevancy_graph.invoke(initial_state)
 
-        # 4. Save to DB
-        print(f"\n💾 SAVING RESULT: {final_state['relevance_status'].upper()} (Score: {final_state['relevance_score']})")
+        # 5. Save to DB
+        decision = final_state.get('relevance_decision', 'UNKNOWN')
+        score = final_state.get('relevance_score')
+        print(f"💾 SAVING: {str(decision).upper()} (Score: {score})")
         
-        business.relevance_status = final_state["relevance_status"]
-        business.relevance_score = final_state["relevance_score"]
-        business.relevance_reason = final_state["relevance_reason"]
+        lead.relevance_status = final_state.get("relevance_decision")
+        lead.relevance_score = final_state.get("relevance_score")
+        lead.relevance_reason = final_state.get("relevance_reason")
         
         db.commit()
-        print("✅ AGENT RUN COMPLETE.")
-        
+        print("✅ RELEVANCY AGENT COMPLETE.")
+
     except Exception as e:
-        print(f"❌ AGENT CRASHED: {str(e)}")
+        print(f"❌ RUNNER CRASHED: {e}")
+        import traceback
+        traceback.print_exc()
+        db.rollback()
+        raise

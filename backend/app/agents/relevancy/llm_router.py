@@ -1,26 +1,60 @@
+from typing import Dict, Any, Literal, Optional
+from pydantic import BaseModel, Field
 from app.agents.relevancy.state import RelevancyAgentState
 
-def llm_router(state: RelevancyAgentState) -> dict:
+# --- Pydantic Schema for Internal Validation ---
+class LLMRouterOutput(BaseModel):
     """
-    Decides the next step based on what data is missing.
+    Strict schema enforced on Router output.
+    Ensures the graph never receives an invalid 'next_action'.
     """
-    print("🧠 ROUTER: Deciding next move...")
+    next_action: Literal[
+        "run_gatekeeper_checks",
+        "run_data_collection",
+        "finalize_relevance",
+    ] = Field(..., description="Next action for the LangGraph router")
 
-    # 1. If we haven't checked the website yet, go to Gatekeepers
+    reasoning_trace: Optional[str] = Field(
+        default=None,
+        description="Short explanation for why this action was chosen",
+    )
+
+# --- The Brain (Deterministic Router) ---
+def llm_router(state: RelevancyAgentState) -> Dict[str, Any]:
+    """
+    Central decision-maker. 
+    Uses Rule-Based Logic to route traffic efficiently.
+    """
+
+    # 1. Gatekeeper Phase
     if state.get("website_exists") is None:
-        print("   👉 Direction: Gatekeepers")
-        return {"next_action": "run_gatekeeper_checks"}
+        return LLMRouterOutput(
+            next_action="run_gatekeeper_checks",
+            reasoning_trace="Initial state. Need to check if website exists."
+        ).dict()
 
-    # 2. If website is dead or it's a marketplace, Stop immediately.
-    if state["website_exists"] is False or state["is_marketplace"] is True:
-        print("   👉 Direction: Finalize (Early Exit)")
-        return {"next_action": "finalize_relevance"}
+    # 2. Early Rejection (Fail Fast)
+    if state.get("website_exists") is False:
+        return LLMRouterOutput(
+            next_action="finalize_relevance",
+            reasoning_trace="Rejected: No active website detected."
+        ).dict()
 
-    # 3. If we have the website but no text data, go to Data Collection
+    if state.get("is_marketplace") is True:
+        return LLMRouterOutput(
+            next_action="finalize_relevance",
+            reasoning_trace="Rejected: Domain is a marketplace (Amazon/Yelp)."
+        ).dict()
+
+    # 3. Data Collection Phase
     if state.get("homepage_text") is None:
-        print("   👉 Direction: Data Collection")
-        return {"next_action": "run_data_collection"}
+        return LLMRouterOutput(
+            next_action="run_data_collection",
+            reasoning_trace="Gatekeepers passed. Need to scrape data for analysis."
+        ).dict()
 
-    # 4. If we have everything, go to Finalize
-    print("   👉 Direction: Finalize (Complete)")
-    return {"next_action": "finalize_relevance"}
+    # 4. Finalize (We have everything)
+    return LLMRouterOutput(
+        next_action="finalize_relevance",
+        reasoning_trace="All data collected. Ready for semantic analysis."
+    ).dict()
