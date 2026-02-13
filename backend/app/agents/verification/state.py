@@ -3,6 +3,7 @@ from typing import TypedDict, Optional, List, Dict, Any
 class VerificationAgentState(TypedDict):
     """
     Central state object for Agent 2 (Verification Agent).
+    Serves as an Audit Trail for the deterministic pipeline.
     """
     # --- Identity ---
     business_id: int          
@@ -11,28 +12,23 @@ class VerificationAgentState(TypedDict):
     # --- Context (From Agent 1) ---
     business_name: str
     website: Optional[str]
-    address: Optional[str]
+    address: Optional[str] # Input address from DB
     scraped_text_content: Optional[str]
 
-    # --- Early Checks ---
+    # --- Gatekeeper Output ---
     website_alive: Optional[bool]
     domain_age_years: Optional[int]
 
-    # --- Deep Verification ---
+    # --- Trust Scanner Output ---
     full_site_text: Optional[str]
-    address_validation: Optional[str]   # commercial/residential
-    traffic_level: Optional[str]        # low/medium/high
+    social_links: Optional[List[str]]
     legitimacy_signals: Optional[Dict[str, Any]]
-
-    # --- Contact Verification ---
+    
+    # --- Contact Hunter Output ---
     emails_found: Optional[List[str]]
     email_valid: Optional[bool]
-    social_links: Optional[List[str]]
-
-    # --- LLM Control ---
-    next_action: Optional[str]
     
-    # --- Final Output ---
+    # --- Analyst Output ---
     verification_score: Optional[int]
     risk_flags: Optional[List[str]]
     evidence_summary: Optional[str]

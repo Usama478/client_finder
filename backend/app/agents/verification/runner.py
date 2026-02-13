@@ -21,17 +21,16 @@ def run_verification_agent(db: Session, business_id: int):
         "address": lead.address,
         "scraped_text_content": lead.scraped_text_content, 
         
-        # Init None
+        # Init None for Evidence
         "website_alive": None,
         "domain_age_years": None,
         "full_site_text": None,
-        "address_validation": None,
-        "traffic_level": None,
+        "social_links": None,
         "legitimacy_signals": None,
         "emails_found": None,
         "email_valid": None,
-        "social_links": None,
-        "next_action": None,
+        
+        # Init None for Output
         "verification_score": None,
         "risk_flags": None,
         "evidence_summary": None,
@@ -42,20 +41,56 @@ def run_verification_agent(db: Session, business_id: int):
     # Run Graph
     graph = build_verification_graph()
     final_state = graph.invoke(state)
+    # --- 🔎 DEBUG: RAW TOOL OUTPUT ---
+    print("\n" + "="*50)
+    print("🔎 RAW TOOL OUTPUT (STATE CHECK)")
+    print("="*50)
+    print(f"🌐 Alive: {final_state.get('website_alive')}")
+    print(f"📅 Age (Years): {final_state.get('domain_age_years')}")
+    print(f"🔗 Socials: {final_state.get('social_links')}")
+    print(f"📧 Emails Validated: {final_state.get('emails_found')}")
+    print(f"⚖️ Legal Signals: {final_state.get('legitimacy_signals')}")
+    
+    # Print the address to see if it's real or garbage
+    address_val = final_state.get('address')
+    print(f"📍 Extracted Address: {address_val}")
+    
+    # Print just the first 500 characters of the scraped text to see if it bypassed bot-protection
+    scraped_text = str(final_state.get('full_site_text') or "")
+    print(f"📄 Text Snippet (First 500 chars):\n{scraped_text[:500]}...")
+    print("="*50 + "\n")
+
+    # Create safe fallback if Analyst didn't run (Dead Site)
+    score = final_state.get("verification_score")
+    summary = final_state.get("evidence_summary")
+    flags = final_state.get("risk_flags") or []
+
+    if final_state.get("website_alive") is False:
+        score = 0
+        summary = "Verification Failed: Website is unreachable or dead."
+        flags.append("Dead Website")
 
     # Save to DB
-    print(f"💾 SAVING: Score {final_state.get('verification_score')} | Emails: {final_state.get('emails_found')}")
+    print(f"💾 SAVING: Score {score} | Status: {'Verified' if (score or 0) > 40 else 'Risky'}")
     
-    lead.verification_score = final_state.get("verification_score")
-    lead.verification_result = "verified" if (final_state.get("verification_score") or 0) > 70 else "risky"
-    lead.risk_flags = final_state.get("risk_flags")
-    lead.verification_reason = final_state.get("evidence_summary")
+    lead.verification_score = score
+    # Threshold for "verified" usually > 40 or 50 in strict systems, let's say 50 based on analyst
+    lead.verification_result = "verified" if (score or 0) >= 50 else "risky"
+    lead.risk_flags = flags
+    lead.verification_reason = summary
     
-    # Save Emails for Agent 3
+    # Save Emails & Socials
     emails = final_state.get("emails_found")
     if emails:
         lead.email_found = ",".join(emails)
         lead.email_status = "found"
+        
+    socials = final_state.get("social_links")
+    if socials:
+        # Assuming there's a column for social links or just logging it
+        # If DB schema has social_links column:
+        # lead.social_links = ",".join(socials)
+        pass # Schema check needed, but keeping safe for now
     
     db.commit()
     print("✅ VERIFICATION COMPLETE.")

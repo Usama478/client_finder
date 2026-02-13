@@ -1,76 +1,109 @@
 import re
 import dns.resolver
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Set
 from app.agents.verification.state import VerificationAgentState
 
-def has_mx_record(domain: str) -> bool:
+# Common junk patterns to filter out
+JUNK_PATTERNS = [
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".css", ".js", 
+    "sentry", "wixpress", "example.com", "yourdomain", "email.com", 
+    "noreply", "no-reply", "donotreply", "test@", "user@", "admin@"
+]
+
+# Major providers where we can skip MX lookup to save time
+MAJOR_PROVIDERS = [
+    "gmail.com", "yahoo.com", "outlook.com", "hotmail.com", 
+    "icloud.com", "aol.com", "protonmail.com", "zoho.com"
+]
+
+def check_mx_record(domain: str) -> bool:
     """
-    Checks if the domain has a valid mail server.
+    Checks if the domain has a valid Mail Exchange (MX) record.
+    Returns True if MX records exist, False otherwise.
     """
     try:
         answers = dns.resolver.resolve(domain, 'MX')
-        return len(answers) > 0
-    except Exception:
+        return bool(answers)
+    except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, dns.resolver.Timeout, Exception):
         return False
 
-def email_extraction(state: VerificationAgentState) -> Dict[str, Any]:
+def is_junk_email(email: str) -> bool:
+    """
+    Returns True if the email matches known junk patterns or invalid structure.
+    """
+    email_lower = email.lower()
+    
+    # 1. Check patterns
+    if any(junk in email_lower for junk in JUNK_PATTERNS):
+        return True
+        
+    # 2. Check length (too short or suspiciously long)
+    if len(email) < 6 or len(email) > 100:
+        return True
+        
+    # 3. Double check structure (basic)
+    parts = email.split('@')
+    if len(parts) != 2:
+        return True
+        
+    domain = parts[1]
+    if '.' not in domain:
+        return True
+        
+    return False
+
+def run_contact_hunter(state: VerificationAgentState) -> Dict[str, Any]:
+    """
+    CONTACT HUNTER MODULE
+    1. Extracts emails using Regex from full site text.
+    2. Cleans and filters junk emails.
+    3. Validates domain existence via DNS MX records (skipping major providers).
+    4. Deduplicates and formats social links.
+    """
     text = state.get("full_site_text") or ""
     
-    # DEBUG PRINT: Check if the hidden emails are actually in the text
-    if "HIDDEN EMAILS FOUND" in text:
-        print(f"      👀 DEBUG: Text contains hidden emails section.")
-    
-    # Relaxed Regex to catch more formats
+    # --- 1. Regex Extraction ---
+    # Robust pattern for emails
     email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
     raw_emails = re.findall(email_pattern, text)
     
-    # DEBUG PRINT: See what Regex found
-    if len(raw_emails) > 0:
-        print(f"      👀 DEBUG: Regex matched these raw strings: {raw_emails}")
-    else:
-        print("      ⚠️ DEBUG: Regex found NOTHING. The formatting might be broken.")
-
-    unique_emails = list(set(raw_emails))
-    
-    clean_emails = []
-    for email in unique_emails:
-        # Filter junk
-        if any(x in email.lower() for x in ['.png', '.jpg', '.jpeg', 'sentry', 'example.com', 'wixpress']):
-            continue
-        if len(email) < 50:
-            clean_emails.append(email)
+    # --- 2. Cleaning & Deduplication ---
+    unique_candidates: Set[str] = set()
+    for email in raw_emails:
+        email = email.strip().lower() # Normalize
+        if not is_junk_email(email):
+            unique_candidates.add(email)
             
-    return {"emails_found": clean_emails}
-
-def email_validation(state: VerificationAgentState) -> Dict[str, Any]:
-    emails = state.get("emails_found") or []
+    # --- 3. DNS Validation ---
     valid_emails = []
+    print(f"   📧 CONTACT HUNTER: Validating {len(unique_candidates)} candidates...")
     
-    print(f"   📧 VALIDATING {len(emails)} EMAILS...")
-    
-    for email in emails:
-        try:
-            domain = email.split('@')[-1]
-            # We skip MX check if it's a known reliable domain (gmail, etc) to save time
-            if any(x in domain for x in ['gmail', 'yahoo', 'outlook']):
-                valid_emails.append(email)
-                continue
-                
-            if has_mx_record(domain):
-                valid_emails.append(email)
-            else:
-                print(f"      ⚠️ Dropped {email}: No Mail Server for {domain}")
-        except:
+    for email in unique_candidates:
+        domain = email.split('@')[-1]
+        
+        # Optimization: fast-track major providers
+        if domain in MAJOR_PROVIDERS:
+            valid_emails.append(email)
             continue
             
-    return {
-        "emails_found": valid_emails, 
-        "email_valid": len(valid_emails) > 0
-    }
+        # DNS Check
+        if check_mx_record(domain):
+            valid_emails.append(email)
+        else:
+            print(f"      ⚠️ Dropped {email}: No MX records for {domain}")
 
-def social_link_verification(state: VerificationAgentState) -> Dict[str, Any]:
-    text = (state.get("full_site_text") or "").lower()
-    links = []
-    for platform in ["linkedin.com", "facebook.com", "instagram.com", "twitter.com"]:
-        if platform in text: links.append(platform)
-    return {"social_links": links}
+    # --- 4. Social Link Audit ---
+    # We assume 'deep_checks' might have populated this, but let's re-verify from state or dedupe
+    social_links_in = state.get("social_links") or []
+    
+    # If deep_checks didn't run or found nothing, we can try a quick regex fallback on text?
+    # But usually deep_checks is better. Let's just dedupe and clean what we have.
+    # Also, the prompt says "ensure any social media URLs are deduplicated"
+    
+    clean_socials = sorted(list(set(social_links_in)))
+    
+    return {
+        "emails_found": sorted(valid_emails),
+        "email_valid": len(valid_emails) > 0,
+        "social_links": clean_socials 
+    }

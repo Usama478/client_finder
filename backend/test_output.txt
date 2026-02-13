@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "C:\Users\Dell\Desktop\project\client_finder_project\backend\tests\test_verification_tools.py", line 4, in <module>
+    from app.agents.verification.tools.early_checks import run_gatekeeper_checks
+  File "C:\Users\Dell\Desktop\project\client_finder_project\backend\app\agents\verification\tools\early_checks.py", line 1, in <module>
+    import whois
+ModuleNotFoundError: No module named 'whois'

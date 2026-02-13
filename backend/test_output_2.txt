@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "C:\Users\Dell\Desktop\project\client_finder_project\backend\tests\test_verification_tools.py", line 49, in <module>
+    from app.agents.verification.tools.deep_checks import run_trust_scanner
+  File "C:\Users\Dell\Desktop\project\client_finder_project\backend\app\agents\verification\tools\deep_checks.py", line 3, in <module>
+    from bs4 import BeautifulSoup
+ModuleNotFoundError: No module named 'bs4'
