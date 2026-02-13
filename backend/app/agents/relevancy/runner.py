@@ -23,11 +23,10 @@ def run_relevancy_agent(db: Session, business_id: int) -> None:
         # 2. Fetch Criteria (The Query)
         session = db.query(SearchSession).filter(SearchSession.search_id == lead.search_id).first()
         
-        # FIX 1: Access the attribute on the session object
+        # Access the attribute on the session object
         exporter_criteria = session.search_query if session else "General Business"
 
-        # FIX 2: Prepare raw data for safe extraction
-        # We do this because 'category' and 'description' are in the JSON blob, not main columns
+        # Prepare raw data for safe extraction
         raw = lead.raw_data if lead.raw_data else {}
 
         # 3. Initialize State (TypedDict)
@@ -38,28 +37,23 @@ def run_relevancy_agent(db: Session, business_id: int) -> None:
             
             # Context
             "business_name": lead.business_name,
-            "category": raw.get("category"),       # <--- Safe JSON access
+            "category": raw.get("category"),       
             "website": lead.website,
             "address": lead.address,
-            "description": raw.get("description"), # <--- Safe JSON access
+            "description": raw.get("description"), 
             "exporter_profile": exporter_criteria, 
 
             # Empty Observations
             "website_exists": None,
             "is_marketplace": None,
-            "homepage_text": None,
-            "business_model": None,
-            "extracted_keywords": None,
-            "classified_niche": None,
-
-            # Control
-            "next_action": None,
-            "reasoning_trace": None,
+            "evidence": None, # New field
             
             # Outputs
             "relevance_decision": None,
             "relevance_score": None,
             "relevance_reason": None,
+            "business_type": None,
+            "primary_niche": None,
             "is_finalized": False,
         }
 
@@ -74,6 +68,10 @@ def run_relevancy_agent(db: Session, business_id: int) -> None:
         lead.relevance_status = final_state.get("relevance_decision")
         lead.relevance_score = final_state.get("relevance_score")
         lead.relevance_reason = final_state.get("relevance_reason")
+        
+        # New Fields
+        lead.business_type = final_state.get("business_type")
+        lead.primary_niche = final_state.get("primary_niche")
         
         db.commit()
         print("✅ RELEVANCY AGENT COMPLETE.")

@@ -1,80 +1,74 @@
 from langgraph.graph import StateGraph, END
 from app.agents.relevancy.state import RelevancyAgentState
-from app.agents.relevancy.llm_router import llm_router
 from app.agents.relevancy import tools 
 
 # --- Node Wrappers ---
 
-def gatekeepers_node(state: RelevancyAgentState):
+def check_status_node(state: RelevancyAgentState):
     """
-    Phase 1: Fast Checks.
-    Returns partial updates to the state.
+    Phase 1: Basic Health Check.
     """
-    print("   🛡️ NODE: Running Gatekeepers...")
-    # Pass the full state so tools can access 'business_data'
-    u1 = tools.fetch_website_status(state)
-    u2 = tools.detect_marketplace(state)
-    return {**u1, **u2}
+    print("   🏥 NODE: Checking Website Status...")
+    return tools.fetch_website_status(state)
 
-def data_collection_node(state: RelevancyAgentState):
+def marketplace_node(state: RelevancyAgentState):
     """
-    Phase 2: Heavy Lifting (Scraping & Heuristics).
+    Phase 2: Marketplace Filter.
     """
-    print("   🕷️ NODE: Running Data Collection...")
-    u1 = tools.scrape_homepage_text(state)
-    
-    # Create a temporary state so the heuristics see the text we just scraped
-    temp_state = {**state, **u1}
-    
-    u2 = tools.detect_business_model_heuristic(temp_state)
-    u3 = tools.extract_product_keywords(temp_state)
-    u4 = tools.classify_business_niche(temp_state)
-    
-    return {**u1, **u2, **u3, **u4}
+    print("   🛒 NODE: Checking Marketplace Status...")
+    return tools.detect_marketplace(state)
 
-def finalize_node(state: RelevancyAgentState):
+def investigate_node(state: RelevancyAgentState):
     """
-    Phase 3: The Judge.
-    This uses the 'semantic_analysis' tool (LLM) to make the final decision.
+    Phase 3: The Investigator (Gather Hard Evidence).
+    Only runs if website exists and is not a generic marketplace.
     """
-    print("   ⚖️ NODE: Finalizing Analysis...")
-    
-    # This calls the LLM to analyze the scraped text vs. the criteria
-    result = tools.semantic_analysis(state)
-    
-    return {
-        **result,
-        "is_finalized": True
-    }
+    # Fail-safe: If site dead or junk, skip investigation to save time
+    if state.get("website_exists") is False or state.get("is_marketplace") is True:
+        print("   ⏭️ Skipping Investigation (Site dead or Marketplace).")
+        return {"evidence": {"error": "Skipped because site is dead or marketplace"}}
+
+    print("   🕵️ NODE: Running Investigator...")
+    return tools.gather_website_evidence(state)
+
+def analyze_node(state: RelevancyAgentState):
+    """
+    Phase 4: The Analyst (LLM Decision).
+    """
+    # Fail-safe: If no evidence or skipped
+    evidence = state.get("evidence", {})
+    if not evidence or "error" in evidence:
+        print("   ⏭️ Skipping Analysis (No evidence).")
+        return {
+            "relevance_decision": "irrelevant",
+            "relevance_score": 0,
+            "relevance_reason": "Website unreachable or identified as generic marketplace.",
+            "business_type": "Unknown",
+            "primary_niche": "Unknown",
+            "is_finalized": True
+        }
+
+    print("   📊 NODE: Running Analyst...")
+    return tools.analyze_relevance_with_llm(state)
 
 # --- Graph Definition ---
 
 workflow = StateGraph(RelevancyAgentState)
 
 # 1. Add Nodes
-workflow.add_node("llm_router", llm_router)
-workflow.add_node("gatekeepers", gatekeepers_node)
-workflow.add_node("data_collection", data_collection_node)
-workflow.add_node("finalize", finalize_node)
+workflow.add_node("check_status", check_status_node)
+workflow.add_node("detect_marketplace", marketplace_node)
+workflow.add_node("investigate", investigate_node)
+workflow.add_node("analyze", analyze_node)
 
 # 2. Set Entry Point
-workflow.set_entry_point("llm_router")
+workflow.set_entry_point("check_status")
 
-# 3. Add Conditional Routing (The Brain)
-workflow.add_conditional_edges(
-    "llm_router",
-    lambda state: state["next_action"],
-    {
-        "run_gatekeeper_checks": "gatekeepers",
-        "run_data_collection": "data_collection",
-        "finalize_relevance": "finalize"
-    }
-)
+# 3. Add Edges (Linear Flow)
+workflow.add_edge("check_status", "detect_marketplace")
+workflow.add_edge("detect_marketplace", "investigate")
+workflow.add_edge("investigate", "analyze")
+workflow.add_edge("analyze", END)
 
-# 4. Add Return Edges (Always loop back to Brain)
-workflow.add_edge("gatekeepers", "llm_router")
-workflow.add_edge("data_collection", "llm_router")
-workflow.add_edge("finalize", END)
-
-# 5. Compile
+# 4. Compile
 relevancy_graph = workflow.compile()

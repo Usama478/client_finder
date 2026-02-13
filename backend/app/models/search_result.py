@@ -29,6 +29,10 @@ class SearchResult(Base):
     relevance_status = Column(String, default="pending")
     relevance_score = Column(Float, nullable=True)
     relevance_reason = Column(Text, nullable=True)
+    
+    # New Analyst Fields
+    business_type = Column(String, nullable=True)
+    primary_niche = Column(String, nullable=True)
 
     # Verification agent
     verification_status = Column(String, default="pending")
