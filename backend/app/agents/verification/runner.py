@@ -76,6 +76,7 @@ def run_verification_agent(db: Session, business_id: int):
     lead.verification_score = score
     # Threshold for "verified" usually > 40 or 50 in strict systems, let's say 50 based on analyst
     lead.verification_result = "verified" if (score or 0) >= 50 else "risky"
+    lead.verification_status = "completed"
     lead.risk_flags = flags
     lead.verification_reason = summary
     
@@ -91,6 +92,22 @@ def run_verification_agent(db: Session, business_id: int):
         # If DB schema has social_links column:
         # lead.social_links = ",".join(socials)
         pass # Schema check needed, but keeping safe for now
+        
+    # Safely merge into raw_data so SQLAlchemy detects it
+    current_raw_data = dict(lead.raw_data or {})
+    
+    if final_state.get("domain_age_years") is not None:
+        current_raw_data["domain_age"] = final_state.get("domain_age_years")
+        
+    if final_state.get("website_alive") is not None:
+        current_raw_data["website_status"] = "Alive" if final_state.get("website_alive") else "Dead"
+        
+    legitimacy = final_state.get("legitimacy_signals")
+    if legitimacy and isinstance(legitimacy, dict):
+        for k, v in legitimacy.items():
+            current_raw_data[k] = v
+            
+    lead.raw_data = current_raw_data
     
     db.commit()
     print("✅ VERIFICATION COMPLETE.")

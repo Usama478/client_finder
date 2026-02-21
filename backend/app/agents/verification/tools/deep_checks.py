@@ -1,4 +1,5 @@
 import re
+from urllib.parse import urljoin
 from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
 from typing import Dict, Any, List
@@ -6,6 +7,28 @@ from app.agents.verification.state import VerificationAgentState
 
 # Real browser header + stealthy config
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+
+def extract_emails_from_text(text: str) -> set:
+    text = re.sub(r'\[at\]|\(at\)|\{at\}|\s+at\s+', '@', text, flags=re.IGNORECASE)
+    text = re.sub(r'\[dot\]|\(dot\)|\bdot\b', '.', text, flags=re.IGNORECASE)
+    return set(re.findall(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', text))
+
+def score_and_sort_emails(emails: set) -> list:
+    high_priority = {"sales", "info", "contact", "hello", "partners", "wholesale", "press"}
+    low_priority = {"privacy", "careers", "jobs", "noreply", "support", "legal"}
+    
+    scored_emails = []
+    for email in emails:
+        local_part = email.split('@')[0].lower()
+        score = 0
+        if any(p in local_part for p in high_priority):
+            score += 10
+        elif any(p in local_part for p in low_priority):
+            score -= 10
+        scored_emails.append((score, email))
+        
+    scored_emails.sort(key=lambda x: x[0], reverse=True)
+    return [e[1] for e in scored_emails]
 
 def run_trust_scanner(state: VerificationAgentState) -> Dict[str, Any]:
     """
@@ -36,10 +59,10 @@ def run_trust_scanner(state: VerificationAgentState) -> Dict[str, Any]:
             # Launch with anti-bot arguments
             browser = p.chromium.launch(
                 headless=True,
-                args=["--disable-blink-features=AutomationControlled"]
+                args=["--disable-blink-features=AutomationControlled", "--disable-infobars", "--window-size=1920,1080", "--no-sandbox", "--disable-setuid-sandbox", "--disable-web-security"]
             )
             context = browser.new_context(
-                user_agent=USER_AGENT,
+                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
                 viewport={"width": 1920, "height": 1080}
             )
             page = context.new_page()
@@ -51,12 +74,12 @@ def run_trust_scanner(state: VerificationAgentState) -> Dict[str, Any]:
                 # 30s timeout, wait for domcontentloaded is usually enough for static data
                 # We can also wait for networkidle if needed, but it might hang on trackers.
                 page.goto(url, timeout=30000, wait_until="domcontentloaded")
+                page.wait_for_timeout(3000)
             except Exception as e:
                 print(f"      ⚠️ Page load warning: {e}")
                 # Continue anyway, we might have partial content
 
             content = page.content()
-            browser.close()
             
             # --- PARSE CONTENT ---
             soup = BeautifulSoup(content, "html.parser")
@@ -139,9 +162,62 @@ def run_trust_scanner(state: VerificationAgentState) -> Dict[str, Any]:
                 tag.decompose()
             cleaned_text = soup.get_text(" ", strip=True)
             
-            # Append hidden emails to text so they are "found"
-            if hidden_emails:
-                cleaned_text += " | [HIDDEN EMAILS]: " + ", ".join(hidden_emails)
+            # --- PRIORITY SWEEP & DEEP CRAWLING ---
+            keywords = ["contact", "about", "press", "wholesale", "shipping", "faq", "team", "privacy"]
+            sub_links_with_priority = []
+            for a in soup.find_all('a', href=True):
+                href = a['href']
+                lower_href = href.lower()
+                for idx, k in enumerate(keywords):
+                    if k in lower_href:
+                        full_url = urljoin(url, href)
+                        if full_url.startswith("http"):
+                            sub_links_with_priority.append((idx, full_url))
+                        break
+            
+            sub_links_with_priority.sort(key=lambda x: x[0])
+            sub_links = []
+            for _, link in sub_links_with_priority:
+                if link not in sub_links:
+                    sub_links.append(link)
+            
+            # Initial email extraction on home page
+            hidden_emails.update(extract_emails_from_text(cleaned_text))
+            
+            subpage_texts = []
+            for sub_link in sub_links[:8]:
+                try:
+                    print(f"      🔗 Crawling sub-page: {sub_link}")
+                    # Change 1: Wait for domcontentloaded so Javascript accordions fully render after a pause
+                    page.goto(sub_link, timeout=15000, wait_until="domcontentloaded")
+                    page.wait_for_timeout(2000)
+                    
+                    # Change 2: Grab the raw HTML and let BeautifulSoup clean it to avoid CSS garbage
+                    sub_content = page.content()
+                    sub_soup = BeautifulSoup(sub_content, "html.parser")
+                    
+                    # Strip out scripts and styles from the sub-page
+                    for tag in sub_soup(["script", "style", "noscript", "svg", "header", "nav", "meta"]): 
+                        tag.decompose()
+                        
+                    # Extract the clean, human-readable text
+                    clean_sub_text = sub_soup.get_text(" ", strip=True)
+                    
+                    if clean_sub_text:
+                        subpage_texts.append(clean_sub_text)
+                        hidden_emails.update(extract_emails_from_text(clean_sub_text))
+                except Exception as e:
+                    print(f"      ⚠️ Sub-page load warning ({sub_link}): {e}")
+            
+            browser.close()
+
+            if subpage_texts:
+                cleaned_text += "\n\n--- SUB-PAGES ---\n" + "\n\n".join(subpage_texts)
+
+            # Score, Sort and Append hidden emails
+            sorted_emails = score_and_sort_emails(hidden_emails)
+            if sorted_emails:
+                cleaned_text += " | [HIDDEN EMAILS]: " + ", ".join(sorted_emails)
 
             return {
                 "full_site_text": cleaned_text[:30000], # Cap size

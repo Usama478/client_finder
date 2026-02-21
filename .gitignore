@@ -1,2 +1,29 @@
-__pycache__/
+# --- Security ---
 .env
+.env.*
+*.pem
+
+# --- Python / FastAPI Backend ---
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+.pytest_cache/
+
+# --- Node.js / React Frontend ---
+node_modules/
+dist/
+build/
+.npm/
+
+# --- Playwright (Web Scraper) ---
+playwright-report/
+test-results/
+
+# --- OS / IDE Junk Files ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
