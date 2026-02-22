@@ -1,21 +1,31 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Loader2 } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
-import { Dashboard } from './components/Dashboard';
-import { ResultsTable } from './components/ResultsTable';
-import { fetchHistory, startSearch, fetchResults, startRelevancyAgent, startVerificationAgent } from './services/api';
+import { DashboardOverview } from './components/DashboardOverview';
+import { SearchBusinesses } from './components/SearchBusinesses';
+import { RelevancyFilter } from './components/RelevancyFilter';
+import { BusinessValidation } from './components/BusinessValidation';
+import { Clients } from './components/Clients';
+import { BusinessDetails } from './components/BusinessDetails';
+import { fetchHistory, startSearch, fetchResults, startRelevancyAgent, startVerificationAgent, toggleClientStatus, fetchSavedClients } from './services/api';
 
 function App() {
   const [query, setQuery] = useState('');
   const [history, setHistory] = useState([]);
   const [results, setResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
+
+  type ViewType = 'dashboard' | 'clients' | 'search' | 'relevancy' | 'validation' | 'business-details' | 'email' | 'settings';
+  const [currentView, setCurrentView] = useState<ViewType>('dashboard');
+  const [previousView, setPreviousView] = useState<ViewType>('search');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
-  const [visibleIds, setVisibleIds] = useState<string[] | null>(null);
   const [processingAction, setProcessingAction] = useState<'relevancy' | 'verification'>('relevancy');
+  const [selectedBusinessId, setSelectedBusinessId] = useState<string | null>(null);
+
+  // Funnel tracking states
+  const [activeRelevancyIds, setActiveRelevancyIds] = useState<string[]>([]);
+  const [activeValidationIds, setActiveValidationIds] = useState<string[]>([]);
 
   // Polling for live agent updates
   useEffect(() => {
@@ -70,10 +80,26 @@ function App() {
     // We only depend on the size and the action string.
   }, [processingIds.size, processingAction]);
 
-  // Load history on mount
+  // Load history and saved clients on mount
   useEffect(() => {
     loadHistory();
+    loadSavedClients();
   }, []);
+
+  const loadSavedClients = async () => {
+    try {
+      const saved = await fetchSavedClients();
+      if (Array.isArray(saved) && saved.length > 0) {
+        setResults(prev => {
+          const map = new Map(prev.map(r => [r.place_id, r]));
+          saved.forEach(r => map.set(r.place_id, r));
+          return Array.from(map.values());
+        });
+      }
+    } catch (err) {
+      console.error('Failed to load saved clients exactly on mount:', err);
+    }
+  };
 
   const loadHistory = async () => {
     try {
@@ -86,12 +112,12 @@ function App() {
     }
   };
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSearch = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!query.trim()) return;
 
     setIsSearching(true);
-    setError(null);
+    setCurrentView('search');
 
     try {
       // 1. Trigger search
@@ -101,6 +127,9 @@ function App() {
       await loadHistory();
 
       setSelectedIds(new Set());
+      setProcessingIds(new Set());
+      setActiveRelevancyIds([]);
+      setActiveValidationIds([]);
       setNextPageToken(searchRes.next_page_token || null);
 
       // 3. Wait 2 seconds before fetching to prevent 404 race condition
@@ -109,7 +138,12 @@ function App() {
       // 4. Fetch results for this exact search ID
       const resultsRes = await fetchResults(searchRes.search_id);
       console.log("Leads received from backend:", resultsRes);
-      setResults(Array.isArray(resultsRes) ? resultsRes : resultsRes.results || []);
+      setResults(prev => {
+        const newRes = Array.isArray(resultsRes) ? resultsRes : resultsRes.results || [];
+        const map = new Map(prev.filter(r => r.is_saved_client).map(r => [r.place_id, r])); // keep saved clients
+        newRes.forEach((r: any) => map.set(r.place_id, r));
+        return Array.from(map.values());
+      });
 
     } catch (err: any) {
       console.error('Search failed:', err);
@@ -125,7 +159,7 @@ function App() {
         errorMessage = `Error ${status}: ${detail || 'Unknown error'}`;
       }
 
-      setError(errorMessage);
+      console.error(errorMessage);
     } finally {
       setIsSearching(false);
     }
@@ -133,18 +167,25 @@ function App() {
 
   const handleSelectHistory = async (searchId: string) => {
     setIsSearching(true);
-    setError(null);
+    setCurrentView('search');
     try {
       const data = await fetchResults(searchId);
       console.log("Leads received from backend:", data);
-      setResults(Array.isArray(data) ? data : data.results || []);
+      setResults(prev => {
+        const newRes = Array.isArray(data) ? data : data.results || [];
+        const map = new Map(prev.filter(r => r.is_saved_client).map(r => [r.place_id, r])); // keep saved clients
+        newRes.forEach((r: any) => map.set(r.place_id, r));
+        return Array.from(map.values());
+      });
 
       setSelectedIds(new Set());
-      const session = history.find((h: any) => h.search_id?.toString() === searchId || h.id?.toString() === searchId);
+      setProcessingIds(new Set());
+      setActiveRelevancyIds([]);
+      setActiveValidationIds([]);
+      const session = Array.isArray(history) ? history.find((h: any) => h.search_id?.toString() === searchId || h.id?.toString() === searchId) : null;
       setNextPageToken((session as any)?.next_page_token || null);
-      setVisibleIds(null);
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to load historical results.');
+      console.error(err.response?.data?.detail || 'Failed to load historical results.');
     } finally {
       setIsSearching(false);
     }
@@ -168,7 +209,7 @@ function App() {
       setNextPageToken(searchRes.next_page_token || null);
     } catch (err: any) {
       console.error(err);
-      setError(err.response?.data?.detail || 'Failed to load more results.');
+      console.error(err.response?.data?.detail || 'Failed to load more results.');
     } finally {
       setIsSearching(false);
     }
@@ -178,154 +219,189 @@ function App() {
     if (selectedIds.size === 0) return;
     try {
       const idsArray = Array.from(selectedIds);
+      setActiveRelevancyIds(idsArray);
       await startRelevancyAgent(idsArray);
       setProcessingIds(new Set([...processingIds, ...selectedIds]));
-      setVisibleIds(idsArray);
       setProcessingAction('relevancy');
       setSelectedIds(new Set());
     } catch (err: any) {
       console.error(err);
-      setError('Failed to start Relevancy Agent.');
+      console.error('Failed to start Relevancy Agent.');
     }
   };
 
-  const handleStartVerification = async () => {
-    if (selectedIds.size === 0) return;
-    try {
-      const idsArray = Array.from(selectedIds);
-      await startVerificationAgent(idsArray);
-      setProcessingIds(new Set([...processingIds, ...selectedIds]));
-      setVisibleIds(idsArray);
-      setProcessingAction('verification');
-      setSelectedIds(new Set());
-    } catch (err: any) {
-      console.error(err);
-      setError('Failed to start Verification Agent.');
+  const handleAdvanceToRelevancy = async () => {
+    await handleStartRelevancy();
+    setCurrentView('relevancy');
+  };
+
+  const handleAdvanceToValidation = async (idsToValidate: string[]) => {
+    if (idsToValidate.length > 0) {
+      try {
+        setActiveValidationIds(idsToValidate);
+        await startVerificationAgent(idsToValidate);
+        setProcessingIds(new Set([...processingIds, ...idsToValidate]));
+        setProcessingAction('verification');
+        setSelectedIds(new Set());
+        setCurrentView('validation');
+      } catch (err: any) {
+        console.error(err);
+        console.error('Failed to start Verification Agent.');
+      }
     }
   };
 
   // Calculate stats for Dashboard
   const totalLeads = results.length;
-  const verifiedLeads = results.filter((r: any) => r.is_verified).length;
+
+  const handleBusinessSelect = (businessId: string) => {
+    setPreviousView(currentView);
+    setSelectedBusinessId(businessId);
+    setCurrentView('business-details');
+  };
+
+  const handleAddToClients = async (business: any) => {
+    const idStr = (business.id || business.result_id || business.place_id).toString();
+    try {
+      await toggleClientStatus(idStr, true);
+      setResults(prev => prev.map(r => {
+        if ((r.id || r.result_id || r.place_id).toString() === idStr) {
+          return { ...r, is_saved_client: true };
+        }
+        return r;
+      }));
+    } catch (err) {
+      console.error('Failed to quick add to clients:', err);
+    }
+  };
+
+  const handleAddMultipleToClients = async (ids: string[]) => {
+    try {
+      await Promise.all(ids.map(id => toggleClientStatus(id, true)));
+      setResults(prev => prev.map(r => {
+        if (ids.includes((r.id || r.result_id || r.place_id).toString())) {
+          return { ...r, is_saved_client: true };
+        }
+        return r;
+      }));
+    } catch (err) {
+      console.error('Failed to add multiple to clients:', err);
+    }
+  };
+
+  const handleRemoveFromClients = async (ids: string[]) => {
+    try {
+      await Promise.all(ids.map(id => toggleClientStatus(id, false)));
+      setResults(prev => prev.map(r => {
+        if (ids.includes((r.id || r.result_id || r.place_id).toString())) {
+          return { ...r, is_saved_client: false };
+        }
+        return r;
+      }));
+    } catch (err) {
+      console.error('Failed to remove from clients:', err);
+    }
+  };
+
+  const renderContent = () => {
+    switch (currentView) {
+      case 'dashboard':
+        return (
+          <DashboardOverview
+            totalLeads={totalLeads}
+            history={history}
+            onSelectHistory={handleSelectHistory}
+            results={results}
+          />
+        );
+      case 'search':
+        return (
+          <SearchBusinesses
+            query={query}
+            setQuery={setQuery}
+            handleSearch={handleSearch}
+            results={results}
+            isSearching={isSearching}
+            selectedIds={selectedIds}
+            setSelectedIds={setSelectedIds}
+            hasMore={!!nextPageToken}
+            handleLoadMore={handleLoadMore}
+            onBusinessSelect={handleBusinessSelect}
+            onFilterRelevant={handleAdvanceToRelevancy}
+            history={history}
+            onSelectHistory={handleSelectHistory}
+            onAddToClients={handleAddToClients}
+          />
+        );
+      case 'relevancy':
+        return (
+          <RelevancyFilter
+            results={results.filter(r => activeRelevancyIds.includes((r.id || r.result_id || r.place_id)?.toString()))}
+            processingIds={processingIds}
+            isVerifying={processingIds.size > 0 && processingAction === 'verification'}
+            onValidate={handleAdvanceToValidation}
+            onBack={() => setCurrentView('search')}
+            onSelectBusiness={handleBusinessSelect}
+          />
+        );
+      case 'validation':
+        return (
+          <BusinessValidation
+            results={results.filter(r => activeValidationIds.includes((r.id || r.result_id || r.place_id)?.toString()))}
+            processingIds={processingIds}
+            onAddToClients={(ids) => {
+              handleAddMultipleToClients(ids);
+              setCurrentView('clients');
+            }}
+            onBack={() => setCurrentView('search')}
+            onSelectBusiness={handleBusinessSelect}
+          />
+        );
+      case 'clients':
+        return (
+          <Clients
+            results={results}
+            processingIds={processingIds}
+            processingAction={processingAction}
+            onSelectBusiness={handleBusinessSelect}
+            onRunRelevancy={(ids) => {
+              setProcessingIds(prev => new Set([...prev, ...ids]));
+              setProcessingAction('relevancy');
+              startRelevancyAgent(ids).catch(console.error);
+            }}
+            onRunVerification={(ids) => {
+              setProcessingIds(prev => new Set([...prev, ...ids]));
+              setProcessingAction('verification');
+              startVerificationAgent(ids).catch(console.error);
+            }}
+            onRemoveFromClients={handleRemoveFromClients}
+          />
+        );
+      case 'business-details':
+        const selectedBusiness = results.find(r => (r.id || r.result_id || r.place_id)?.toString() === selectedBusinessId) || null;
+        return (
+          <BusinessDetails
+            business={selectedBusiness}
+            onBack={() => setCurrentView(previousView)}
+          />
+        );
+      default:
+        return (
+          <DashboardOverview
+            totalLeads={totalLeads}
+            history={history}
+            onSelectHistory={handleSelectHistory}
+            results={results}
+          />
+        );
+    }
+  };
 
   return (
-    <div className="flex h-screen bg-slate-50 font-sans overflow-hidden">
-      <Sidebar history={history} onSelectSearch={handleSelectHistory} />
-
-      <main className="flex-1 flex flex-col h-screen overflow-hidden relative">
-        {/* Header Region */}
-        <header className="bg-white border-b border-slate-200 px-8 py-5 flex items-center justify-between sticky top-0 z-10 shrink-0">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900 font-brand">Smart Client</h1>
-            <p className="text-sm text-slate-500 font-medium">Deep-Web Intelligence Platform</p>
-          </div>
-
-          <form onSubmit={handleSearch} className="relative w-full max-w-lg">
-            <div className="relative flex items-center">
-              <Search className="absolute left-4 w-5 h-5 text-slate-400 pointer-events-none" />
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search businesses (e.g., 'plumbers in Seattle')..."
-                className="w-full pl-12 pr-32 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all placeholder:text-slate-400 font-medium text-slate-700 shadow-inner"
-                disabled={isSearching}
-              />
-              <button
-                type="submit"
-                disabled={isSearching || !query.trim()}
-                className="absolute right-2 px-6 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-sm"
-              >
-                {isSearching ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Scanning
-                  </>
-                ) : (
-                  'Search'
-                )}
-              </button>
-            </div>
-          </form>
-        </header>
-
-        {/* Content Region */}
-        <div className="flex-1 overflow-y-auto p-8 relative">
-
-          {error && (
-            <div className="mb-6 p-4 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-3">
-              <div className="w-6 h-6 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 flex-shrink-0 mt-0.5">
-                !
-              </div>
-              <div>
-                <h4 className="text-sm font-semibold text-rose-800">Scan Failed</h4>
-                <p className="text-sm text-rose-600 mt-0.5">{error}</p>
-              </div>
-            </div>
-          )}
-
-          <div className="max-w-7xl mx-auto space-y-6">
-            <Dashboard totalLeads={totalLeads} verifiedLeads={verifiedLeads} />
-
-            {results.length > 0 && (
-              <div className="flex items-center justify-between bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                <div className="flex items-center gap-4">
-                  <span className="text-sm font-semibold text-slate-700">
-                    Selected: {selectedIds.size} / {results.length}
-                  </span>
-                  <button
-                    onClick={() => {
-                      if (selectedIds.size === results.length) {
-                        setSelectedIds(new Set());
-                      } else {
-                        const allIds = results.map((r: any) => (r.id || r.result_id || r.place_id).toString());
-                        setSelectedIds(new Set(allIds));
-                      }
-                    }}
-                    className="text-sm text-primary-600 font-medium hover:text-primary-700 hover:underline"
-                  >
-                    {selectedIds.size === results.length ? 'Deselect All' : 'Select All'}
-                  </button>
-                </div>
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={handleStartRelevancy}
-                    disabled={selectedIds.size === 0}
-                    className="px-5 py-2.5 bg-slate-900 text-white text-sm font-semibold rounded-lg hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-sm"
-                  >
-                    🚀 Run Relevancy AI
-                  </button>
-                  <button
-                    onClick={handleStartVerification}
-                    disabled={selectedIds.size === 0}
-                    className="px-5 py-2.5 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-sm"
-                  >
-                    🛡️ Run Verification AI
-                  </button>
-                </div>
-              </div>
-            )}
-
-            <div className="h-[calc(100vh-320px)] min-h-[400px]">
-              <ResultsTable
-                results={results}
-                isLoading={isSearching}
-                onLoadMore={handleLoadMore}
-                hasMore={!!nextPageToken}
-                selectedIds={selectedIds}
-                processingIds={processingIds}
-                processingAction={processingAction}
-                visibleIds={visibleIds}
-                onSelect={(id) => {
-                  const newSet = new Set(selectedIds);
-                  if (newSet.has(id)) newSet.delete(id);
-                  else newSet.add(id);
-                  setSelectedIds(newSet);
-                }}
-              />
-            </div>
-          </div>
-        </div>
+    <div className="flex h-screen bg-black">
+      <Sidebar currentPage={currentView} onNavigate={setCurrentView as any} />
+      <main className="flex-1 overflow-auto bg-black">
+        {renderContent()}
       </main>
     </div>
   );

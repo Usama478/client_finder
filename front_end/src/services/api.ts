@@ -34,4 +34,14 @@ export const startVerificationAgent = async (businessIds: string[]) => {
     return response.data;
 };
 
+export const toggleClientStatus = async (resultId: string, isSaved: boolean) => {
+    const response = await api.put(`/results/${resultId}/client-status`, { is_saved_client: isSaved });
+    return response.data;
+};
+
+export const fetchSavedClients = async () => {
+    const response = await api.get('/clients');
+    return response.data;
+};
+
 export default api;

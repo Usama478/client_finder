@@ -15,6 +15,9 @@ class SearchRequest(BaseModel):
     query: str
     page_token: Optional[str] = None
 
+class ClientStatusUpdate(BaseModel):
+    is_saved_client: bool
+
 @router.get("/health")
 def api_health_check():
     return {"status": "Backend API is healthy"}
@@ -99,11 +102,47 @@ def get_lead_details(place_id: str, db: Session = Depends(get_db)):
     try:
         lead = db.query(SearchResult).filter(SearchResult.place_id == place_id).first()
         
-        if not lead:
-            raise HTTPException(status_code=404, detail="Lead not found.")
-            
         return lead
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.put("/results/{result_id}/client-status")
+def update_client_status(
+    result_id: str,
+    payload: ClientStatusUpdate,
+    db: Session = Depends(get_db)
+):
+    """Toggle the is_saved_client status for a specific lead."""
+    try:
+        # result_id might be the place_id or actual integer ID depending on frontend passing, so we check both
+        # Actually frontend usually passes result.id, result.result_id, or result.place_id as cardId. 
+        # So let's check place_id primarily or result_id if it's digit.
+        if result_id.isdigit():
+            lead = db.query(SearchResult).filter(
+                (SearchResult.result_id == int(result_id)) | (SearchResult.place_id == result_id)
+            ).first()
+        else:
+            lead = db.query(SearchResult).filter(SearchResult.place_id == result_id).first()
+            
+        if not lead:
+            raise HTTPException(status_code=404, detail="Lead not found.")
+
+        lead.is_saved_client = payload.is_saved_client
+        db.commit()
+        db.refresh(lead)
+        return {"status": "success", "is_saved_client": lead.is_saved_client}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/clients")
+def get_saved_clients(db: Session = Depends(get_db)):
+    """Fetch all saved clients (is_saved_client == True) from the database."""
+    try:
+        clients = db.query(SearchResult).filter(SearchResult.is_saved_client == True).all()
+        return clients
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

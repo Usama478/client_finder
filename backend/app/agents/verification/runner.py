@@ -101,6 +101,12 @@ def run_verification_agent(db: Session, business_id: int):
         
     if final_state.get("website_alive") is not None:
         current_raw_data["website_status"] = "Alive" if final_state.get("website_alive") else "Dead"
+
+    if socials:
+        current_raw_data["social_links"] = socials
+
+    if emails:
+        current_raw_data["emails_found"] = emails
         
     legitimacy = final_state.get("legitimacy_signals")
     if legitimacy and isinstance(legitimacy, dict):

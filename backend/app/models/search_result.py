@@ -20,6 +20,7 @@ class SearchResult(Base):
     address = Column(String, nullable=True)
     website = Column(String, nullable=True)
     phone_number = Column(String, nullable=True)
+    is_saved_client = Column(Boolean, default=False)
 
     # Scraping memory
     scraping_status = Column(String, default="pending")
