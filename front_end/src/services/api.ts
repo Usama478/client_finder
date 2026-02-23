@@ -12,9 +12,11 @@ export const fetchHistory = async () => {
     return response.data;
 };
 
-export const startSearch = async (query: string, pageToken?: string) => {
+export const startSearch = async (query: string, pageToken?: string, contextId?: string | number | null) => {
     const payload: any = { user_id: 1, query };
     if (pageToken) payload.page_token = pageToken;
+    if (contextId) payload.context_id = Number(contextId);
+
     const response = await api.post('/search', payload);
     return response.data;
 };
@@ -41,6 +43,21 @@ export const toggleClientStatus = async (resultId: string, isSaved: boolean) => 
 
 export const fetchSavedClients = async () => {
     const response = await api.get('/clients');
+    return response.data;
+};
+
+export const fetchContexts = async () => {
+    const response = await api.get('/contexts');
+    return response.data;
+};
+
+export const createContext = async (name: string, prompt_text: string) => {
+    const response = await api.post('/contexts', { name, prompt_text });
+    return response.data;
+};
+
+export const fetchDashboardStats = async () => {
+    const response = await api.get('/dashboard/stats');
     return response.data;
 };
 

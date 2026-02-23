@@ -15,11 +15,11 @@ export function BusinessDetailsView({ businessId, results, onBack }: BusinessDet
   if (!business) {
     return (
       <div className="p-8">
-        <Button onClick={onBack} variant="ghost" className="text-gray-400 hover:text-gray-200 mb-4">
+        <Button onClick={onBack} variant="ghost" className="text-gray-600 dark:text-gray-400 hover:text-gray-200 mb-4">
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back to Search
         </Button>
-        <div className="text-gray-400">Business not found</div>
+        <div className="text-gray-600 dark:text-gray-400">Business not found</div>
       </div>
     );
   }
@@ -72,20 +72,20 @@ export function BusinessDetailsView({ businessId, results, onBack }: BusinessDet
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
-      <Button onClick={onBack} variant="ghost" className="text-gray-400 hover:text-gray-200 mb-6">
+      <Button onClick={onBack} variant="ghost" className="text-gray-600 dark:text-gray-400 hover:text-gray-200 mb-6">
         <ArrowLeft className="w-4 h-4 mr-2" />
         Back to Search
       </Button>
 
       {/* Header */}
-      <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-8 mb-6 shadow-lg">
+      <div className="bg-[#1a1a1a] border border-gray-200 dark:border-gray-800 rounded-xl p-8 mb-6 shadow-lg">
         <div className="flex items-start justify-between mb-4">
           <div>
-            <h1 className="text-3xl font-bold text-white mb-2 flex items-center gap-3">
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-3">
               <Building2 className="w-8 h-8 text-blue-400" />
               {business.business_name || 'Unknown Business'}
             </h1>
-            <div className="flex items-center gap-2 text-gray-400 mb-4 font-medium">
+            <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400 mb-4 font-medium">
               <span className="capitalize">{category}</span>
               <span>•</span>
               <div className="flex items-center gap-1">
@@ -118,7 +118,7 @@ export function BusinessDetailsView({ businessId, results, onBack }: BusinessDet
             <AlertTriangle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
             <div>
               <div className="text-yellow-400 font-semibold mb-1">Data Mismatch / Low Relevance Warning</div>
-              <div className="text-sm text-gray-400">
+              <div className="text-sm text-gray-600 dark:text-gray-400">
                 This lead scored low on relevance or verification. Review the AI reasoning details carefully before proceeding.
               </div>
             </div>
@@ -128,39 +128,39 @@ export function BusinessDetailsView({ businessId, results, onBack }: BusinessDet
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Basic Business Information */}
-        <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-6 shadow-lg">
-          <h3 className="text-white font-semibold mb-5 flex items-center gap-2">
-            <MapPin className="w-5 h-5 text-gray-400" />
+        <div className="bg-[#1a1a1a] border border-gray-200 dark:border-gray-800 rounded-xl p-6 shadow-lg">
+          <h3 className="text-gray-900 dark:text-white font-semibold mb-5 flex items-center gap-2">
+            <MapPin className="w-5 h-5 text-gray-600 dark:text-gray-400" />
             Basic Information
           </h3>
           <div className="space-y-4">
             <div>
               <div className="text-sm text-gray-500 mb-1 font-medium">Address</div>
-              <div className="text-gray-300">{business.address || 'Address not found'}</div>
+              <div className="text-gray-700 dark:text-gray-300">{business.address || 'Address not found'}</div>
             </div>
             <div>
               <div className="text-sm text-gray-500 mb-1 font-medium">Place ID</div>
-              <div className="text-gray-300 font-mono text-xs bg-black/50 p-2 rounded">{business.place_id || business.id}</div>
+              <div className="text-gray-700 dark:text-gray-300 font-mono text-xs bg-gray-50 dark:bg-black/50 p-2 rounded">{business.place_id || business.id}</div>
             </div>
           </div>
         </div>
 
         {/* Contact Details */}
-        <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-6 shadow-lg">
-          <h3 className="text-white font-semibold mb-5 flex items-center gap-2">
-            <Mail className="w-5 h-5 text-gray-400" />
+        <div className="bg-[#1a1a1a] border border-gray-200 dark:border-gray-800 rounded-xl p-6 shadow-lg">
+          <h3 className="text-gray-900 dark:text-white font-semibold mb-5 flex items-center gap-2">
+            <Mail className="w-5 h-5 text-gray-600 dark:text-gray-400" />
             Contact Details
           </h3>
           <div className="space-y-4">
-            <div className="flex items-center gap-3 p-3 bg-black/30 rounded-lg border border-gray-800/50">
-              <Phone className="w-5 h-5 text-gray-400" />
+            <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-black/30 rounded-lg border border-gray-200 dark:border-gray-800/50">
+              <Phone className="w-5 h-5 text-gray-600 dark:text-gray-400" />
               <div>
                 <div className="text-sm text-gray-500 font-medium">Phone</div>
-                <div className="text-gray-300">{business.phone_number || 'No phone provided'}</div>
+                <div className="text-gray-700 dark:text-gray-300">{business.phone_number || 'No phone provided'}</div>
               </div>
             </div>
-            <div className="flex items-center gap-3 p-3 bg-black/30 rounded-lg border border-gray-800/50">
-              <Mail className="w-5 h-5 text-gray-400" />
+            <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-black/30 rounded-lg border border-gray-200 dark:border-gray-800/50">
+              <Mail className="w-5 h-5 text-gray-600 dark:text-gray-400" />
               <div>
                 <div className="text-sm text-gray-500 font-medium">Email</div>
                 {business.email_found ? (
@@ -170,8 +170,8 @@ export function BusinessDetailsView({ businessId, results, onBack }: BusinessDet
                 )}
               </div>
             </div>
-            <div className="flex items-center gap-3 p-3 bg-black/30 rounded-lg border border-gray-800/50">
-              <Globe className="w-5 h-5 text-gray-400" />
+            <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-black/30 rounded-lg border border-gray-200 dark:border-gray-800/50">
+              <Globe className="w-5 h-5 text-gray-600 dark:text-gray-400" />
               <div>
                 <div className="text-sm text-gray-500 font-medium">Website</div>
                 {business.website ? (
@@ -187,9 +187,9 @@ export function BusinessDetailsView({ businessId, results, onBack }: BusinessDet
         </div>
 
         {/* AI Relevancy Analysis */}
-        <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-6 shadow-lg">
-          <h3 className="text-white font-semibold mb-5 flex items-center gap-2">
-            <Server className="w-5 h-5 text-gray-400" />
+        <div className="bg-[#1a1a1a] border border-gray-200 dark:border-gray-800 rounded-xl p-6 shadow-lg">
+          <h3 className="text-gray-900 dark:text-white font-semibold mb-5 flex items-center gap-2">
+            <Server className="w-5 h-5 text-gray-600 dark:text-gray-400" />
             AI Relevancy Analysis
           </h3>
           <div className="space-y-4">
@@ -199,18 +199,18 @@ export function BusinessDetailsView({ businessId, results, onBack }: BusinessDet
                   <div className="text-sm text-gray-500 mb-2 font-medium">Relevance Score</div>
                   <div className="flex items-center gap-3">
                     <Progress value={business.relevance_score} className="flex-1" />
-                    <span className="text-gray-300 font-bold">{business.relevance_score}/100</span>
+                    <span className="text-gray-700 dark:text-gray-300 font-bold">{business.relevance_score}/100</span>
                   </div>
                 </div>
                 <div>
                   <div className="text-sm text-gray-500 mb-2 font-medium">AI Reasoning</div>
-                  <div className="bg-black/30 p-4 rounded-lg text-sm text-gray-300 leading-relaxed max-h-48 overflow-y-auto border border-gray-800/50 whitespace-pre-wrap">
+                  <div className="bg-gray-50 dark:bg-black/30 p-4 rounded-lg text-sm text-gray-700 dark:text-gray-300 leading-relaxed max-h-48 overflow-y-auto border border-gray-200 dark:border-gray-800/50 whitespace-pre-wrap">
                     {business.relevance_reason}
                   </div>
                 </div>
               </>
             ) : (
-              <div className="text-gray-500 italic p-4 bg-black/20 rounded-lg text-center">
+              <div className="text-gray-500 italic p-4 bg-gray-50 dark:bg-black/20 rounded-lg text-center">
                 Relevancy AI has not processed this lead yet.
               </div>
             )}
@@ -218,9 +218,9 @@ export function BusinessDetailsView({ businessId, results, onBack }: BusinessDet
         </div>
 
         {/* AI Verification Results */}
-        <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-6 shadow-lg">
-          <h3 className="text-white font-semibold mb-5 flex items-center gap-2">
-            <Shield className="w-5 h-5 text-gray-400" />
+        <div className="bg-[#1a1a1a] border border-gray-200 dark:border-gray-800 rounded-xl p-6 shadow-lg">
+          <h3 className="text-gray-900 dark:text-white font-semibold mb-5 flex items-center gap-2">
+            <Shield className="w-5 h-5 text-gray-600 dark:text-gray-400" />
             AI Verification Results
           </h3>
           <div className="space-y-4">
@@ -229,11 +229,11 @@ export function BusinessDetailsView({ businessId, results, onBack }: BusinessDet
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <div className="text-sm text-gray-500 mb-1 font-medium">Domain Age</div>
-                    <div className="text-gray-300">{rawData.domain_age ? `${rawData.domain_age} years` : 'Unknown'}</div>
+                    <div className="text-gray-700 dark:text-gray-300">{rawData.domain_age ? `${rawData.domain_age} years` : 'Unknown'}</div>
                   </div>
                   <div>
                     <div className="text-sm text-gray-500 mb-1 font-medium">Site Status</div>
-                    <div className="text-gray-300 capitalize">{rawData.website_status || 'Unknown'}</div>
+                    <div className="text-gray-700 dark:text-gray-300 capitalize">{rawData.website_status || 'Unknown'}</div>
                   </div>
                 </div>
                 <div>
@@ -244,13 +244,13 @@ export function BusinessDetailsView({ businessId, results, onBack }: BusinessDet
                 </div>
                 <div>
                   <div className="text-sm text-gray-500 mb-2 font-medium">AI Reasoning</div>
-                  <div className="bg-black/30 p-4 rounded-lg text-sm text-gray-300 leading-relaxed max-h-32 overflow-y-auto border border-gray-800/50 whitespace-pre-wrap">
+                  <div className="bg-gray-50 dark:bg-black/30 p-4 rounded-lg text-sm text-gray-700 dark:text-gray-300 leading-relaxed max-h-32 overflow-y-auto border border-gray-200 dark:border-gray-800/50 whitespace-pre-wrap">
                     {business.verification_reason || 'No detailed reasoning provided.'}
                   </div>
                 </div>
               </>
             ) : (
-              <div className="text-gray-500 italic p-4 bg-black/20 rounded-lg text-center">
+              <div className="text-gray-500 italic p-4 bg-gray-50 dark:bg-black/20 rounded-lg text-center">
                 Verification AI has not processed this lead yet.
               </div>
             )}

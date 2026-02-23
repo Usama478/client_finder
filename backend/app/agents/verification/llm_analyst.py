@@ -28,6 +28,8 @@ def run_llm_analyst(state: VerificationAgentState) -> dict:
     {site_text_sample}
     """
 
+    custom_prompt = state.get("custom_prompt")
+
     # 2. Initialize LLM
     llm = ChatOpenAI(
         model="gpt-4o",
@@ -36,7 +38,7 @@ def run_llm_analyst(state: VerificationAgentState) -> dict:
     )
 
     # 3. Construct Prompt
-    prompt = f"""
+    base_instructions = f"""
     You are a Trust & Safety Auditor for a B2B Vetting Pipeline.
     Your job is to determine if this business is a LEGITIMATE, OPERATING B2B COMPANY based on the evidence provided.
 
@@ -48,6 +50,13 @@ def run_llm_analyst(state: VerificationAgentState) -> dict:
     - Does the text sound like a real business? (Professional language, clear services, valid physical presence mentioned?)
     - Do the signals (socials, emails, domain age) back this up?
     - Catch implied risks: generic "Lorem Ipsum" text, gambling keywords, parked domain templates, or suspicious incoherence.
+    """
+
+    if custom_prompt:
+        base_instructions += f"\n\nCRITICAL CONTEXT CRITERIA TO ENFORCE:\n{custom_prompt}\n"
+
+    prompt = f"""
+    {base_instructions}
 
     EVIDENCE:
     {evidence_block}

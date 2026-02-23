@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 from app.models.search_result import SearchResult
+from app.models.search_session import SearchSession
 from app.agents.verification.graph import build_verification_graph
 from app.agents.verification.state import VerificationAgentState
 
@@ -12,6 +13,10 @@ def run_verification_agent(db: Session, business_id: int):
         print("❌ Lead not found.")
         return
 
+    # Fetch Context from Search Session
+    session = db.query(SearchSession).filter(SearchSession.search_id == lead.search_id).first()
+    custom_prompt = session.context.prompt_text if session and session.context else None
+
     # Initialize State
     state: VerificationAgentState = {
         "business_id": lead.result_id,
@@ -20,6 +25,8 @@ def run_verification_agent(db: Session, business_id: int):
         "website": lead.website,
         "address": lead.address,
         "scraped_text_content": lead.scraped_text_content, 
+        
+        "custom_prompt": custom_prompt,
         
         # Init None for Evidence
         "website_alive": None,

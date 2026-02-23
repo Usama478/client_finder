@@ -17,10 +17,15 @@ class VerificationAgentState(TypedDict):
 
     # --- Gatekeeper Output ---
     website_alive: Optional[bool]
-    domain_age_years: Optional[int]
+    domain_age_years: Optional[float]
 
     # --- Trust Scanner Output ---
     full_site_text: Optional[str]
+    
+    # Custom AI Context
+    custom_prompt: Optional[str]
+
+    # Email & Contact Info
     social_links: Optional[List[str]]
     legitimacy_signals: Optional[Dict[str, Any]]
     

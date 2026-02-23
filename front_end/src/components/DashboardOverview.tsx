@@ -1,39 +1,43 @@
-import { TrendingUp, Shield, AlertTriangle, Search, Target } from 'lucide-react';
+import { TrendingUp, Shield, AlertTriangle, Search } from 'lucide-react';
 import { PieChart, Pie, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Badge } from './ui/badge';
+import { useState, useEffect } from 'react';
+import { fetchDashboardStats } from '../services/api';
 
 interface DashboardProps {
-  totalLeads: number;
   history: any[];
   onSelectHistory: (searchId: string) => Promise<void>;
-  results: any[];
 }
 
-export function DashboardOverview({ totalLeads, history, onSelectHistory, results }: DashboardProps) {
-  // Calculate statistics
-  const verifiedCount = results.filter(b => b.is_verified || (b.verification_score && b.verification_score > 70)).length;
-  const partiallyVerifiedCount = results.filter(b => !b.is_verified && b.verification_score && b.verification_score > 40 && b.verification_score <= 70).length;
-  const notVerifiedCount = totalLeads - verifiedCount - partiallyVerifiedCount;
+export function DashboardOverview({ history, onSelectHistory }: DashboardProps) {
+  const [statsData, setStatsData] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const lowRiskCount = results.filter(b => (b.verification_score && b.verification_score > 70) || (b.relevance_score && b.relevance_score > 70)).length;
-  const highRiskCount = results.filter(b => (b.verification_score && b.verification_score <= 40) || (b.relevance_score && b.relevance_score <= 40)).length;
-  const mediumRiskCount = totalLeads - lowRiskCount - highRiskCount;
+  useEffect(() => {
+    const loadStats = async () => {
+      try {
+        setIsLoading(true);
+        const data = await fetchDashboardStats();
+        setStatsData(data);
+      } catch (error) {
+        console.error("Failed to load dashboard stats:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadStats();
+  }, []);
+  const verifiedCount = statsData?.verified_clients || 0;
+  const notVerifiedCount = statsData?.unverified_clients || 0;
+  const totalLeads = statsData?.total_clients || 0;
+  const globalTotalSearches = statsData?.total_searches || 0;
 
-  const riskDistribution = [
-    { name: 'Low Risk', value: lowRiskCount, color: '#22c55e' },
-    { name: 'Medium Risk', value: mediumRiskCount, color: '#eab308' },
-    { name: 'High Risk', value: highRiskCount, color: '#ef4444' }
-  ];
-
-  const verificationData = [
-    { name: 'Verified', value: verifiedCount, color: '#22c55e' },
-    { name: 'Partially Verified', value: partiallyVerifiedCount, color: '#eab308' },
-    { name: 'Not Verified', value: notVerifiedCount, color: '#ef4444' }
-  ];
+  const riskDistribution = statsData?.risk_distribution || [];
+  const verificationData = statsData?.verification_data || [];
 
   const stats = [
     {
-      label: 'New Clients Found',
+      label: 'Global Saved Clients',
       value: totalLeads.toString(),
       change: '+100%',
       icon: TrendingUp,
@@ -54,25 +58,28 @@ export function DashboardOverview({ totalLeads, history, onSelectHistory, result
       trend: 'neutral'
     },
     {
-      label: 'Total Searches',
-      value: history.length.toString(),
+      label: 'Total Global Searches',
+      value: globalTotalSearches.toString(),
       change: '+1',
       icon: Search,
       trend: 'up'
     }
   ];
 
-  const leadStats = [
-    { label: 'Total Leads Found', value: totalLeads.toString(), color: 'text-blue-400' },
-    { label: 'Leads in Progress', value: partiallyVerifiedCount.toString(), color: 'text-yellow-400' },
-    { label: 'Verified & Converted', value: verifiedCount.toString(), color: 'text-green-400' }
-  ];
+  if (isLoading) {
+    return (
+      <div className="p-8 max-w-7xl mx-auto flex justify-center items-center min-h-[50vh]">
+        <div className="text-gray-500 animate-pulse">Loading global dashboard metrics...</div>
+      </div>
+    );
+  }
+
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
       <div className="mb-8">
-        <h1 className="text-white mb-2 text-2xl font-bold">Dashboard Overview</h1>
-        <p className="text-gray-400">Monitor your business verification and client discovery metrics</p>
+        <h1 className="text-gray-900 dark:text-white mb-2 text-2xl font-bold">Dashboard Overview</h1>
+        <p className="text-gray-600 dark:text-gray-400">Monitor your business verification and client discovery metrics</p>
       </div>
 
       {/* Top Stats */}
@@ -80,10 +87,10 @@ export function DashboardOverview({ totalLeads, history, onSelectHistory, result
         {stats.map((stat, idx) => {
           const Icon = stat.icon;
           return (
-            <div key={idx} className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-6 shadow-lg">
+            <div key={idx} className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl p-6 shadow-sm">
               <div className="flex items-start justify-between mb-4">
-                <div className="w-12 h-12 bg-gray-800 rounded-lg flex items-center justify-center">
-                  <Icon className="w-6 h-6 text-gray-400" />
+                <div className="w-12 h-12 bg-gray-100 dark:bg-zinc-800 rounded-lg flex items-center justify-center">
+                  <Icon className="w-6 h-6 text-gray-500 dark:text-zinc-400" />
                 </div>
                 {stat.trend === 'up' && (
                   <Badge className="bg-green-500/10 text-green-400 border-green-500/20 border text-xs">
@@ -91,8 +98,8 @@ export function DashboardOverview({ totalLeads, history, onSelectHistory, result
                   </Badge>
                 )}
               </div>
-              <div className="text-sm text-gray-400 mb-1">{stat.label}</div>
-              <div className="text-white text-2xl font-semibold">{stat.value}</div>
+              <div className="text-sm text-gray-500 dark:text-zinc-400 mb-1">{stat.label}</div>
+              <div className="text-3xl font-bold text-gray-900 dark:text-white">{stat.value}</div>
             </div>
           );
         })}
@@ -102,8 +109,8 @@ export function DashboardOverview({ totalLeads, history, onSelectHistory, result
       {totalLeads > 0 && (
         <div className="grid grid-cols-2 gap-6 mb-8">
           {/* Risk Distribution */}
-          <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-6 shadow-lg">
-            <h3 className="text-white mb-4">Risk Distribution</h3>
+          <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl p-6 shadow-sm">
+            <h3 className="text-gray-900 dark:text-white mb-4">Risk Distribution</h3>
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
@@ -116,7 +123,7 @@ export function DashboardOverview({ totalLeads, history, onSelectHistory, result
                   fill="#8884d8"
                   dataKey="value"
                 >
-                  {riskDistribution.map((entry, index) => (
+                  {riskDistribution.map((entry: any, index: number) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
@@ -131,18 +138,18 @@ export function DashboardOverview({ totalLeads, history, onSelectHistory, result
               </PieChart>
             </ResponsiveContainer>
             <div className="flex items-center justify-center gap-4 mt-4">
-              {riskDistribution.map((item, idx) => (
+              {riskDistribution.map((item: any, idx: number) => (
                 <div key={idx} className="flex items-center gap-2">
                   <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }} />
-                  <span className="text-sm text-gray-400">{item.name}</span>
+                  <span className="text-sm text-gray-600 dark:text-gray-400">{item.name}</span>
                 </div>
               ))}
             </div>
           </div>
 
           {/* Verification Status */}
-          <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-6 shadow-lg">
-            <h3 className="text-white mb-4">Verification Status</h3>
+          <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl p-6 shadow-sm">
+            <h3 className="text-gray-900 dark:text-white mb-4">Verification Status</h3>
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={verificationData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#333" />
@@ -157,7 +164,7 @@ export function DashboardOverview({ totalLeads, history, onSelectHistory, result
                   }}
                 />
                 <Bar dataKey="value" fill="#8884d8" radius={[8, 8, 0, 0]}>
-                  {verificationData.map((entry, index) => (
+                  {verificationData.map((entry: any, index: number) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Bar>
@@ -168,10 +175,10 @@ export function DashboardOverview({ totalLeads, history, onSelectHistory, result
       )}
 
       {/* Activity Section */}
-      <div className="grid grid-cols-2 gap-6 mb-8">
+      <div className="mb-8">
         {/* Recent Searches */}
-        <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-6 shadow-lg overflow-y-auto max-h-[400px]">
-          <h3 className="text-white mb-4">Recent Searches</h3>
+        <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl p-6 shadow-sm overflow-y-auto max-h-[400px]">
+          <h3 className="text-gray-900 dark:text-white mb-4">Recent Searches</h3>
           {history.length === 0 ? (
             <div className="text-gray-500 text-sm">No recent searches found.</div>
           ) : (
@@ -179,15 +186,15 @@ export function DashboardOverview({ totalLeads, history, onSelectHistory, result
               {history.map((search: any) => (
                 <div
                   key={search.id || search.search_id}
-                  className="flex items-center justify-between p-3 bg-black/30 rounded-lg cursor-pointer hover:bg-gray-800 transition-colors"
+                  className="flex items-center justify-between p-3 bg-gray-50 dark:bg-black/30 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-100 dark:bg-gray-800 transition-colors"
                   onClick={() => onSelectHistory((search.search_id || search.id).toString())}
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-gray-800 rounded-lg flex items-center justify-center">
-                      <Search className="w-4 h-4 text-gray-400" />
+                    <div className="w-8 h-8 bg-gray-100 dark:bg-gray-800 rounded-lg flex items-center justify-center">
+                      <Search className="w-4 h-4 text-gray-600 dark:text-gray-400" />
                     </div>
                     <div>
-                      <div className="text-gray-300 text-sm truncate max-w-[200px]">{search.query || search.search_query || 'Unknown Search'}</div>
+                      <div className="text-gray-700 dark:text-gray-300 text-sm truncate max-w-[200px]">{search.query || search.search_query || 'Unknown Search'}</div>
                       <div className="text-xs text-gray-500">{search.total_results || 0} results</div>
                     </div>
                   </div>
@@ -198,22 +205,6 @@ export function DashboardOverview({ totalLeads, history, onSelectHistory, result
               ))}
             </div>
           )}
-        </div>
-
-        {/* Lead Tracking Snapshot */}
-        <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-6 shadow-lg h-fit">
-          <h3 className="text-white mb-4 flex items-center gap-2">
-            <Target className="w-5 h-5 text-gray-400" />
-            Lead Tracking Snapshot
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {leadStats.map((stat, idx) => (
-              <div key={idx} className="p-4 bg-black/30 rounded-lg text-center md:text-left">
-                <div className="text-sm text-gray-400 mb-2">{stat.label}</div>
-                <div className={`text-3xl font-bold ${stat.color}`}>{stat.value}</div>
-              </div>
-            ))}
-          </div>
         </div>
       </div>
     </div>

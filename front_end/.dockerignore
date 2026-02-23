@@ -1,0 +1,10 @@
+node_modules
+dist
+dist-ssr
+.git
+.env
+npm-debug.log
+Dockerfile
+.dockerignore
+*.png
+*.jpg

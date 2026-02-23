@@ -181,10 +181,10 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({ results, isLoading, 
                             </div>
 
                             {expandedId === cardId && result.relevance_reason && (
-                                <div className="p-6 bg-slate-900 text-white rounded-b-xl flex flex-col gap-6 mt-auto">
+                                <div className="p-6 bg-slate-900 text-gray-900 dark:text-white rounded-b-xl flex flex-col gap-6 mt-auto">
                                     <div className="flex items-center justify-between border-b border-slate-800 pb-4">
                                         <div>
-                                            <h4 className="text-lg font-bold text-white flex items-center gap-2">
+                                            <h4 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
                                                 <Building2 className="w-5 h-5 text-primary-400" />
                                                 {result.business_name || 'Unknown Business'}
                                             </h4>

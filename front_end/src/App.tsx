@@ -6,14 +6,24 @@ import { RelevancyFilter } from './components/RelevancyFilter';
 import { BusinessValidation } from './components/BusinessValidation';
 import { Clients } from './components/Clients';
 import { BusinessDetails } from './components/BusinessDetails';
-import { fetchHistory, startSearch, fetchResults, startRelevancyAgent, startVerificationAgent, toggleClientStatus, fetchSavedClients } from './services/api';
+import { Settings } from './components/Settings';
+import { fetchHistory, startSearch, fetchResults, startRelevancyAgent, startVerificationAgent, toggleClientStatus, fetchSavedClients, fetchContexts, createContext } from './services/api';
 
 function App() {
   const [query, setQuery] = useState('');
   const [history, setHistory] = useState([]);
   const [results, setResults] = useState<any[]>([]);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
+  const [currentSearchId, setCurrentSearchId] = useState<string | null>(null);
+  const [contexts, setContexts] = useState<any[]>([]);
+  const [selectedContextId, setSelectedContextId] = useState<string | null>(null);
+  const [isDarkMode, setIsDarkMode] = useState(true);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', isDarkMode);
+  }, [isDarkMode]);
 
   type ViewType = 'dashboard' | 'clients' | 'search' | 'relevancy' | 'validation' | 'business-details' | 'email' | 'settings';
   const [currentView, setCurrentView] = useState<ViewType>('dashboard');
@@ -84,7 +94,20 @@ function App() {
   useEffect(() => {
     loadHistory();
     loadSavedClients();
+    loadContexts();
   }, []);
+
+  const loadContexts = async () => {
+    try {
+      const data = await fetchContexts();
+      setContexts(data || []);
+      if (data && data.length > 0) {
+        setSelectedContextId(data[0].id.toString());
+      }
+    } catch (err) {
+      console.error('Failed to load contexts:', err);
+    }
+  };
 
   const loadSavedClients = async () => {
     try {
@@ -118,10 +141,11 @@ function App() {
 
     setIsSearching(true);
     setCurrentView('search');
+    setSearchError(null);
 
     try {
       // 1. Trigger search
-      const searchRes = await startSearch(query);
+      const searchRes = await startSearch(query, undefined, selectedContextId);
 
       // 2. Refresh history immediately to show new search
       await loadHistory();
@@ -138,6 +162,7 @@ function App() {
       // 4. Fetch results for this exact search ID
       const resultsRes = await fetchResults(searchRes.search_id);
       console.log("Leads received from backend:", resultsRes);
+      setCurrentSearchId(searchRes.search_id.toString());
       setResults(prev => {
         const newRes = Array.isArray(resultsRes) ? resultsRes : resultsRes.results || [];
         const map = new Map(prev.filter(r => r.is_saved_client).map(r => [r.place_id, r])); // keep saved clients
@@ -160,6 +185,7 @@ function App() {
       }
 
       console.error(errorMessage);
+      setSearchError(errorMessage);
     } finally {
       setIsSearching(false);
     }
@@ -168,6 +194,8 @@ function App() {
   const handleSelectHistory = async (searchId: string) => {
     setIsSearching(true);
     setCurrentView('search');
+    setCurrentSearchId(searchId.toString());
+    setSearchError(null);
     try {
       const data = await fetchResults(searchId);
       console.log("Leads received from backend:", data);
@@ -185,7 +213,9 @@ function App() {
       const session = Array.isArray(history) ? history.find((h: any) => h.search_id?.toString() === searchId || h.id?.toString() === searchId) : null;
       setNextPageToken((session as any)?.next_page_token || null);
     } catch (err: any) {
-      console.error(err.response?.data?.detail || 'Failed to load historical results.');
+      const errorMsg = err.response?.data?.detail || 'Failed to load historical results.';
+      console.error(errorMsg);
+      setSearchError(errorMsg);
     } finally {
       setIsSearching(false);
     }
@@ -195,7 +225,7 @@ function App() {
     if (!nextPageToken) return;
     setIsSearching(true);
     try {
-      const searchRes = await startSearch(query, nextPageToken);
+      const searchRes = await startSearch(query, nextPageToken, selectedContextId);
       await new Promise(resolve => setTimeout(resolve, 2000));
       const resultsRes = await fetchResults(searchRes.search_id);
 
@@ -251,8 +281,6 @@ function App() {
     }
   };
 
-  // Calculate stats for Dashboard
-  const totalLeads = results.length;
 
   const handleBusinessSelect = (businessId: string) => {
     setPreviousView(currentView);
@@ -308,10 +336,8 @@ function App() {
       case 'dashboard':
         return (
           <DashboardOverview
-            totalLeads={totalLeads}
             history={history}
             onSelectHistory={handleSelectHistory}
-            results={results}
           />
         );
       case 'search':
@@ -320,7 +346,8 @@ function App() {
             query={query}
             setQuery={setQuery}
             handleSearch={handleSearch}
-            results={results}
+            results={currentSearchId ? results.filter(r => r.search_id?.toString() === currentSearchId) : []}
+            searchError={searchError}
             isSearching={isSearching}
             selectedIds={selectedIds}
             setSelectedIds={setSelectedIds}
@@ -331,6 +358,14 @@ function App() {
             history={history}
             onSelectHistory={handleSelectHistory}
             onAddToClients={handleAddToClients}
+            contexts={contexts}
+            selectedContextId={selectedContextId}
+            setSelectedContextId={setSelectedContextId}
+            createContext={async (name: string, prompt_text: string) => {
+              const newContext = await createContext(name, prompt_text);
+              setContexts([...contexts, newContext]);
+              setSelectedContextId(newContext.id.toString());
+            }}
           />
         );
       case 'relevancy':
@@ -385,22 +420,29 @@ function App() {
             onBack={() => setCurrentView(previousView)}
           />
         );
+      case 'settings':
+        // We will create the Settings component next, for now render a placeholder
+        // that receives isDarkMode and setIsDarkMode
+        return (
+          <Settings
+            isDarkMode={isDarkMode}
+            setIsDarkMode={setIsDarkMode}
+          />
+        );
       default:
         return (
           <DashboardOverview
-            totalLeads={totalLeads}
             history={history}
             onSelectHistory={handleSelectHistory}
-            results={results}
           />
         );
     }
   };
 
   return (
-    <div className="flex h-screen bg-black">
+    <div className={`flex h-screen bg-gray-50 dark:bg-black transition-colors duration-200`}>
       <Sidebar currentPage={currentView} onNavigate={setCurrentView as any} />
-      <main className="flex-1 overflow-auto bg-black">
+      <main className="flex-1 overflow-auto bg-gray-50 dark:bg-black transition-colors duration-200">
         {renderContent()}
       </main>
     </div>

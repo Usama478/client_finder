@@ -40,7 +40,7 @@ def get_place_details(place_id: str):
     
     return {"website": None, "phone": None, "url": None}
 
-def search_google_maps(db: Session, user_id: int, query: str, page_token: str = None):
+def search_google_maps(db: Session, user_id: int, query: str, page_token: str = None, context_id: int = None):
     """
     1. Search Text API (Get List)
     2. For EACH result -> Call Details API (Get Website/Phone)
@@ -62,7 +62,8 @@ def search_google_maps(db: Session, user_id: int, query: str, page_token: str = 
         user_id=user_id,
         search_query=query,
         created_at=datetime.utcnow(),
-        next_page_token=page_token
+        next_page_token=page_token,
+        context_id=context_id
     )
     
     try:

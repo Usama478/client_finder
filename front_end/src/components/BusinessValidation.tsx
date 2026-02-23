@@ -48,21 +48,21 @@ export function BusinessValidation({ results, processingIds, onAddToClients, onB
   };
 
   return (
-    <div className="p-8 bg-black min-h-screen">
+    <div className="p-8 bg-gray-50 dark:bg-black min-h-screen">
       <div className="mb-8">
-        <Button onClick={onBack} variant="ghost" className="mb-4 text-zinc-400 hover:text-white pl-0 hover:bg-transparent">
+        <Button onClick={onBack} variant="ghost" className="mb-4 text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:text-white pl-0 hover:bg-transparent">
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back to Search
         </Button>
-        <h1 className="text-white text-3xl mb-2">Business Validation</h1>
-        <p className="text-zinc-400">Comprehensive AI validation checks for each business</p>
+        <h1 className="text-gray-900 dark:text-white text-3xl mb-2">Business Validation</h1>
+        <p className="text-gray-500 dark:text-zinc-400">Comprehensive AI validation checks for each business</p>
       </div>
 
       {/* Top Action Bar */}
       {validatingBusinesses.length > 0 && (
-        <div className="flex flex-col sm:flex-row justify-between items-center mb-6 bg-zinc-900/80 p-4 rounded-lg border border-zinc-800">
+        <div className="flex flex-col sm:flex-row justify-between items-center mb-6 bg-white dark:bg-zinc-900/80 p-4 rounded-lg border border-gray-200 dark:border-zinc-800">
           <div className="flex items-center gap-4 mb-4 sm:mb-0">
-            <span className="text-sm font-semibold text-gray-400">
+            <span className="text-sm font-semibold text-gray-600 dark:text-gray-400">
               Selected: {selectedIds.size} / {validatingBusinesses.length}
             </span>
             <button
@@ -78,7 +78,7 @@ export function BusinessValidation({ results, processingIds, onAddToClients, onB
               size="sm"
               onClick={handleAddSubmit}
               disabled={selectedIds.size === 0}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white whitespace-nowrap"
+              className="bg-emerald-600 hover:bg-emerald-700 text-gray-900 dark:text-white whitespace-nowrap"
             >
               💾 Add Selected to Clients
             </Button>
@@ -95,7 +95,7 @@ export function BusinessValidation({ results, processingIds, onAddToClients, onB
           return (
             <Card
               key={business.cardId}
-              className={`bg-zinc-900 border-zinc-800 hover:bg-zinc-800/50 transition-all relative ${isSelected ? 'border-blue-500' : ''}`}
+              className={`bg-white dark:bg-zinc-900 border-gray-200 dark:border-zinc-800 hover:bg-gray-100 dark:bg-zinc-800/50 transition-all relative ${isSelected ? 'border-blue-500' : ''}`}
             >
               {/* Card Selection */}
               <div
@@ -105,18 +105,18 @@ export function BusinessValidation({ results, processingIds, onAddToClients, onB
                 {isSelected ? (
                   <CheckSquare className="w-5 h-5 text-blue-500" />
                 ) : (
-                  <Square className="w-5 h-5 text-zinc-500 hover:text-zinc-400" />
+                  <Square className="w-5 h-5 text-zinc-500 hover:text-gray-500 dark:text-zinc-400" />
                 )}
               </div>
 
               <CardContent className="p-6 pl-16">
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-4">
                   <div className="flex items-start gap-4 flex-1 min-w-0">
-                    <div className="w-12 h-12 bg-zinc-800 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <div className="w-12 h-12 bg-gray-100 dark:bg-zinc-800 rounded-lg flex items-center justify-center flex-shrink-0">
                       <span className="text-zinc-500 font-bold text-xl">{business.business_name?.[0]?.toUpperCase()}</span>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h3 className="text-white mb-1 flex items-center gap-2 min-w-0">
+                      <h3 className="text-gray-900 dark:text-white mb-1 flex items-center gap-2 min-w-0">
                         <span className="truncate" title={business.business_name || 'Unknown Business'}>
                           {business.business_name || 'Unknown Business'}
                         </span>
@@ -126,15 +126,15 @@ export function BusinessValidation({ results, processingIds, onAddToClients, onB
                           <ShieldAlert className="w-4 h-4 text-zinc-500 flex-shrink-0" />
                         )}
                       </h3>
-                      <p className="text-zinc-400 capitalize text-sm truncate">{category}</p>
+                      <p className="text-gray-500 dark:text-zinc-400 capitalize text-sm truncate">{category}</p>
                     </div>
                   </div>
                 </div>
 
                 <div className="space-y-2 mb-4">
                   <div className="flex items-start gap-2">
-                    <MapPin className="w-4 h-4 mt-0.5 flex-shrink-0 text-zinc-400" />
-                    <span className="text-sm text-zinc-400 truncate">
+                    <MapPin className="w-4 h-4 mt-0.5 flex-shrink-0 text-gray-500 dark:text-zinc-400" />
+                    <span className="text-sm text-gray-500 dark:text-zinc-400 truncate">
                       {business.address || 'Address not found'}
                     </span>
                   </div>
@@ -148,7 +148,7 @@ export function BusinessValidation({ results, processingIds, onAddToClients, onB
                         Verified
                       </Badge>
                     ) : (
-                      <Badge variant="secondary" className="bg-zinc-800 text-zinc-500 border-zinc-700">
+                      <Badge variant="secondary" className="bg-gray-100 dark:bg-zinc-800 text-zinc-500 border-gray-300 dark:border-zinc-700">
                         <XCircle className="w-3 h-3 mr-1 inline" />
                         Unverified
                       </Badge>
@@ -167,7 +167,7 @@ export function BusinessValidation({ results, processingIds, onAddToClients, onB
                   </div>
                 </div>
 
-                <div className="mt-4 pt-4 border-t border-zinc-800 flex justify-end">
+                <div className="mt-4 pt-4 border-t border-gray-200 dark:border-zinc-800 flex justify-end">
                   <Button
                     variant="link"
                     className="text-blue-400 hover:text-blue-300 px-0 h-auto font-medium"

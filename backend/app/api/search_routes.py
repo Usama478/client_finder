@@ -7,6 +7,7 @@ from app.services.google_maps_service import search_google_maps
 from app.models.user import User
 from app.models.search_session import SearchSession
 from app.models.search_result import SearchResult
+from app.models.search_context import SearchContext
 
 router = APIRouter(prefix="/api/v1", tags=["search"])
 
@@ -14,6 +15,7 @@ class SearchRequest(BaseModel):
     user_id: int
     query: str
     page_token: Optional[str] = None
+    context_id: Optional[int] = None
 
 class ClientStatusUpdate(BaseModel):
     is_saved_client: bool
@@ -45,7 +47,8 @@ def search_endpoint(request: SearchRequest, db: Session = Depends(get_db)):
             db=db,
             user_id=request.user_id,
             query=request.query,
-            page_token=request.page_token
+            page_token=request.page_token,
+            context_id=request.context_id
         )
         if "error" in result:
             raise HTTPException(status_code=400, detail=result["error"])
@@ -89,7 +92,17 @@ def get_search_results(
             query = query.filter(SearchResult.relevance_score >= min_relevancy)
             
         results = query.all()
+
+        # Join the SearchContext from SearchSession to return it in the payload
+        session = db.query(SearchSession).filter(SearchSession.search_id == search_id).first()
+        context_name = session.context.name if session and session.context else None
+        context_prompt = session.context.prompt_text if session and session.context else None
         
+        # Attach context to each result transiently for frontend
+        for result_item in results:
+            result_item.context_name = context_name
+            result_item.context_prompt = context_prompt
+            
         # If no results found (e.g., all were deduplicated), return empty array instead of 404
         return results
     except Exception as e:

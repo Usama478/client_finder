@@ -66,8 +66,8 @@ export function SearchPage({
   return (
     <div className="p-8 max-w-7xl mx-auto">
       <div className="mb-8">
-        <h1 className="text-white text-2xl font-bold mb-2">Search Businesses & Clients</h1>
-        <p className="text-gray-400">Find and verify business information across multiple data sources</p>
+        <h1 className="text-gray-900 dark:text-white text-2xl font-bold mb-2">Search Businesses & Clients</h1>
+        <p className="text-gray-600 dark:text-gray-400">Find and verify business information across multiple data sources</p>
       </div>
 
       {error && (
@@ -83,7 +83,7 @@ export function SearchPage({
       )}
 
       {/* Search Bar */}
-      <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-6 mb-6 shadow-lg">
+      <div className="bg-[#1a1a1a] border border-gray-200 dark:border-gray-800 rounded-xl p-6 mb-6 shadow-lg">
         <form onSubmit={handleSearch} className="flex gap-4 mb-4">
           <div className="flex-1 relative">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
@@ -92,11 +92,11 @@ export function SearchPage({
               placeholder="Search businesses (e.g. 'plumbers in Seattle')..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="w-full bg-black border border-gray-700 rounded-lg pl-12 pr-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-gray-600 transition-colors"
+              className="w-full bg-gray-50 dark:bg-black border border-gray-700 rounded-lg pl-12 pr-4 py-3 text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:border-gray-600 transition-colors"
               disabled={isSearching}
             />
           </div>
-          <Button type="submit" disabled={isSearching || !query.trim()} className="bg-gray-700 hover:bg-gray-600 text-white px-6">
+          <Button type="submit" disabled={isSearching || !query.trim()} className="bg-gray-700 hover:bg-gray-600 text-gray-900 dark:text-white px-6">
             {isSearching ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
             {isSearching ? 'Scanning...' : 'Search'}
           </Button>
@@ -106,13 +106,13 @@ export function SearchPage({
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <Filter className="w-4 h-4 text-gray-500" />
-            <span className="text-sm text-gray-400">Filters:</span>
+            <span className="text-sm text-gray-600 dark:text-gray-400">Filters:</span>
           </div>
 
           <select
             value={selectedVerification}
             onChange={(e) => setSelectedVerification(e.target.value)}
-            className="bg-black border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-300 focus:outline-none focus:border-gray-600"
+            className="bg-gray-50 dark:bg-black border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 focus:outline-none focus:border-gray-600"
           >
             {verificationStatuses.map(status => (
               <option key={status} value={status}>
@@ -125,7 +125,7 @@ export function SearchPage({
             <Button
               onClick={() => setSelectedVerification('all')}
               variant="ghost"
-              className="text-gray-400 hover:text-gray-200 text-sm h-8"
+              className="text-gray-600 dark:text-gray-400 hover:text-gray-200 text-sm h-8"
             >
               Clear Filters
             </Button>
@@ -134,9 +134,9 @@ export function SearchPage({
       </div>
 
       {results.length > 0 && (
-        <div className="flex items-center justify-between mb-4 bg-[#1a1a1a] p-4 rounded-xl border border-gray-800">
+        <div className="flex items-center justify-between mb-4 bg-[#1a1a1a] p-4 rounded-xl border border-gray-200 dark:border-gray-800">
           <div className="flex items-center gap-4">
-            <span className="text-sm font-semibold text-gray-400">
+            <span className="text-sm font-semibold text-gray-600 dark:text-gray-400">
               Selected: {selectedIds.size} / {results.length}
             </span>
             <button
@@ -157,14 +157,14 @@ export function SearchPage({
             <Button
               onClick={handleStartRelevancy}
               disabled={selectedIds.size === 0}
-              className="bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 flex items-center gap-2"
+              className="bg-blue-600 hover:bg-blue-700 text-gray-900 dark:text-white disabled:opacity-50 flex items-center gap-2"
             >
               🚀 Run Relevancy AI
             </Button>
             <Button
               onClick={handleStartVerification}
               disabled={selectedIds.size === 0}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50 flex items-center gap-2"
+              className="bg-emerald-600 hover:bg-emerald-700 text-gray-900 dark:text-white disabled:opacity-50 flex items-center gap-2"
             >
               🛡️ Run Verification AI
             </Button>
@@ -173,7 +173,7 @@ export function SearchPage({
       )}
 
       {/* Results */}
-      <div className="mb-4 text-gray-400">
+      <div className="mb-4 text-gray-600 dark:text-gray-400">
         Showing {filteredBusinesses.length} {filteredBusinesses.length === 1 ? 'result' : 'results'}
       </div>
 
@@ -187,7 +187,7 @@ export function SearchPage({
             <div
               key={cardId}
               onClick={() => onBusinessSelect(cardId)}
-              className={`bg-[#1a1a1a] border ${isSelected ? 'border-blue-500' : 'border-gray-800'} rounded-xl p-6 hover:border-gray-600 transition-all cursor-pointer group shadow-lg relative`}
+              className={`bg-[#1a1a1a] border ${isSelected ? 'border-blue-500' : 'border-gray-200 dark:border-gray-800'} rounded-xl p-6 hover:border-gray-600 transition-all cursor-pointer group shadow-lg relative`}
             >
               {/* Card Selection */}
               <div
@@ -203,7 +203,7 @@ export function SearchPage({
                 {isSelected ? (
                   <CheckSquare className="w-5 h-5 text-blue-500" />
                 ) : (
-                  <Square className="w-5 h-5 text-gray-500 group-hover:text-gray-400" />
+                  <Square className="w-5 h-5 text-gray-500 group-hover:text-gray-600 dark:text-gray-400" />
                 )}
               </div>
 
@@ -211,16 +211,16 @@ export function SearchPage({
                 <div className="flex-1">
                   <div className="flex items-start gap-4">
                     <div className="w-12 h-12 bg-gradient-to-br from-gray-700 to-gray-900 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <Building2 className="w-6 h-6 text-gray-400" />
+                      <Building2 className="w-6 h-6 text-gray-600 dark:text-gray-400" />
                     </div>
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between mb-2">
                         <div>
-                          <h3 className="text-white group-hover:text-gray-300 transition-colors mb-1 truncate text-lg font-semibold">
+                          <h3 className="text-gray-900 dark:text-white group-hover:text-gray-700 dark:text-gray-300 transition-colors mb-1 truncate text-lg font-semibold">
                             {business.business_name || 'Unknown Business'}
                           </h3>
-                          <div className="flex items-center gap-2 text-sm text-gray-400">
+                          <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                             <span className="capitalize">{business.types?.[0]?.replace(/_/g, ' ') || 'Local Business'}</span>
                             {business.relevance_score != null && (
                               <>
@@ -255,12 +255,12 @@ export function SearchPage({
                             />
                           ))}
                         </div>
-                        <span className="text-sm text-gray-400 ml-2">
+                        <span className="text-sm text-gray-600 dark:text-gray-400 ml-2">
                           {business.rating || 'No'} rating
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-2 text-sm text-gray-400">
+                      <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                         <MapPin className="w-4 h-4 flex-shrink-0" />
                         <span className="truncate">{business.address || 'Address not found'}</span>
                       </div>
@@ -279,7 +279,7 @@ export function SearchPage({
             onClick={handleLoadMore}
             disabled={isSearching}
             variant="outline"
-            className="border-gray-700 text-gray-300 hover:bg-gray-800 hover:text-white"
+            className="border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:bg-gray-800 hover:text-gray-900 dark:text-white"
           >
             {isSearching ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
             {isSearching ? 'Loading...' : 'Load More Results'}

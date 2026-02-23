@@ -23,8 +23,11 @@ def run_relevancy_agent(db: Session, business_id: int) -> None:
         # 2. Fetch Criteria (The Query)
         session = db.query(SearchSession).filter(SearchSession.search_id == lead.search_id).first()
         
-        # Access the attribute on the session object
-        exporter_criteria = session.search_query if session else "General Business"
+        # Access the context properly or fall back to simple query
+        if session and session.context:
+            exporter_criteria = session.context.prompt_text
+        else:
+            exporter_criteria = session.search_query if session else "General Business"
 
         # Prepare raw data for safe extraction
         raw = lead.raw_data if lead.raw_data else {}
