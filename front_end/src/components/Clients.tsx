@@ -1,9 +1,18 @@
 import { useState } from 'react';
-import { Search, CheckCircle, ShieldAlert, CheckSquare, Square, Trash2, Loader2 } from 'lucide-react';
+import { Search, CheckSquare, Square, Trash2, Loader2, Download } from 'lucide-react';
+import { exportClients } from '../services/api';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
 import { Badge } from './ui/badge';
+
+const getVerificationStatusText = (verificationScore?: number | null) => {
+  const score = verificationScore ?? 0;
+  if (score === 0) return "Unverified";
+  if (score > 50) return "Verified";
+  return "Partially Verified";
+};
+
 
 interface ClientsProps {
   results: any[];
@@ -18,6 +27,7 @@ interface ClientsProps {
 export function Clients({ results, processingIds, processingAction, onSelectBusiness, onRunRelevancy, onRunVerification, onRemoveFromClients }: ClientsProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isExporting, setIsExporting] = useState(false);
 
   const verifiedClients = results.filter(r => {
     return r.is_verified || r.is_saved_client;
@@ -69,6 +79,38 @@ export function Clients({ results, processingIds, processingAction, onSelectBusi
     if (selectedIds.size > 0) {
       onRemoveFromClients(Array.from(selectedIds));
       setSelectedIds(new Set());
+    }
+  };
+
+  const handleExport = async () => {
+    try {
+      setIsExporting(true);
+      const idsToExport = Array.from(selectedIds);
+      const blob = await exportClients(idsToExport);
+
+      // Create a blob URL and trigger download
+      const url = window.URL.createObjectURL(new Blob([blob]));
+      const link = document.createElement('a');
+      link.href = url;
+
+      const dateStr = new Date().toISOString().split('T')[0];
+      link.setAttribute('download', `Client_List_${dateStr}.xlsx`);
+
+      document.body.appendChild(link);
+      link.click();
+
+      // Cleanup
+      link.parentNode?.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Failed to export clients [DEBUG EXCEPTION]:', error);
+      if (error instanceof Error) {
+        console.error('Error message:', error.message);
+        console.error('Error stack:', error.stack);
+      }
+      alert('Failed to export clients. Please try again. Check console for details.');
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -133,6 +175,20 @@ export function Clients({ results, processingIds, processingAction, onSelectBusi
               <Trash2 className="w-4 h-4 mr-2" />
               Remove
             </Button>
+
+            <div className="h-6 w-px bg-gray-300 dark:bg-zinc-700 mx-2 hidden sm:block"></div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExport}
+              disabled={isExporting}
+              className="text-gray-700 dark:text-gray-300 border-gray-300 dark:border-zinc-700 hover:bg-gray-100 dark:hover:bg-zinc-800 whitespace-nowrap"
+            >
+              {isExporting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
+              {selectedIds.size > 0 ? `Export Selected (${selectedIds.size})` : 'Export All'}
+            </Button>
+
           </div>
         </div>
       )}
@@ -167,15 +223,18 @@ export function Clients({ results, processingIds, processingAction, onSelectBusi
                       <span className="text-zinc-500 font-bold text-xl">{client.business_name?.[0]?.toUpperCase()}</span>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h3 className="text-gray-900 dark:text-white mb-1 flex items-center gap-2 min-w-0">
-                        <span className="truncate" title={client.business_name}>
+                      <h3 className="text-gray-900 dark:text-white mb-1 flex flex-wrap items-center gap-2 min-w-0">
+                        <span className="truncate max-w-[60%]" title={client.business_name}>
                           {client.business_name}
                         </span>
-                        {client.is_verified ? (
-                          <CheckCircle className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                        ) : (
-                          <ShieldAlert className="w-4 h-4 text-zinc-500 flex-shrink-0" />
-                        )}
+                        <Badge variant="secondary" className={`whitespace-nowrap flex-shrink-0 ${getVerificationStatusText(client.verificationScore ?? client.verification_score) === "Verified"
+                          ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
+                          : getVerificationStatusText(client.verificationScore ?? client.verification_score) === "Partially Verified"
+                            ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
+                            : "bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 border-gray-300 dark:border-zinc-700"
+                          }`}>
+                          {getVerificationStatusText(client.verificationScore ?? client.verification_score)}
+                        </Badge>
                       </h3>
                       <p className="text-gray-500 dark:text-zinc-400 capitalize text-sm truncate">{category}</p>
                     </div>
@@ -184,49 +243,25 @@ export function Clients({ results, processingIds, processingAction, onSelectBusi
 
                 <div className="space-y-2 mb-4">
                   <p className="text-gray-500 dark:text-zinc-400 text-sm truncate">{client.address || 'No address'}</p>
-                  <div className="flex items-center gap-2">
-                    <div className="flex items-center">
-                      {[...Array(5)].map((_, i) => (
-                        <span
-                          key={i}
-                          className={`text-sm ${i < Math.floor(client.rating || 0) ? 'text-amber-500' : 'text-zinc-700'
-                            }`}
-                        >
-                          ★
-                        </span>
-                      ))}
-                      <span className="text-gray-500 dark:text-zinc-400 text-sm ml-2">{client.rating || 'N/A'}</span>
-                    </div>
-                  </div>
                 </div>
 
                 <div className="flex flex-col gap-3 mt-4">
-                  <div className="flex flex-wrap gap-2">
-                    {client.is_verified ? (
-                      <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
-                        Verified Lead
-                      </Badge>
-                    ) : (
-                      <Badge variant="secondary" className="bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 border-gray-300 dark:border-zinc-700">
-                        Unverified
-                      </Badge>
-                    )}
-                    {client.relevance_score != null ? (
-                      <Badge variant="secondary" className="bg-blue-500/10 text-blue-400 border-blue-500/20">
-                        Score: {client.relevance_score}
-                      </Badge>
-                    ) : (
-                      <Badge variant="secondary" className="bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 border-gray-300 dark:border-zinc-700">
-                        Pending Score
-                      </Badge>
-                    )}
-                    {processingIds.has(cardId) && (
+                  <div className="flex flex-wrap items-center gap-2 w-full">
+                    <Badge variant="secondary" className="bg-blue-500/10 text-blue-400 border-blue-500/20">
+                      Score: {client.relevanceScore ?? client.relevance_score ?? 0}
+                    </Badge>
+                    <Badge variant="secondary" className="bg-purple-500/10 text-purple-400 border-purple-500/20">
+                      Verification Score: {client.verificationScore ?? client.verification_score ?? 0}
+                    </Badge>
+                  </div>
+                  {processingIds.has(cardId) && (
+                    <div className="flex">
                       <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 border">
                         <Loader2 className="w-3 h-3 animate-spin mr-1 inline" />
                         {processingAction === 'relevancy' ? 'Analyzing...' : 'Running deep checks...'}
                       </Badge>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-auto pt-4 border-t border-gray-200 dark:border-zinc-800 flex justify-end">

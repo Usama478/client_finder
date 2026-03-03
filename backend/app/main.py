@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import OperationalError
 from app.db.session import engine
 from app.db.base import Base
-from app.api import search_routes, relevancy_routes, verification_routes, context_routes, dashboard_routes
+from app.api import search_routes, relevancy_routes, verification_routes, context_routes, dashboard_routes, export_routes
 
 app = FastAPI(title="Client Finder MVP")
 
@@ -41,6 +41,7 @@ app.include_router(relevancy_routes.router)
 app.include_router(verification_routes.router)
 app.include_router(context_routes.router)
 app.include_router(dashboard_routes.router)
+app.include_router(export_routes.router)
 
 @app.get("/")
 def health_check():

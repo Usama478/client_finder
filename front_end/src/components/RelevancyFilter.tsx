@@ -170,7 +170,7 @@ export function RelevancyFilter({ onValidate, results, processingIds, isVerifyin
                     ) : (
                       <Badge variant="secondary" className="bg-gray-100 dark:bg-zinc-800 text-zinc-500 border-gray-300 dark:border-zinc-700">
                         <XCircle className="w-3 h-3 mr-1 inline" />
-                        Failed
+                        Irrelevant
                       </Badge>
                     )}
                     {business.relevance_score != null && (

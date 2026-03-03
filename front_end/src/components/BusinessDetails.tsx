@@ -1,8 +1,21 @@
-import { ArrowLeft, Globe, Shield, Instagram, Facebook, Linkedin, MessageCircle, Phone, Mail, MapPin, CheckCircle, XCircle } from 'lucide-react';
+import { ArrowLeft, Globe, Instagram, Facebook, Linkedin, MessageCircle, Phone, Mail, MapPin, CheckCircle, XCircle } from 'lucide-react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 
+const getVerificationStatusText = (verificationScore?: number | null) => {
+  const score = verificationScore ?? 0;
+  if (score === 0) return "Unverified";
+  if (score > 50) return "Verified";
+  return "Partially Verified";
+};
+
+const getRiskLevelText = (relevanceScore?: number | null) => {
+  const score = relevanceScore ?? 0;
+  if (score === 0 || score < 40) return "High Risk";
+  if (score > 70) return "Low Risk";
+  return "Medium Risk";
+};
 interface BusinessDetailsProps {
   business: any;
   onBack: () => void;
@@ -75,19 +88,25 @@ export function BusinessDetails({ business, onBack }: BusinessDetailsProps) {
                 </div>
                 <div className="flex-1">
                   <CardTitle className="text-gray-900 dark:text-white text-2xl mb-2">{business.business_name}</CardTitle>
+                  <p className="text-gray-500 dark:text-zinc-400 font-medium mb-1">
+                    {getVerificationStatusText(business.verificationScore ?? business.verification_score)} | {getRiskLevelText(business.relevanceScore ?? business.relevance_score)}
+                  </p>
                   <p className="text-gray-500 dark:text-zinc-400 capitalize">{category}</p>
                   <div className="flex items-center gap-2 mt-2">
-                    {isVerified ? (
-                      <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
+                    <Badge className={
+                      getVerificationStatusText(business.verificationScore ?? business.verification_score) === "Verified"
+                        ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20 h-6"
+                        : getVerificationStatusText(business.verificationScore ?? business.verification_score) === "Partially Verified"
+                          ? "bg-amber-500/10 text-amber-500 border-amber-500/20 h-6"
+                          : "bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 border-gray-300 dark:border-zinc-700 h-6"
+                    }>
+                      {getVerificationStatusText(business.verificationScore ?? business.verification_score) === "Verified" ? (
                         <CheckCircle className="w-3 h-3 mr-1" />
-                        Verified
-                      </Badge>
-                    ) : (
-                      <Badge variant="secondary" className="bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 border-gray-300 dark:border-zinc-700">
+                      ) : (
                         <XCircle className="w-3 h-3 mr-1" />
-                        Unverified
-                      </Badge>
-                    )}
+                      )}
+                      {getVerificationStatusText(business.verificationScore ?? business.verification_score)}
+                    </Badge>
                     {business.relevance_score != null ? (
                       <Badge variant="secondary" className="bg-blue-500/10 text-blue-400 border-blue-500/20">
                         Score: {business.relevance_score}
@@ -166,15 +185,6 @@ export function BusinessDetails({ business, onBack }: BusinessDetailsProps) {
                 </div>
                 {hasWebsite && (
                   <>
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-500 dark:text-zinc-400">SSL Status</span>
-                      <div className="flex items-center gap-2">
-                        <Shield className={(rawData?.website_status?.ssl_valid ?? business.website?.startsWith('https')) ? "w-5 h-5 text-emerald-500" : "w-5 h-5 text-amber-500"} />
-                        <span className={(rawData?.website_status?.ssl_valid ?? business.website?.startsWith('https')) ? "text-emerald-500" : "text-amber-500"}>
-                          {(rawData?.website_status?.ssl_valid ?? business.website?.startsWith('https')) ? 'Secure' : 'Insecure'}
-                        </span>
-                      </div>
-                    </div>
                     <div className="flex items-center justify-between">
                       <span className="text-gray-500 dark:text-zinc-400">Domain Age</span>
                       <span className="text-gray-700 dark:text-zinc-300">
@@ -264,12 +274,12 @@ export function BusinessDetails({ business, onBack }: BusinessDetailsProps) {
           </Card>
 
 
-        </div>
+        </div >
 
         {/* Sidebar - Right Side */}
-        <div className="space-y-6">
+        < div className="space-y-6" >
           {/* Contact Information */}
-          <Card className="bg-white dark:bg-zinc-900 border-gray-200 dark:border-zinc-800">
+          < Card className="bg-white dark:bg-zinc-900 border-gray-200 dark:border-zinc-800" >
             <CardHeader className="border-b border-gray-200 dark:border-zinc-800">
               <CardTitle className="text-gray-900 dark:text-white">Contact Information</CardTitle>
             </CardHeader>
@@ -310,33 +320,33 @@ export function BusinessDetails({ business, onBack }: BusinessDetailsProps) {
                 </div>
               </div>
             </CardContent>
-          </Card>
+          </Card >
 
 
           {/* Quick Stats */}
-          <Card className="bg-white dark:bg-zinc-900 border-gray-200 dark:border-zinc-800">
+          < Card className="bg-white dark:bg-zinc-900 border-gray-200 dark:border-zinc-800" >
             <CardHeader className="border-b border-gray-200 dark:border-zinc-800">
               <CardTitle className="text-gray-900 dark:text-white">Pipeline Stats</CardTitle>
             </CardHeader>
             <CardContent className="p-6 space-y-3">
               <div className="flex justify-between">
                 <span className="text-gray-500 dark:text-zinc-400">Added Date</span>
-                <span className="text-gray-900 dark:text-white">Just now</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500 dark:text-zinc-400">Verification</span>
-                <span className={isVerified ? "text-emerald-400" : "text-amber-400"}>
-                  {isVerified ? 'Completed' : 'Pending'}
+                <span className="text-gray-900 dark:text-white">
+                  {business.dateAdded || business.created_at ? new Date(business.dateAdded || business.created_at).toLocaleDateString() : 'Just now'}
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500 dark:text-zinc-400">Interactions</span>
-                <span className="text-gray-900 dark:text-white">0</span>
+                <span className="text-gray-500 dark:text-zinc-400">Relevance Score</span>
+                <span className="text-gray-900 dark:text-white">{business.relevanceScore ?? business.relevance_score ?? 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500 dark:text-zinc-400">Verification Score</span>
+                <span className="text-gray-900 dark:text-white">{business.verificationScore ?? business.verification_score ?? 0}</span>
               </div>
             </CardContent>
-          </Card>
-        </div>
-      </div>
-    </div>
+          </Card >
+        </div >
+      </div >
+    </div >
   );
 }

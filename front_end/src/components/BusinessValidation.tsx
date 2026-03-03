@@ -4,6 +4,13 @@ import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
 import { Badge } from './ui/badge';
 
+const getVerificationStatusText = (verificationScore?: number | null) => {
+  const score = verificationScore ?? 0;
+  if (score === 0) return "Unverified";
+  if (score > 50) return "Verified";
+  return "Partially Verified";
+};
+
 interface BusinessValidationProps {
   results: any[];
   processingIds: Set<string>;
@@ -120,7 +127,7 @@ export function BusinessValidation({ results, processingIds, onAddToClients, onB
                         <span className="truncate" title={business.business_name || 'Unknown Business'}>
                           {business.business_name || 'Unknown Business'}
                         </span>
-                        {business.is_verified ? (
+                        {getVerificationStatusText(business.verificationScore ?? business.verification_score) === "Verified" ? (
                           <CheckCircle className="w-4 h-4 text-emerald-500 flex-shrink-0" />
                         ) : (
                           <ShieldAlert className="w-4 h-4 text-zinc-500 flex-shrink-0" />
@@ -142,17 +149,20 @@ export function BusinessValidation({ results, processingIds, onAddToClients, onB
 
                 <div className="flex flex-col gap-3 mt-4">
                   <div className="flex flex-wrap gap-2">
-                    {business.is_verified ? (
-                      <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
+                    <Badge className={
+                      getVerificationStatusText(business.verificationScore ?? business.verification_score) === "Verified"
+                        ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20 inline-flex items-center"
+                        : getVerificationStatusText(business.verificationScore ?? business.verification_score) === "Partially Verified"
+                          ? "bg-amber-500/10 text-amber-500 border-amber-500/20 inline-flex items-center"
+                          : "bg-gray-100 dark:bg-zinc-800 text-zinc-500 border-gray-300 dark:border-zinc-700 inline-flex items-center"
+                    }>
+                      {getVerificationStatusText(business.verificationScore ?? business.verification_score) === "Verified" ? (
                         <CheckCircle className="w-3 h-3 mr-1 inline" />
-                        Verified
-                      </Badge>
-                    ) : (
-                      <Badge variant="secondary" className="bg-gray-100 dark:bg-zinc-800 text-zinc-500 border-gray-300 dark:border-zinc-700">
+                      ) : (
                         <XCircle className="w-3 h-3 mr-1 inline" />
-                        Unverified
-                      </Badge>
-                    )}
+                      )}
+                      {getVerificationStatusText(business.verificationScore ?? business.verification_score)}
+                    </Badge>
                     {business.relevance_score != null && (
                       <Badge variant="secondary" className="bg-blue-500/10 text-blue-400 border-blue-500/20">
                         Score: {business.relevance_score}

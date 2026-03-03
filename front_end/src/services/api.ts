@@ -61,4 +61,29 @@ export const fetchDashboardStats = async () => {
     return response.data;
 };
 
+export const exportClients = async (resultIds: string[] = []) => {
+    // We use native fetch here instead of axios to perfectly handle the binary Blob
+    // without any of the global axios JSON interceptors mangling the stream.
+    const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+
+    // Ensure payload is an array of strings
+    const payload = Array.isArray(resultIds) ? resultIds.map(String) : [];
+
+    const response = await fetch(`${baseUrl}/export`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        },
+        body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Export failed with status ${response.status}: ${errText}`);
+    }
+
+    return await response.blob();
+};
+
 export default api;

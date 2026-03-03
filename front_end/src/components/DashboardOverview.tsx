@@ -4,6 +4,19 @@ import { Badge } from './ui/badge';
 import { useState, useEffect } from 'react';
 import { fetchDashboardStats } from '../services/api';
 
+const getVerificationStatusText = (verificationScore?: number | null) => {
+  const score = verificationScore ?? 0;
+  if (score === 0) return "Unverified";
+  if (score > 50) return "Verified";
+  return "Partially Verified";
+};
+
+const getRiskLevelText = (relevanceScore?: number | null) => {
+  const score = relevanceScore ?? 0;
+  if (score === 0 || score < 40) return "High Risk";
+  if (score > 70) return "Low Risk";
+  return "Medium Risk";
+};
 interface DashboardProps {
   history: any[];
   onSelectHistory: (searchId: string) => Promise<void>;
@@ -32,8 +45,30 @@ export function DashboardOverview({ history, onSelectHistory }: DashboardProps) 
   const totalLeads = statsData?.total_clients || 0;
   const globalTotalSearches = statsData?.total_searches || 0;
 
-  const riskDistribution = statsData?.risk_distribution || [];
-  const verificationData = statsData?.verification_data || [];
+  const riskDistributionRaw = statsData?.risk_distribution || [];
+  const verificationDataRaw = statsData?.verification_data || [];
+
+  const clientsList = statsData?.clients || statsData?.saved_clients || statsData?.all_clients || [];
+
+  const verificationCounts = { "Unverified": 0, "Partially Verified": 0, "Verified": 0 };
+  const riskCounts = { "High Risk": 0, "Medium Risk": 0, "Low Risk": 0 };
+
+  if (clientsList.length > 0) {
+    clientsList.forEach((client: any) => {
+      const vScore = client.verificationScore ?? client.verification_score ?? 0;
+      const rScore = client.relevanceScore ?? client.relevance_score ?? 0;
+      verificationCounts[getVerificationStatusText(vScore) as keyof typeof verificationCounts]++;
+      riskCounts[getRiskLevelText(rScore) as keyof typeof riskCounts]++;
+    });
+  }
+
+  const verificationData = clientsList.length > 0 ? Object.entries(verificationCounts).map(([name, value]) => ({
+    name, value, color: name === 'Verified' ? '#10b981' : name === 'Partially Verified' ? '#f59e0b' : '#ef4444'
+  })) : verificationDataRaw;
+
+  const riskDistribution = clientsList.length > 0 ? Object.entries(riskCounts).map(([name, value]) => ({
+    name, value, color: name === 'Low Risk' ? '#10b981' : name === 'Medium Risk' ? '#f59e0b' : '#ef4444'
+  })) : riskDistributionRaw;
 
   const stats = [
     {
