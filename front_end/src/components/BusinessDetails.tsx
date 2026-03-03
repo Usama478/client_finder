@@ -2,22 +2,17 @@ import { ArrowLeft, Globe, Instagram, Facebook, Linkedin, MessageCircle, Phone, 
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
+import type { SearchResult } from '../types/search-result';
+import { getVerificationStatusText } from '../types/search-result';
 
-const getVerificationStatusText = (verificationScore?: number | null) => {
-  const score = verificationScore ?? 0;
-  if (score === 0) return "Unverified";
-  if (score > 50) return "Verified";
-  return "Partially Verified";
-};
-
-const getRiskLevelText = (relevanceScore?: number | null) => {
-  const score = relevanceScore ?? 0;
+const getRiskLevelText = (relevance_score?: number | null) => {
+  const score = relevance_score ?? 0;
   if (score === 0 || score < 40) return "High Risk";
   if (score > 70) return "Low Risk";
   return "Medium Risk";
 };
 interface BusinessDetailsProps {
-  business: any;
+  business: SearchResult | null;
   onBack: () => void;
 }
 
@@ -37,7 +32,7 @@ export function BusinessDetails({ business, onBack }: BusinessDetailsProps) {
   }
 
   const category = business.types?.[0]?.replace(/_/g, ' ') || 'Local Business';
-  const isVerified = business.is_verified;
+  const isVerified = business.verification_status === 'completed';
   const hasWebsite = !!business.website;
 
   let rawData: any = {};
@@ -89,23 +84,23 @@ export function BusinessDetails({ business, onBack }: BusinessDetailsProps) {
                 <div className="flex-1">
                   <CardTitle className="text-gray-900 dark:text-white text-2xl mb-2">{business.business_name}</CardTitle>
                   <p className="text-gray-500 dark:text-zinc-400 font-medium mb-1">
-                    {getVerificationStatusText(business.verificationScore ?? business.verification_score)} | {getRiskLevelText(business.relevanceScore ?? business.relevance_score)}
+                    {getVerificationStatusText(business)} | {getRiskLevelText(business.relevance_score)}
                   </p>
                   <p className="text-gray-500 dark:text-zinc-400 capitalize">{category}</p>
                   <div className="flex items-center gap-2 mt-2">
                     <Badge className={
-                      getVerificationStatusText(business.verificationScore ?? business.verification_score) === "Verified"
+                      getVerificationStatusText(business) === "Verified"
                         ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20 h-6"
-                        : getVerificationStatusText(business.verificationScore ?? business.verification_score) === "Partially Verified"
+                        : getVerificationStatusText(business) === "Partially Verified"
                           ? "bg-amber-500/10 text-amber-500 border-amber-500/20 h-6"
                           : "bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 border-gray-300 dark:border-zinc-700 h-6"
                     }>
-                      {getVerificationStatusText(business.verificationScore ?? business.verification_score) === "Verified" ? (
+                      {getVerificationStatusText(business) === "Verified" ? (
                         <CheckCircle className="w-3 h-3 mr-1" />
                       ) : (
                         <XCircle className="w-3 h-3 mr-1" />
                       )}
-                      {getVerificationStatusText(business.verificationScore ?? business.verification_score)}
+                      {getVerificationStatusText(business)}
                     </Badge>
                     {business.relevance_score != null ? (
                       <Badge variant="secondary" className="bg-blue-500/10 text-blue-400 border-blue-500/20">
@@ -193,7 +188,7 @@ export function BusinessDetails({ business, onBack }: BusinessDetailsProps) {
                     </div>
                     <div className="pt-2">
                       <a
-                        href={business.website}
+                        href={business.website || ''}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-blue-400 hover:underline block truncate"
@@ -311,7 +306,7 @@ export function BusinessDetails({ business, onBack }: BusinessDetailsProps) {
                 <div className="overflow-hidden min-w-0">
                   <p className="text-gray-500 dark:text-zinc-400 text-sm mb-1">Website</p>
                   {hasWebsite ? (
-                    <a href={business.website} className="text-blue-400 hover:underline truncate block">
+                    <a href={business.website || ''} className="text-blue-400 hover:underline truncate block">
                       {business.website}
                     </a>
                   ) : (
@@ -332,16 +327,16 @@ export function BusinessDetails({ business, onBack }: BusinessDetailsProps) {
               <div className="flex justify-between">
                 <span className="text-gray-500 dark:text-zinc-400">Added Date</span>
                 <span className="text-gray-900 dark:text-white">
-                  {business.dateAdded || business.created_at ? new Date(business.dateAdded || business.created_at).toLocaleDateString() : 'Just now'}
+                  {business.created_at ? new Date(business.created_at).toLocaleDateString() : 'Just now'}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500 dark:text-zinc-400">Relevance Score</span>
-                <span className="text-gray-900 dark:text-white">{business.relevanceScore ?? business.relevance_score ?? 0}</span>
+                <span className="text-gray-900 dark:text-white">{business.relevance_score ?? 0}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500 dark:text-zinc-400">Verification Score</span>
-                <span className="text-gray-900 dark:text-white">{business.verificationScore ?? business.verification_score ?? 0}</span>
+                <span className="text-gray-900 dark:text-white">{business.verification_score ?? 0}</span>
               </div>
             </CardContent>
           </Card >

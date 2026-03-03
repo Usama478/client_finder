@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   backend:
     build:
@@ -7,10 +5,11 @@ services:
       dockerfile: Dockerfile
     container_name: client_finder_backend
     restart: always
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@client_finder_db:5432/clientfinder
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/clientfinder
       - MAPS_API_KEY=${MAPS_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     volumes:
@@ -48,7 +47,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d clientfinder" ]
       interval: 10s
       timeout: 5s
       retries: 5

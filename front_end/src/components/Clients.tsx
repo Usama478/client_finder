@@ -5,20 +5,15 @@ import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
 import { Badge } from './ui/badge';
-
-const getVerificationStatusText = (verificationScore?: number | null) => {
-  const score = verificationScore ?? 0;
-  if (score === 0) return "Unverified";
-  if (score > 50) return "Verified";
-  return "Partially Verified";
-};
+import type { SearchResult } from '../types/search-result';
+import { getResultId, getVerificationStatusText } from '../types/search-result';
 
 
 interface ClientsProps {
-  results: any[];
+  results: SearchResult[];
   processingIds: Set<string>;
   processingAction: string | null;
-  onSelectBusiness: (business: any) => void;
+  onSelectBusiness: (businessId: string) => void;
   onRunRelevancy: (ids: string[]) => void;
   onRunVerification: (ids: string[]) => void;
   onRemoveFromClients: (ids: string[]) => void;
@@ -29,9 +24,9 @@ export function Clients({ results, processingIds, processingAction, onSelectBusi
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isExporting, setIsExporting] = useState(false);
 
-  const verifiedClients = results.filter(r => {
-    return r.is_verified || r.is_saved_client;
-  });
+  const verifiedClients = results.filter(r => (
+    r.is_saved_client || (r.verification_status === 'completed' && (r.verification_score ?? 0) > 70)
+  ));
 
   const filteredClients = verifiedClients.filter(client => {
     const name = client.business_name || '';
@@ -45,7 +40,7 @@ export function Clients({ results, processingIds, processingAction, onSelectBusi
     if (selectedIds.size === filteredClients.length) {
       setSelectedIds(new Set());
     } else {
-      const allIds = filteredClients.map(c => (c.id || c.result_id || c.place_id).toString());
+      const allIds = filteredClients.map(c => getResultId(c));
       setSelectedIds(new Set(allIds));
     }
   };
@@ -197,7 +192,7 @@ export function Clients({ results, processingIds, processingAction, onSelectBusi
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
         {filteredClients.map((client) => {
           const category = client.types?.[0]?.replace(/_/g, ' ') || 'Local Business';
-          const cardId = (client.id || client.result_id || client.place_id).toString();
+          const cardId = getResultId(client);
 
           return (
             <Card
@@ -224,16 +219,16 @@ export function Clients({ results, processingIds, processingAction, onSelectBusi
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="text-gray-900 dark:text-white mb-1 flex flex-wrap items-center gap-2 min-w-0">
-                        <span className="truncate max-w-[60%]" title={client.business_name}>
+                        <span className="truncate max-w-[60%]" title={client.business_name || undefined}>
                           {client.business_name}
                         </span>
-                        <Badge variant="secondary" className={`whitespace-nowrap flex-shrink-0 ${getVerificationStatusText(client.verificationScore ?? client.verification_score) === "Verified"
+                        <Badge variant="secondary" className={`whitespace-nowrap flex-shrink-0 ${getVerificationStatusText(client) === "Verified"
                           ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
-                          : getVerificationStatusText(client.verificationScore ?? client.verification_score) === "Partially Verified"
+                          : getVerificationStatusText(client) === "Partially Verified"
                             ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
                             : "bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 border-gray-300 dark:border-zinc-700"
                           }`}>
-                          {getVerificationStatusText(client.verificationScore ?? client.verification_score)}
+                          {getVerificationStatusText(client)}
                         </Badge>
                       </h3>
                       <p className="text-gray-500 dark:text-zinc-400 capitalize text-sm truncate">{category}</p>
@@ -248,10 +243,10 @@ export function Clients({ results, processingIds, processingAction, onSelectBusi
                 <div className="flex flex-col gap-3 mt-4">
                   <div className="flex flex-wrap items-center gap-2 w-full">
                     <Badge variant="secondary" className="bg-blue-500/10 text-blue-400 border-blue-500/20">
-                      Score: {client.relevanceScore ?? client.relevance_score ?? 0}
+                      Score: {client.relevance_score ?? 0}
                     </Badge>
                     <Badge variant="secondary" className="bg-purple-500/10 text-purple-400 border-purple-500/20">
-                      Verification Score: {client.verificationScore ?? client.verification_score ?? 0}
+                      Verification Score: {client.verification_score ?? 0}
                     </Badge>
                   </div>
                   {processingIds.has(cardId) && (

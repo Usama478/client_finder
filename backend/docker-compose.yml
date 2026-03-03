@@ -3,12 +3,12 @@ version: '3.8'
 services:
   backend:
     build: .
-    # --- DNS FIX ADDED HERE ---
     dns:
       - 8.8.8.8
       - 8.8.4.4
-    # --------------------------
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/clientfinder
     volumes:
       - .:/app
     ports:
@@ -16,7 +16,8 @@ services:
     env_file:
       - .env
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
   db:
     image: postgres:15
@@ -25,9 +26,14 @@ services:
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=client_finder
+      - POSTGRES_DB=clientfinder
     ports:
       - "5432:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d clientfinder" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   postgres_data:

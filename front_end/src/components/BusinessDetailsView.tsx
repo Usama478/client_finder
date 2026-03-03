@@ -2,15 +2,17 @@ import { ArrowLeft, MapPin, Globe, Shield, Star, Phone, Mail, AlertTriangle, Bui
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Progress } from './ui/progress';
+import type { SearchResult } from '../types/search-result';
+import { getResultId, getVerificationBucket } from '../types/search-result';
 
 interface BusinessDetailsViewProps {
   businessId: string | null;
-  results: any[];
+  results: SearchResult[];
   onBack: () => void;
 }
 
 export function BusinessDetailsView({ businessId, results, onBack }: BusinessDetailsViewProps) {
-  const business = results.find(b => (b.id || b.result_id || b.place_id).toString() === businessId);
+  const business = results.find(b => getResultId(b) === businessId);
 
   if (!business) {
     return (
@@ -25,9 +27,7 @@ export function BusinessDetailsView({ businessId, results, onBack }: BusinessDet
   }
 
   const getVerificationStatus = () => {
-    if (business.is_verified || (business.verification_score && business.verification_score > 70)) return 'verified';
-    if (!business.is_verified && business.verification_score && business.verification_score > 40 && business.verification_score <= 70) return 'partially-verified';
-    return 'not-verified';
+    return getVerificationBucket(business);
   };
 
   const getVerificationBadge = () => {
@@ -140,7 +140,7 @@ export function BusinessDetailsView({ businessId, results, onBack }: BusinessDet
             </div>
             <div>
               <div className="text-sm text-gray-500 mb-1 font-medium">Place ID</div>
-              <div className="text-gray-700 dark:text-gray-300 font-mono text-xs bg-gray-50 dark:bg-black/50 p-2 rounded">{business.place_id || business.id}</div>
+              <div className="text-gray-700 dark:text-gray-300 font-mono text-xs bg-gray-50 dark:bg-black/50 p-2 rounded">{business.result_id}</div>
             </div>
           </div>
         </div>

@@ -245,8 +245,23 @@ def gather_website_evidence(state: RelevancyAgentState) -> dict:
             page = context.new_page()
             
             try:
-                page.goto(url, wait_until="domcontentloaded", timeout=20000)
-                
+                initial_nav_ok = False
+                for attempt in range(2):
+                    try:
+                        page.goto(url, wait_until="domcontentloaded", timeout=20000)
+                        try:
+                            page.wait_for_load_state("load", timeout=5000)
+                        except Exception as load_exc:
+                            print(f"   ⚠️ Investigator load-state wait warning (home): {load_exc}")
+                        initial_nav_ok = True
+                        break
+                    except Exception as nav_exc:
+                        print(f"   ⚠️ Investigator initial navigation attempt {attempt + 1} failed: {nav_exc}")
+
+                if not initial_nav_ok:
+                    print("   ⚠️ Investigator failed to load homepage after retries. Returning partial evidence.")
+                    return {"evidence": evidence}
+
                 # --- Mission 1: Homepage Metadata ---
                 evidence["homepage"]["title"] = page.title()
                 
@@ -293,10 +308,14 @@ def gather_website_evidence(state: RelevancyAgentState) -> dict:
                     try:
                         # Navigate
                         page.goto(found_link if found_link.startswith("http") else f"{url.rstrip('/')}/{found_link.lstrip('/')}", timeout=10000)
+                        try:
+                            page.wait_for_load_state("load", timeout=5000)
+                        except Exception as load_exc:
+                            print(f"   ⚠️ Investigator load-state wait warning (about): {load_exc}")
                         evidence["about_page"]["found"] = True
                         evidence["about_page"]["summary"] = page.inner_text("body")[:500].replace("\n", " ")
-                    except:
-                        pass # Ignore nav errors
+                    except Exception as about_exc:
+                        print(f"   ⚠️ Investigator about-page navigation warning: {about_exc}")
                     finally:
                         # Go back home or just re-use context? Better to go to next mission
                         pass
@@ -325,6 +344,10 @@ def gather_website_evidence(state: RelevancyAgentState) -> dict:
                     try:
                         target = shop_link if shop_link.startswith("http") else f"{url.rstrip('/')}/{shop_link.lstrip('/')}"
                         page.goto(target, timeout=10000)
+                        try:
+                            page.wait_for_load_state("load", timeout=5000)
+                        except Exception as load_exc:
+                            print(f"   ⚠️ Investigator load-state wait warning (shop): {load_exc}")
                         evidence["products"]["found"] = True
                         
                         # extract sample titles (h2, h3, or common product class names?)
@@ -342,8 +365,8 @@ def gather_website_evidence(state: RelevancyAgentState) -> dict:
                                 samples.append(txt)
                         
                         evidence["products"]["samples"] = samples[:5]
-                    except:
-                        pass
+                    except Exception as shop_exc:
+                        print(f"   ⚠️ Investigator shop-page navigation warning: {shop_exc}")
 
             except Exception as e:
                 print(f"   ⚠️ Investigator Navigation Error: {e}")

@@ -4,13 +4,8 @@ import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
 import { Badge } from './ui/badge';
-
-const getVerificationStatusText = (verificationScore?: number | null) => {
-  const score = verificationScore ?? 0;
-  if (score === 0) return "Unverified";
-  if (score > 50) return "Verified";
-  return "Partially Verified";
-};
+import type { SearchResult } from '../types/search-result';
+import { getResultId, getVerificationStatusText } from '../types/search-result';
 
 // Add new imports for modal/dialog if we use one, or just simple state for a custom modal
 // For simplicity we can use a custom overlay for the "New Context" modal.
@@ -22,7 +17,7 @@ interface SearchBusinessesProps {
   query: string;
   setQuery: (q: string) => void;
   handleSearch: (e?: React.FormEvent) => void;
-  results: any[];
+  results: SearchResult[];
   searchError?: string | null;
   isSearching: boolean;
   selectedIds: Set<string>;
@@ -32,7 +27,7 @@ interface SearchBusinessesProps {
   onBusinessSelect: (id: string) => void;
   history: any[];
   onSelectHistory: (searchId: string) => Promise<void>;
-  onAddToClients: (business: any) => void;
+  onAddToClients: (business: SearchResult) => void;
   contexts?: any[];
   selectedContextId?: string | null;
   setSelectedContextId?: (id: string) => void;
@@ -57,7 +52,7 @@ export function SearchBusinesses({
     if (selectedIds.size === results.length) {
       setSelectedIds(new Set());
     } else {
-      const allIds = results.map((r: any) => (r.id || r.result_id || r.place_id).toString());
+      const allIds = results.map((r) => getResultId(r));
       setSelectedIds(new Set(allIds));
     }
   };
@@ -186,7 +181,7 @@ export function SearchBusinesses({
 
           <div className="space-y-4 mb-6">
             {results.map((business) => {
-              const cardId = (business.id || business.result_id || business.place_id).toString();
+              const cardId = getResultId(business);
               const isSelected = selectedIds.has(cardId);
               const category = business.types?.[0]?.replace(/_/g, ' ') || 'Local Business';
 
@@ -220,18 +215,18 @@ export function SearchBusinesses({
                         </div>
                         <div className="flex flex-wrap gap-2 mt-3">
                           <Badge className={
-                            getVerificationStatusText(business.verificationScore ?? business.verification_score) === "Verified"
+                            getVerificationStatusText(business) === "Verified"
                               ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20 inline-flex items-center"
-                              : getVerificationStatusText(business.verificationScore ?? business.verification_score) === "Partially Verified"
+                              : getVerificationStatusText(business) === "Partially Verified"
                                 ? "bg-amber-500/10 text-amber-500 border-amber-500/20 inline-flex items-center"
                                 : "bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 border-gray-300 dark:border-zinc-700 inline-flex items-center"
                           }>
-                            {getVerificationStatusText(business.verificationScore ?? business.verification_score) === "Verified" ? (
+                            {getVerificationStatusText(business) === "Verified" ? (
                               <CheckCircle className="w-3 h-3 mr-1 inline" />
                             ) : (
                               <XCircle className="w-3 h-3 mr-1 inline" />
                             )}
-                            {getVerificationStatusText(business.verificationScore ?? business.verification_score)}
+                            {getVerificationStatusText(business)}
                           </Badge>
                           {business.relevance_score != null ? (
                             <Badge variant="secondary" className="bg-blue-500/10 text-blue-400 border-blue-500/20">
@@ -242,7 +237,7 @@ export function SearchBusinesses({
                               Pending Score
                             </Badge>
                           )}
-                          {!business.is_verified && business.relevance_score == null && (
+                          {business.verification_status !== 'completed' && business.relevance_score == null && (
                             <Badge className="bg-blue-600 text-gray-900 dark:text-white border-blue-500 text-xs">
                               New
                             </Badge>
@@ -298,7 +293,7 @@ export function SearchBusinesses({
               ) : (
                 <div className="space-y-3">
                   {history.map((search: any) => {
-                    const searchId = search?.search_id || search?.id;
+                    const searchId = search?.search_id;
                     if (!searchId) return null;
 
                     return (

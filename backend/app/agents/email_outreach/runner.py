@@ -2,14 +2,25 @@ from sqlalchemy.orm import Session
 from app.models.search_result import SearchResult
 from app.agents.email_outreach.graph import outreach_graph
 
-def run_outreach_agent(db: Session, business_id: int):
+def run_outreach_agent(db: Session, business_id: int, min_verification_score: int = None):
     print(f"\n📧 STARTING OUTREACH for Business ID {business_id}...")
 
-    # 1. Fetch Lead (Must be VERIFIED)
+    # 1. Fetch Lead (verification must have finished successfully)
     lead = db.query(SearchResult).filter(SearchResult.result_id == business_id).first()
     
-    if not lead or lead.verification_status != "verified":
-        print("❌ Error: Lead not verified or not found.")
+    if not lead:
+        print("❌ Error: Lead not found.")
+        return
+
+    if lead.verification_status != "completed":
+        print(f"❌ Error: Verification is not completed (status={lead.verification_status}).")
+        return
+
+    if min_verification_score is not None and (lead.verification_score or 0) < min_verification_score:
+        print(
+            f"❌ Error: Verification score {(lead.verification_score or 0)} "
+            f"is below threshold {min_verification_score}."
+        )
         return
 
     # 2. Build State

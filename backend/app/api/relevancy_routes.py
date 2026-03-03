@@ -25,7 +25,7 @@ def process_relevancy_batch(business_ids: List[int]):
                 logging.error(f"Agent Failed: {str(e)}", exc_info=True)
                 # Fallback handler: Update the relevance_status to "failed" on unhandled exception
                 try:
-                    lead = db.query(SearchResult).filter(SearchResult.id == b_id).first()
+                    lead = db.query(SearchResult).filter(SearchResult.result_id == b_id).first()
                     if lead:
                         lead.relevance_status = "failed"
                         db.commit()

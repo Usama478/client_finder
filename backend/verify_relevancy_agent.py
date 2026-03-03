@@ -1,3 +1,4 @@
+import argparse
 import os
 import sys
 
@@ -7,100 +8,117 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.db.base import Base
-
-# Import all models to ensure tables are created
 from app.models.search_session import SearchSession
 from app.models.search_result import SearchResult
-# Attempt to import User, if it fails we might need to mock or finding it
+from app.agents.relevancy.runner import run_relevancy_agent
+
 try:
     from app.models.user import User
 except ImportError:
-    pass
+    User = None
 
-from app.agents.relevancy.runner import run_relevancy_agent
 
 # Use SQLite for standalone verification
 # This creates a fresh in-memory DB every time you run it
 engine = create_engine("sqlite:///:memory:")
 SessionLocal = sessionmaker(bind=engine)
 
-def verify():
-    print("🔬 Setting up Verification Environment (SQLite)...")
-    
-    # Create Tables
+
+def ensure_user_exists(db, user_id: int) -> None:
+    """
+    Create a test user only if the user model exists and this user ID is missing.
+    user_id is always provided by caller context (request/session/cli argument).
+    """
+    if User is None:
+        return
+
+    existing_user = db.query(User).filter(User.user_id == user_id).first()
+    if existing_user:
+        return
+
+    user = User(
+        user_id=user_id,
+        name=f"Test User {user_id}",
+        email=f"test_{user_id}@example.com",
+        password_hash="xxx",
+    )
+    db.add(user)
+    db.commit()
+
+
+def verify(user_id: int) -> None:
+    print("Setting up verification environment (SQLite)...")
+
     Base.metadata.create_all(engine)
     db = SessionLocal()
 
     try:
-        # 1. Create Dummy User (Needed for Foreign Keys)
-        # We try to insert a user if the table exists
-        try:
-            user = User(email="test@example.com", hashed_password="xxx")
-            db.add(user)
-            db.commit()
-            user_id = user.user_id
-        except NameError:
-            # If User model wasn't imported/found, maybe we don't need it if FK constraints aren't enforced in SQLite by default?
-            # actually SQLite enforces FKs if enabled, but usually off by default in older libs.
-            # But let's assume we need a user ID.
-            user_id = 1
-        except Exception:
-            user_id = 1
+        ensure_user_exists(db, user_id)
 
-        # 2. Create Dummy Search Session
-        ss = SearchSession(
+        # Create a test search session using the caller-provided user context.
+        session = SearchSession(
             search_query="Leather Jacket Wholesalers",
             user_id=user_id,
-            search_location="Milan"
+            search_location="Milan",
         )
-        db.add(ss)
+        db.add(session)
         db.commit()
 
-        # 3. Create Dummy Lead (Target: Python.org as a test case for 'Software' vs 'Leather')
-        # This checks if the agent correctly identifies it's NOT a Leather Wholesaler.
         lead = SearchResult(
             place_id="test_place_python",
             user_id=user_id,
-            search_id=ss.search_id,
+            search_id=session.search_id,
             business_name="Python Software Foundation",
             website="https://www.python.org",
             raw_data={"category": "Non-profit", "description": "Python Programming Language"},
-            relevance_status="pending"
+            relevance_status="pending",
         )
         db.add(lead)
         db.commit()
-        
-        print(f"📍 Created Test Lead: {lead.business_name} ({lead.website})")
-        print(f"🎯 Criteria: {ss.search_query}")
 
-        # 4. Run Agent
-        print("\n🏃 Running Relevancy Agent...")
+        print(f"Created Test Lead: {lead.business_name} ({lead.website})")
+        print(f"Criteria: {session.search_query}")
+
+        print("\nRunning Relevancy Agent...")
         run_relevancy_agent(db, lead.result_id)
 
-        # 5. Check Results
         db.refresh(lead)
-        print("\n✅ Verification Results:")
-        print(f"   - Relevance Decision: {lead.relevance_status}")
+        print("\nVerification Results:")
+        print(f"   - Relevance Status: {lead.relevance_status}")
+        print(f"   - Relevance Decision: {lead.relevance_decision}")
         print(f"   - Score: {lead.relevance_score}")
         print(f"   - Business Type: {lead.business_type}")
         print(f"   - Primary Niche: {lead.primary_niche}")
         print(f"   - Reason: {lead.relevance_reason}")
-        
-        # Validation Logic
-        if lead.relevance_status == "irrelevant" or lead.relevance_score < 50:
-             print("\n✨ SUCCESS: Agent correctly identified Python.org is irrelevant to 'Leather Jacket Wholesalers'.")
+
+        # Validation logic for this sample.
+        if lead.relevance_decision == "irrelevant" or (lead.relevance_score or 0) < 50:
+            print("\nSUCCESS: Agent identified Python.org as irrelevant to leather wholesalers.")
         else:
-             print("\n⚠️ NOTICE: Agent marked it relevant. Check reasoning above.")
+            print("\nNOTICE: Agent marked it relevant. Review the reasoning above.")
 
     except Exception as e:
-        print(f"\n❌ Verification Failed: {e}")
+        print(f"\nVerification failed: {e}")
         import traceback
         traceback.print_exc()
     finally:
         db.close()
 
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run a local relevancy agent verification.")
+    parser.add_argument(
+        "--user-id",
+        type=int,
+        required=True,
+        help="User ID from request/session context.",
+    )
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
     if not os.getenv("OPENAI_API_KEY"):
-        print("⚠️ WARNING: OPENAI_API_KEY not found. Agent might fail at Analyst step.")
-    
-    verify()
+        print("WARNING: OPENAI_API_KEY not found. Agent might fail at analyst step.")
+
+    args = parse_args()
+    verify(user_id=args.user_id)

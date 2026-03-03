@@ -4,48 +4,45 @@ Welcome to the **Client Finder** project! Follow these steps to get the full sta
 
 ## 1. Environment Variables
 
-Before starting the application, you need to configure your environment variables. 
-
-Create a `.env` file in the **root directory** of the project (`client_finder_project/`) and add the following keys. Please fill in the actual values provided by the team:
+Create a `.env` file in the **root directory** (`client_finder_project/`) and add:
 
 ```env
-# Google Maps API key for location/business searches
 MAPS_API_KEY=
-
-# OpenAI API key for LLM-based analysis
 OPENAI_API_KEY=
 ```
 
-*(Note: The database connection URL is already handled automatically by the `docker-compose.yml` file, so you do not need to set it here.)*
+`DATABASE_URL` is already set in `docker-compose.yml` for the backend container.
 
 ## 2. Start the Application
 
-Once your `.env` file is in place, open your terminal in the root directory and run the following command to build the images and start all services:
+From the project root:
 
 ```bash
 docker compose up --build
 ```
 
-*(Add the `-d` flag at the end if you want to run the containers in detached mode / in the background.)*
+## 3. Database Initialization (Alembic)
 
-## 3. Database Initialization
+Database schema is now managed by Alembic migrations.
 
-**Good news! You don't need to run any manual database migration or table creation commands.**
+Backend startup runs:
 
-Our backend is configured to automatically create the necessary database tables on startup. If you look closely at the backend logs, you will see it attempts to connect to the database, and once ready, it runs the table creation script automatically (`Base.metadata.create_all()` inside `main.py`).
+```bash
+alembic upgrade head
+```
+
+before launching Uvicorn. This replaces `Base.metadata.create_all()` and manual one-off migration scripts.
 
 ## 4. Accessing the Application
 
-Once all the containers are up and running, you can access the different parts of the stack using the following URLs:
-
-- **Frontend Application:** [http://localhost:5173](http://localhost:5173)
-- **Backend API Docs (Swagger UI):** [http://localhost:8000/docs](http://localhost:8000/docs)
-- **Database Connection:** `localhost:5432` 
-  - **User:** `postgres`
-  - **Password:** `postgres`
-  - **Database Name:** `clientfinder`
+- Frontend: http://localhost:5173
+- Backend docs: http://localhost:8000/docs
+- Postgres: `localhost:5432`
+  - User: `postgres`
+  - Password: `postgres`
+  - Database: `clientfinder`
 
 ## Troubleshooting
 
-- If the backend crashes initially, wait a few seconds. It has a retry mechanism to wait for the PostgreSQL database container to become fully healthy before connecting.
-- If you make changes to the `package.json` or `requirements.txt`, make sure to restart with the `--build` flag to rebuild the Docker images.
+- If backend startup fails, verify DB health and that `DATABASE_URL` points to the expected Postgres host/db.
+- After dependency updates (`requirements.txt`, `package.json`), rerun with `--build`.

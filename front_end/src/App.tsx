@@ -8,11 +8,13 @@ import { Clients } from './components/Clients';
 import { BusinessDetails } from './components/BusinessDetails';
 import { Settings } from './components/Settings';
 import { fetchHistory, startSearch, fetchResults, startRelevancyAgent, startVerificationAgent, toggleClientStatus, fetchSavedClients, fetchContexts, createContext } from './services/api';
+import type { SearchResult } from './types/search-result';
+import { getResultId } from './types/search-result';
 
 function App() {
   const [query, setQuery] = useState('');
   const [history, setHistory] = useState([]);
-  const [results, setResults] = useState<any[]>([]);
+  const [results, setResults] = useState<SearchResult[]>([]);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
@@ -42,21 +44,21 @@ function App() {
     let interval: ReturnType<typeof setInterval>;
 
     if (processingIds.size > 0 && results.length > 0) {
-      const processingItem = results.find(r => processingIds.has((r.id || r.result_id || r.place_id).toString()));
-      const currentSearchId = processingItem?.search_id || (results[0] as any).search_id;
+      const processingItem = results.find(r => processingIds.has(getResultId(r)));
+      const currentSearchId = processingItem?.search_id || results[0]?.search_id;
 
       if (currentSearchId) {
         interval = setInterval(async () => {
           try {
-            const resultsRes = await fetchResults(currentSearchId);
-            const newResults: any[] = Array.isArray(resultsRes) ? resultsRes : resultsRes.results || [];
+            const resultsRes = await fetchResults(currentSearchId.toString());
+            const newResults: SearchResult[] = Array.isArray(resultsRes) ? resultsRes : resultsRes.results || [];
 
             setResults(newResults);
 
             setProcessingIds(prev => {
               const stillProcessing = new Set<string>();
               prev.forEach(idStr => {
-                const r = newResults.find((res: any) => (res.id || res.result_id || res.place_id).toString() === idStr);
+                const r = newResults.find((res) => getResultId(res) === idStr);
                 if (r) {
                   let isRelevancyDone = false;
                   let isVerificationDone = false;
@@ -114,8 +116,8 @@ function App() {
       const saved = await fetchSavedClients();
       if (Array.isArray(saved) && saved.length > 0) {
         setResults(prev => {
-          const map = new Map(prev.map(r => [r.place_id, r]));
-          saved.forEach(r => map.set(r.place_id, r));
+          const map = new Map(prev.map(r => [r.result_id, r]));
+          saved.forEach((r: SearchResult) => map.set(r.result_id, r));
           return Array.from(map.values());
         });
       }
@@ -164,9 +166,9 @@ function App() {
       console.log("Leads received from backend:", resultsRes);
       setCurrentSearchId(searchRes.search_id.toString());
       setResults(prev => {
-        const newRes = Array.isArray(resultsRes) ? resultsRes : resultsRes.results || [];
-        const map = new Map(prev.filter(r => r.is_saved_client).map(r => [r.place_id, r])); // keep saved clients
-        newRes.forEach((r: any) => map.set(r.place_id, r));
+        const newRes: SearchResult[] = Array.isArray(resultsRes) ? resultsRes : resultsRes.results || [];
+        const map = new Map(prev.filter(r => r.is_saved_client).map(r => [r.result_id, r])); // keep saved clients
+        newRes.forEach((r) => map.set(r.result_id, r));
         return Array.from(map.values());
       });
 
@@ -200,9 +202,9 @@ function App() {
       const data = await fetchResults(searchId);
       console.log("Leads received from backend:", data);
       setResults(prev => {
-        const newRes = Array.isArray(data) ? data : data.results || [];
-        const map = new Map(prev.filter(r => r.is_saved_client).map(r => [r.place_id, r])); // keep saved clients
-        newRes.forEach((r: any) => map.set(r.place_id, r));
+        const newRes: SearchResult[] = Array.isArray(data) ? data : data.results || [];
+        const map = new Map(prev.filter(r => r.is_saved_client).map(r => [r.result_id, r])); // keep saved clients
+        newRes.forEach((r) => map.set(r.result_id, r));
         return Array.from(map.values());
       });
 
@@ -229,12 +231,12 @@ function App() {
       await new Promise(resolve => setTimeout(resolve, 2000));
       const resultsRes = await fetchResults(searchRes.search_id);
 
-      const newResults: any[] = Array.isArray(resultsRes) ? resultsRes : resultsRes.results || [];
+      const newResults: SearchResult[] = Array.isArray(resultsRes) ? resultsRes : resultsRes.results || [];
 
-      setResults((prev: any[]) => {
-        const map = new Map(prev.map((r: any) => [r.place_id, r]));
-        newResults.forEach(r => map.set(r.place_id, r));
-        return Array.from(map.values()) as any;
+      setResults((prev: SearchResult[]) => {
+        const map = new Map(prev.map((r) => [r.result_id, r]));
+        newResults.forEach(r => map.set(r.result_id, r));
+        return Array.from(map.values());
       });
       setNextPageToken(searchRes.next_page_token || null);
     } catch (err: any) {
@@ -288,12 +290,12 @@ function App() {
     setCurrentView('business-details');
   };
 
-  const handleAddToClients = async (business: any) => {
-    const idStr = (business.id || business.result_id || business.place_id).toString();
+  const handleAddToClients = async (business: SearchResult) => {
+    const idStr = getResultId(business);
     try {
       await toggleClientStatus(idStr, true);
       setResults(prev => prev.map(r => {
-        if ((r.id || r.result_id || r.place_id).toString() === idStr) {
+        if (getResultId(r) === idStr) {
           return { ...r, is_saved_client: true };
         }
         return r;
@@ -307,7 +309,7 @@ function App() {
     try {
       await Promise.all(ids.map(id => toggleClientStatus(id, true)));
       setResults(prev => prev.map(r => {
-        if (ids.includes((r.id || r.result_id || r.place_id).toString())) {
+        if (ids.includes(getResultId(r))) {
           return { ...r, is_saved_client: true };
         }
         return r;
@@ -321,7 +323,7 @@ function App() {
     try {
       await Promise.all(ids.map(id => toggleClientStatus(id, false)));
       setResults(prev => prev.map(r => {
-        if (ids.includes((r.id || r.result_id || r.place_id).toString())) {
+        if (ids.includes(getResultId(r))) {
           return { ...r, is_saved_client: false };
         }
         return r;
@@ -371,7 +373,7 @@ function App() {
       case 'relevancy':
         return (
           <RelevancyFilter
-            results={results.filter(r => activeRelevancyIds.includes((r.id || r.result_id || r.place_id)?.toString()))}
+            results={results.filter(r => activeRelevancyIds.includes(getResultId(r)))}
             processingIds={processingIds}
             isVerifying={processingIds.size > 0 && processingAction === 'verification'}
             onValidate={handleAdvanceToValidation}
@@ -382,7 +384,7 @@ function App() {
       case 'validation':
         return (
           <BusinessValidation
-            results={results.filter(r => activeValidationIds.includes((r.id || r.result_id || r.place_id)?.toString()))}
+            results={results.filter(r => activeValidationIds.includes(getResultId(r)))}
             processingIds={processingIds}
             onAddToClients={(ids) => {
               handleAddMultipleToClients(ids);
@@ -413,7 +415,7 @@ function App() {
           />
         );
       case 'business-details':
-        const selectedBusiness = results.find(r => (r.id || r.result_id || r.place_id)?.toString() === selectedBusinessId) || null;
+        const selectedBusiness = results.find(r => getResultId(r) === selectedBusinessId) || null;
         return (
           <BusinessDetails
             business={selectedBusiness}

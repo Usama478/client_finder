@@ -3,16 +3,18 @@ import { PieChart, Pie, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Res
 import { Badge } from './ui/badge';
 import { useState, useEffect } from 'react';
 import { fetchDashboardStats } from '../services/api';
+import type { SearchResult } from '../types/search-result';
 
-const getVerificationStatusText = (verificationScore?: number | null) => {
-  const score = verificationScore ?? 0;
+const getVerificationStatusText = (verificationStatus?: string | null, verification_score?: number | null) => {
+  if (verificationStatus !== 'completed') return "Unverified";
+  const score = verification_score ?? 0;
   if (score === 0) return "Unverified";
   if (score > 50) return "Verified";
   return "Partially Verified";
 };
 
-const getRiskLevelText = (relevanceScore?: number | null) => {
-  const score = relevanceScore ?? 0;
+const getRiskLevelText = (relevance_score?: number | null) => {
+  const score = relevance_score ?? 0;
   if (score === 0 || score < 40) return "High Risk";
   if (score > 70) return "Low Risk";
   return "Medium Risk";
@@ -48,16 +50,16 @@ export function DashboardOverview({ history, onSelectHistory }: DashboardProps) 
   const riskDistributionRaw = statsData?.risk_distribution || [];
   const verificationDataRaw = statsData?.verification_data || [];
 
-  const clientsList = statsData?.clients || statsData?.saved_clients || statsData?.all_clients || [];
+  const clientsList: SearchResult[] = statsData?.clients || statsData?.saved_clients || statsData?.all_clients || [];
 
   const verificationCounts = { "Unverified": 0, "Partially Verified": 0, "Verified": 0 };
   const riskCounts = { "High Risk": 0, "Medium Risk": 0, "Low Risk": 0 };
 
   if (clientsList.length > 0) {
-    clientsList.forEach((client: any) => {
-      const vScore = client.verificationScore ?? client.verification_score ?? 0;
-      const rScore = client.relevanceScore ?? client.relevance_score ?? 0;
-      verificationCounts[getVerificationStatusText(vScore) as keyof typeof verificationCounts]++;
+    clientsList.forEach((client) => {
+      const vScore = client.verification_score ?? 0;
+      const rScore = client.relevance_score ?? 0;
+      verificationCounts[getVerificationStatusText(client.verification_status, vScore) as keyof typeof verificationCounts]++;
       riskCounts[getRiskLevelText(rScore) as keyof typeof riskCounts]++;
     });
   }
@@ -220,9 +222,9 @@ export function DashboardOverview({ history, onSelectHistory }: DashboardProps) 
             <div className="space-y-3">
               {history.map((search: any) => (
                 <div
-                  key={search.id || search.search_id}
+                  key={search.search_id}
                   className="flex items-center justify-between p-3 bg-gray-50 dark:bg-black/30 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-100 dark:bg-gray-800 transition-colors"
-                  onClick={() => onSelectHistory((search.search_id || search.id).toString())}
+                  onClick={() => onSelectHistory(search.search_id.toString())}
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 bg-gray-100 dark:bg-gray-800 rounded-lg flex items-center justify-center">

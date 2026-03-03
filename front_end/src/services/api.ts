@@ -8,7 +8,9 @@ const api = axios.create({
 });
 
 export const fetchHistory = async () => {
-    const response = await api.get('/sessions/1');
+    const response = await api.get('/sessions', {
+        params: { user_id: 1 },
+    });
     return response.data;
 };
 

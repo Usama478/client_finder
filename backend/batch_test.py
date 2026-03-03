@@ -39,14 +39,15 @@ for lead in leads:
     analysis = analyze_relevance_with_llm(state)
     
     # 5. Save to DB
-    lead.relevance_status = analysis.get("relevance_decision")
+    lead.relevance_status = "completed"
+    lead.relevance_decision = analysis.get("relevance_decision")
     lead.relevance_score = analysis.get("relevance_score")
     lead.relevance_reason = analysis.get("relevance_reason")
     lead.business_type = analysis.get("business_type")
     lead.primary_niche = analysis.get("primary_niche")
     db.commit()
     
-    print(f"\n💾 SAVED: {str(lead.relevance_status).upper()} | Score: {lead.relevance_score}")
+    print(f"\n💾 SAVED: {str(lead.relevance_decision).upper()} | Score: {lead.relevance_score}")
     print(f"Reason: {lead.relevance_reason}\n")
 
 db.close()

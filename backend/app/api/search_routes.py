@@ -57,19 +57,21 @@ def search_endpoint(request: SearchRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/sessions/{user_id}")
-def get_search_sessions(user_id: int, db: Session = Depends(get_db)):
-    """Fetch all search sessions for a user, ordered by most recent."""
+def get_search_sessions_deprecated(user_id: int):
+    raise HTTPException(status_code=410, detail="Use /sessions?user_id=")
+
+
+@router.get("/sessions")
+def list_search_sessions(user_id: int, db: Session = Depends(get_db)):
+    """List search sessions for a user, ordered by most recent. Returns empty list if none."""
     try:
-        sessions = db.query(SearchSession).filter(
-            SearchSession.user_id == user_id
-        ).order_by(SearchSession.created_at.desc()).all()
-        
-        if not sessions:
-            raise HTTPException(status_code=404, detail="No search sessions found for this user.")
-            
+        sessions = (
+            db.query(SearchSession)
+            .filter(SearchSession.user_id == user_id)
+            .order_by(SearchSession.created_at.desc())
+            .all()
+        )
         return sessions
-    except HTTPException:
-        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

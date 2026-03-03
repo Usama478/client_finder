@@ -1,27 +1,9 @@
 import React, { useState } from 'react';
 import { Building2, MapPin, Phone, Globe, ShieldCheck, Mail } from 'lucide-react';
+import type { SearchResult } from '../types/search-result';
+import { getResultId, getVerificationBucket } from '../types/search-result';
 
-interface ResultItem {
-    id: string;
-    business_name: string | null;
-    place_id: string | null;
-    address: string | null;
-    phone_number: string | null;
-    website: string | null;
-    is_verified: boolean;
-    relevance_status?: string | null;
-    relevance_score?: number | null;
-    relevance_reason?: string | null;
-    rating?: number | null;
-    types?: string[] | null;
-    verification_status?: string | null;
-    verification_result?: string | null;
-    verification_score?: number | null;
-    verification_reason?: string | null;
-    email_found?: string | null;
-    email_status?: string | null;
-    raw_data?: any;
-}
+type ResultItem = SearchResult;
 
 interface ResultsTableProps {
     results: ResultItem[];
@@ -65,8 +47,8 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({ results, isLoading, 
     return (
         <div className="flex flex-col h-full overflow-y-auto">
             <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 pb-6 mt-4 px-2">
-                {results.map((result: any) => {
-                    const cardId = (result.id || result.result_id || result.place_id).toString();
+                {results.map((result) => {
+                    const cardId = getResultId(result);
                     const isSelected = selectedIds.has(cardId);
                     const isVisible = visibleIds === null || visibleIds.includes(cardId);
 
@@ -97,7 +79,7 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({ results, isLoading, 
                                 </div>
                                 {/* Status Badges */}
                                 <div className="flex-shrink-0 ml-2 flex flex-col gap-1 items-end">
-                                    {result.is_verified ? (
+                                    {getVerificationBucket(result) === 'verified' ? (
                                         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200" title="Verified">
                                             <ShieldCheck className="w-3.5 h-3.5" />
                                         </span>

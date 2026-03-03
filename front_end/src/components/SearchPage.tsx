@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import { Search, MapPin, Filter, Star, Building2, Loader2, CheckSquare, Square } from 'lucide-react';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
+import type { SearchResult } from '../types/search-result';
+import { getResultId, getVerificationBucket } from '../types/search-result';
 
 interface SearchPageProps {
   query: string;
   setQuery: (q: string) => void;
   handleSearch: (e?: React.FormEvent) => void;
-  results: any[];
+  results: SearchResult[];
   isSearching: boolean;
   error: string | null;
   selectedIds: Set<string>;
@@ -31,11 +33,7 @@ export function SearchPage({
 
   const verificationStatuses = ['all', 'verified', 'partially-verified', 'not-verified'];
 
-  const getVerificationStatus = (business: any) => {
-    if (business.is_verified || (business.verification_score && business.verification_score > 70)) return 'verified';
-    if (!business.is_verified && business.verification_score && business.verification_score > 40 && business.verification_score <= 70) return 'partially-verified';
-    return 'not-verified';
-  };
+  const getVerificationStatus = (business: SearchResult) => getVerificationBucket(business);
 
   let filteredBusinesses = results;
   if (selectedVerification !== 'all') {
@@ -144,7 +142,7 @@ export function SearchPage({
                 if (selectedIds.size === results.length) {
                   setSelectedIds(new Set());
                 } else {
-                  const allIds = results.map((r: any) => (r.id || r.result_id || r.place_id).toString());
+                  const allIds = results.map((r) => getResultId(r));
                   setSelectedIds(new Set(allIds));
                 }
               }}
@@ -179,7 +177,7 @@ export function SearchPage({
 
       <div className="space-y-4">
         {filteredBusinesses.map((business) => {
-          const cardId = (business.id || business.result_id || business.place_id).toString();
+          const cardId = getResultId(business);
           const isSelected = selectedIds.has(cardId);
           const isProcessing = processingIds.has(cardId);
 

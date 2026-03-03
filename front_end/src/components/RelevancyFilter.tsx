@@ -3,10 +3,12 @@ import { MapPin, CheckCircle, XCircle, Loader2, ArrowLeft, CheckSquare, Square, 
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
 import { Badge } from './ui/badge';
+import type { SearchResult } from '../types/search-result';
+import { getResultId } from '../types/search-result';
 
 interface RelevancyFilterProps {
   onValidate: (ids: string[]) => void;
-  results: any[];
+  results: SearchResult[];
   processingIds: Set<string>;
   isVerifying: boolean;
   onBack: () => void;
@@ -16,8 +18,8 @@ interface RelevancyFilterProps {
 export function RelevancyFilter({ onValidate, results, processingIds, isVerifying, onBack, onSelectBusiness }: RelevancyFilterProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const relevantBusinesses = results.map(b => {
-    const isPassed = b.relevance_score != null && b.relevance_score > 70;
-    const cardId = (b.id || b.result_id || b.place_id).toString();
+    const isPassed = b.relevance_status === 'completed' && b.relevance_decision === 'relevant';
+    const cardId = getResultId(b);
     const isLoadProcessing = processingIds.has(cardId);
     return {
       ...b,

@@ -3,16 +3,11 @@ import { MapPin, CheckCircle, XCircle, Loader2, ArrowLeft, CheckSquare, Square, 
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
 import { Badge } from './ui/badge';
-
-const getVerificationStatusText = (verificationScore?: number | null) => {
-  const score = verificationScore ?? 0;
-  if (score === 0) return "Unverified";
-  if (score > 50) return "Verified";
-  return "Partially Verified";
-};
+import type { SearchResult } from '../types/search-result';
+import { getResultId, getVerificationStatusText } from '../types/search-result';
 
 interface BusinessValidationProps {
-  results: any[];
+  results: SearchResult[];
   processingIds: Set<string>;
   onAddToClients: (ids: string[]) => void;
   onBack: () => void;
@@ -23,7 +18,7 @@ export function BusinessValidation({ results, processingIds, onAddToClients, onB
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const validatingBusinesses = results.map(b => {
-    const cardId = (b.id || b.result_id || b.place_id).toString();
+    const cardId = getResultId(b);
     const isProcessing = processingIds.has(cardId);
     return { ...b, cardId, isProcessing };
   });
@@ -127,7 +122,7 @@ export function BusinessValidation({ results, processingIds, onAddToClients, onB
                         <span className="truncate" title={business.business_name || 'Unknown Business'}>
                           {business.business_name || 'Unknown Business'}
                         </span>
-                        {getVerificationStatusText(business.verificationScore ?? business.verification_score) === "Verified" ? (
+                        {getVerificationStatusText(business) === "Verified" ? (
                           <CheckCircle className="w-4 h-4 text-emerald-500 flex-shrink-0" />
                         ) : (
                           <ShieldAlert className="w-4 h-4 text-zinc-500 flex-shrink-0" />
@@ -150,18 +145,18 @@ export function BusinessValidation({ results, processingIds, onAddToClients, onB
                 <div className="flex flex-col gap-3 mt-4">
                   <div className="flex flex-wrap gap-2">
                     <Badge className={
-                      getVerificationStatusText(business.verificationScore ?? business.verification_score) === "Verified"
+                      getVerificationStatusText(business) === "Verified"
                         ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20 inline-flex items-center"
-                        : getVerificationStatusText(business.verificationScore ?? business.verification_score) === "Partially Verified"
+                        : getVerificationStatusText(business) === "Partially Verified"
                           ? "bg-amber-500/10 text-amber-500 border-amber-500/20 inline-flex items-center"
                           : "bg-gray-100 dark:bg-zinc-800 text-zinc-500 border-gray-300 dark:border-zinc-700 inline-flex items-center"
                     }>
-                      {getVerificationStatusText(business.verificationScore ?? business.verification_score) === "Verified" ? (
+                      {getVerificationStatusText(business) === "Verified" ? (
                         <CheckCircle className="w-3 h-3 mr-1 inline" />
                       ) : (
                         <XCircle className="w-3 h-3 mr-1 inline" />
                       )}
-                      {getVerificationStatusText(business.verificationScore ?? business.verification_score)}
+                      {getVerificationStatusText(business)}
                     </Badge>
                     {business.relevance_score != null && (
                       <Badge variant="secondary" className="bg-blue-500/10 text-blue-400 border-blue-500/20">

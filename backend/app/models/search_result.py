@@ -28,6 +28,7 @@ class SearchResult(Base):
 
     # Relevance agent
     relevance_status = Column(String, default="pending")
+    relevance_decision = Column(String, nullable=True)
     relevance_score = Column(Float, nullable=True)
     relevance_reason = Column(Text, nullable=True)
     
