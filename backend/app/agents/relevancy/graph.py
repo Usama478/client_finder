@@ -1,74 +1,95 @@
-from langgraph.graph import StateGraph, END
+from langgraph.graph import END, StateGraph
+
+from app.agents.relevancy.nodes import (
+    collect_page_sources_node,
+    detect_platform_node,
+    end_irrelevant_node,
+    extract_clean_text_and_sections_node,
+    extract_structured_signals_node,
+    finalize_manual_review_node,
+    llm_relevance_judge_node,
+    shopify_probe_node,
+)
 from app.agents.relevancy.state import RelevancyAgentState
-from app.agents.relevancy import tools 
 
-# --- Node Wrappers ---
 
-def check_status_node(state: RelevancyAgentState):
-    """
-    Phase 1: Basic Health Check.
-    """
-    print("   🏥 NODE: Checking Website Status...")
-    return tools.fetch_website_status(state)
+def _route_after_collect(state: RelevancyAgentState) -> str:
+    if state.get("collect_blocked") is True:
+        return "finalize_manual_review"
+    if state.get("website_exists") is False:
+        return "end_irrelevant"
+    return "extract_structured_signals"
 
-def marketplace_node(state: RelevancyAgentState):
-    """
-    Phase 2: Marketplace Filter.
-    """
-    print("   🛒 NODE: Checking Marketplace Status...")
-    return tools.detect_marketplace(state)
 
-def investigate_node(state: RelevancyAgentState):
-    """
-    Phase 3: The Investigator (Gather Hard Evidence).
-    Only runs if website exists and is not a generic marketplace.
-    """
-    # Fail-safe: If site dead or junk, skip investigation to save time
-    if state.get("website_exists") is False or state.get("is_marketplace") is True:
-        print("   ⏭️ Skipping Investigation (Site dead or Marketplace).")
-        return {"evidence": {"error": "Skipped because site is dead or marketplace"}}
+def _route_after_structured(state: RelevancyAgentState) -> str:
+    structured = state.get("structured_signals_output") or {}
+    signal_strength = structured.get("structured_signal_strength") or state.get("structured_signal_strength")
+    has_catalog = structured.get("structured_has_product_catalog")
+    if has_catalog is None:
+        has_catalog = state.get("structured_has_product_catalog")
 
-    print("   🕵️ NODE: Running Investigator...")
-    return tools.gather_website_evidence(state)
+    if signal_strength == "strong" and has_catalog is True:
+        existing = state.get("signals_used") or []
+        used = [str(item).strip() for item in existing if str(item).strip()]
+        if "structured.strong_signal" not in used:
+            used.append("structured.strong_signal")
+        state["signals_used"] = used[:12]
+        return "llm_relevance_judge"
+    return "extract_clean_text_and_sections"
 
-def analyze_node(state: RelevancyAgentState):
-    """
-    Phase 4: The Analyst (LLM Decision).
-    """
-    # Fail-safe: If no evidence or skipped
-    evidence = state.get("evidence", {})
-    if not evidence or "error" in evidence:
-        print("   ⏭️ Skipping Analysis (No evidence).")
-        return {
-            "relevance_decision": "irrelevant",
-            "relevance_score": 0,
-            "relevance_reason": "Website unreachable or identified as generic marketplace.",
-            "business_type": "Unknown",
-            "primary_niche": "Unknown",
-            "is_finalized": True
-        }
 
-    print("   📊 NODE: Running Analyst...")
-    return tools.analyze_relevance_with_llm(state)
+def _route_after_platform(state: RelevancyAgentState) -> str:
+    if state.get("collect_blocked") is True:
+        return "finalize_manual_review"
+    if state.get("should_run_shopify_probe") is True:
+        return "shopify_probe"
+    return "llm_relevance_judge"
 
-# --- Graph Definition ---
 
 workflow = StateGraph(RelevancyAgentState)
 
-# 1. Add Nodes
-workflow.add_node("check_status", check_status_node)
-workflow.add_node("detect_marketplace", marketplace_node)
-workflow.add_node("investigate", investigate_node)
-workflow.add_node("analyze", analyze_node)
+workflow.add_node("collect_page_sources", collect_page_sources_node)
+workflow.add_node("extract_structured_signals", extract_structured_signals_node)
+workflow.add_node("extract_clean_text_and_sections", extract_clean_text_and_sections_node)
+workflow.add_node("detect_platform", detect_platform_node)
+workflow.add_node("shopify_probe", shopify_probe_node)
+workflow.add_node("llm_relevance_judge", llm_relevance_judge_node)
+workflow.add_node("end_irrelevant", end_irrelevant_node)
+workflow.add_node("finalize_manual_review", finalize_manual_review_node)
 
-# 2. Set Entry Point
-workflow.set_entry_point("check_status")
+workflow.set_entry_point("collect_page_sources")
+workflow.add_conditional_edges(
+    "collect_page_sources",
+    _route_after_collect,
+    {
+        "finalize_manual_review": "finalize_manual_review",
+        "end_irrelevant": "end_irrelevant",
+        "extract_structured_signals": "extract_structured_signals",
+    },
+)
+workflow.add_conditional_edges(
+    "extract_structured_signals",
+    _route_after_structured,
+    {
+        "llm_relevance_judge": "llm_relevance_judge",
+        "extract_clean_text_and_sections": "extract_clean_text_and_sections",
+    },
+)
+workflow.add_edge("extract_clean_text_and_sections", "detect_platform")
+workflow.add_conditional_edges(
+    "detect_platform",
+    _route_after_platform,
+    {
+        "finalize_manual_review": "finalize_manual_review",
+        "shopify_probe": "shopify_probe",
+        "llm_relevance_judge": "llm_relevance_judge",
+    },
+)
 
-# 3. Add Edges (Linear Flow)
-workflow.add_edge("check_status", "detect_marketplace")
-workflow.add_edge("detect_marketplace", "investigate")
-workflow.add_edge("investigate", "analyze")
-workflow.add_edge("analyze", END)
+workflow.add_edge("shopify_probe", "llm_relevance_judge")
+workflow.add_edge("llm_relevance_judge", END)
+workflow.add_edge("end_irrelevant", END)
+workflow.add_edge("finalize_manual_review", END)
 
-# 4. Compile
+# Keep symbol name for API import compatibility.
 relevancy_graph = workflow.compile()

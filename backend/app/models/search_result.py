@@ -31,6 +31,10 @@ class SearchResult(Base):
     relevance_decision = Column(String, nullable=True)
     relevance_score = Column(Float, nullable=True)
     relevance_reason = Column(Text, nullable=True)
+    confidence = Column(Float, nullable=True)
+    match_reasons = Column(JSON, nullable=True)
+    mismatch_reasons = Column(JSON, nullable=True)
+    signals_used = Column(JSON, nullable=True)
     
     # New Analyst Fields
     business_type = Column(String, nullable=True)

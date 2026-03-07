@@ -1,0 +1,249 @@
+from __future__ import annotations
+
+import re
+from typing import Any, Dict, List, Set
+
+import extruct
+import trafilatura
+from w3lib.html import get_base_url
+
+from app.agents.relevancy.schemas import (
+    CleanTextOutput,
+    StructuredEntity,
+    StructuredSignalsOutput,
+)
+from app.agents.relevancy.state import RelevancyAgentState
+from app.agents.relevancy.tools_v2.collect import collect_page_sources
+
+OG_PRODUCT_RE = re.compile(
+    r'<meta[^>]+property=["\']og:type["\'][^>]+content=["\']([^"\']+)["\']',
+    re.IGNORECASE,
+)
+META_GENERATOR_RE = re.compile(
+    r'<meta[^>]+name=["\']generator["\'][^>]+content=["\']([^"\']+)["\']',
+    re.IGNORECASE,
+)
+
+
+def _pages_from_state(state: RelevancyAgentState) -> List[Dict[str, Any]]:
+    collect = state.get("collect_sources_output") or {}
+    homepage = collect.get("homepage")
+    pages = collect.get("pages") or []
+    combined: List[Dict[str, Any]] = []
+    if homepage:
+        combined.append(homepage)
+    combined.extend(pages)
+    return combined
+
+
+def _extract_structured_entities(html: str, url: str) -> List[StructuredEntity]:
+    try:
+        data = extruct.extract(
+            html,
+            base_url=get_base_url(html, url),
+            syntaxes=["json-ld", "microdata", "rdfa"],
+            errors="ignore",
+            uniform=True,
+        )
+    except Exception:
+        return []
+    entities: List[StructuredEntity] = []
+    syntax_map = [("json-ld", "json-ld"), ("microdata", "microdata"), ("rdfa", "rdfa")]
+
+    for key, source in syntax_map:
+        items = data.get(key) or []
+        for item in items[:12]:
+            if not isinstance(item, dict):
+                continue
+            type_hint = item.get("@type") or item.get("type")
+            if isinstance(type_hint, list):
+                type_hint = ", ".join(str(x) for x in type_hint[:3])
+            name = item.get("name") or item.get("headline") or item.get("title")
+            item_url = item.get("url")
+            keys = list(item.keys())[:18]
+            entities.append(
+                StructuredEntity(
+                    source=source, type_hint=str(type_hint) if type_hint else None, name=name, url=item_url, keys=keys
+                )
+            )
+    return entities[:30]
+
+
+def _maybe_refetch_full_html(page: Dict[str, Any], state: RelevancyAgentState) -> str:
+    if page.get("html_truncated") is not True:
+        return ""
+
+    target_url = page.get("final_url") or page.get("requested_url") or state.get("website") or ""
+    if not isinstance(target_url, str) or not target_url:
+        return ""
+
+    try:
+        result = collect_page_sources(target_url, timeout_s=15)
+    except Exception:
+        return ""
+
+    html = result.get("html")
+    if isinstance(html, str) and html.strip():
+        return html
+    return ""
+
+
+def _entity_keys(entity: StructuredEntity) -> Set[str]:
+    return {str(key).strip().lower() for key in entity.keys if str(key).strip()}
+
+
+def _extract_meta_signal_tags(html: str) -> Set[str]:
+    tags: Set[str] = set()
+    lowered = html.lower()
+
+    og_matches = OG_PRODUCT_RE.findall(html)
+    if any("product" in value.lower() for value in og_matches):
+        tags.add("opengraph")
+
+    generator_matches = META_GENERATOR_RE.findall(html)
+    if any("shopify" in value.lower() for value in generator_matches):
+        tags.add("meta_generator")
+
+    if "property=\"og:" in lowered or "property='og:" in lowered:
+        tags.add("opengraph")
+    return tags
+
+
+def _collect_structured_summary(entities: List[StructuredEntity], meta_tags: Set[str]) -> Dict[str, object]:
+    flags: Set[str] = set()
+    structured_signals_used: Set[str] = set(meta_tags)
+    has_product_catalog = False
+    has_organization = False
+    has_product_signal = False
+
+    for entity in entities:
+        type_hint = (entity.type_hint or "").lower()
+        keys = _entity_keys(entity)
+        is_jsonld = entity.source == "json-ld"
+
+        if not is_jsonld:
+            continue
+
+        has_product_or_offer_type = any(
+            token in type_hint for token in ("product", "offer", "itemlist", "offercatalog")
+        )
+        has_product_or_offer_keys = any(token in keys for token in ("offers", "itemlistelement", "sku", "price"))
+        if has_product_or_offer_type or has_product_or_offer_keys:
+            flags.add("jsonld_products")
+            structured_signals_used.add("jsonld_product")
+            has_product_signal = True
+
+        if ("organization" in type_hint or "localbusiness" in type_hint) and (
+            bool(entity.name) or bool(entity.url) or "sameas" in keys
+        ):
+            flags.add("jsonld_org")
+            structured_signals_used.add("jsonld_org")
+            has_organization = True
+
+        has_catalog_type = any(token in type_hint for token in ("itemlist", "collectionpage", "offercatalog"))
+        has_catalog_keys = any(token in keys for token in ("itemlistelement", "numberofitems", "itemlistorder"))
+        if has_catalog_type or has_catalog_keys:
+            flags.add("jsonld_catalog")
+            structured_signals_used.add("jsonld_catalog")
+            has_product_catalog = True
+
+    if has_product_catalog and (has_product_signal or has_organization):
+        signal_strength = "strong"
+    elif structured_signals_used or flags:
+        signal_strength = "weak"
+    else:
+        signal_strength = "none"
+
+    quality = "empty" if signal_strength == "none" else signal_strength
+    return {
+        "signal_flags": sorted(flags),
+        "structured_signals_used": sorted(structured_signals_used),
+        "structured_has_product_catalog": has_product_catalog,
+        "structured_has_organization": has_organization,
+        "structured_signal_strength": signal_strength,
+        "quality": quality,
+        "strong_signal": signal_strength == "strong",
+    }
+
+
+def extract_structured_signals(state: RelevancyAgentState) -> Dict[str, object]:
+    entities: List[StructuredEntity] = []
+    meta_signal_tags: Set[str] = set()
+    for page in _pages_from_state(state):
+        html = page.get("html") or ""
+        url = page.get("final_url") or page.get("requested_url") or state.get("website") or ""
+        if not html or not url:
+            continue
+
+        meta_signal_tags.update(_extract_meta_signal_tags(html))
+        extracted = _extract_structured_entities(html, url)
+        if not extracted:
+            refetched_html = _maybe_refetch_full_html(page, state)
+            if refetched_html:
+                meta_signal_tags.update(_extract_meta_signal_tags(refetched_html))
+                extracted = _extract_structured_entities(refetched_html, url)
+
+        entities.extend(extracted)
+        if len(entities) >= 30:
+            break
+
+    counts = {"json-ld": 0, "microdata": 0, "rdfa": 0}
+    for entity in entities:
+        counts[entity.source] = counts.get(entity.source, 0) + 1
+
+    summary = _collect_structured_summary(entities[:30], meta_signal_tags)
+    signal_flags = summary["signal_flags"]
+    structured_signals_used = summary["structured_signals_used"]
+    structured_has_product_catalog = bool(summary["structured_has_product_catalog"])
+    structured_has_organization = bool(summary["structured_has_organization"])
+    structured_signal_strength = str(summary["structured_signal_strength"])
+    strong_signal = bool(summary["strong_signal"])
+    quality = str(summary["quality"])
+
+    output = StructuredSignalsOutput(
+        entities=entities[:30],
+        counts=counts,
+        signal_flags=signal_flags,
+        strong_signal=strong_signal,
+        quality=quality,
+        structured_has_product_catalog=structured_has_product_catalog,
+        structured_has_organization=structured_has_organization,
+        structured_signal_strength=structured_signal_strength,
+        structured_signals_used=structured_signals_used,
+    )
+    return {
+        "structured_signals_output": output.model_dump(),
+        "structured_has_product_catalog": structured_has_product_catalog,
+        "structured_has_organization": structured_has_organization,
+        "structured_signal_strength": structured_signal_strength,
+        "structured_signals_used": structured_signals_used,
+    }
+
+
+def extract_clean_text_and_sections(state: RelevancyAgentState) -> Dict[str, object]:
+    chunks: List[str] = []
+    sections: Dict[str, str] = {}
+
+    for page in _pages_from_state(state):
+        label = page.get("label") or "page"
+        html = page.get("html") or ""
+        if not html:
+            continue
+        clean_text = trafilatura.extract(
+            html,
+            include_comments=False,
+            include_links=False,
+            favor_recall=False,
+            deduplicate=True,
+        )
+        if clean_text:
+            trimmed = clean_text.strip()
+            if trimmed:
+                sections[str(label)] = trimmed[:500]
+                chunks.append(trimmed[:900])
+        if len(chunks) >= 8:
+            break
+
+    excerpt = "\n\n".join(chunks)[:2500]
+    output = CleanTextOutput(text_excerpt=excerpt, sections=sections)
+    return {"clean_text_output": output.model_dump()}
