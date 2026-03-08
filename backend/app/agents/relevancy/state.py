@@ -38,6 +38,8 @@ class RelevancyAgentState(TypedDict):
     shopify_probe_output: Optional[Dict[str, Any]]
     structured_signals_output: Optional[Dict[str, Any]]
     clean_text_output: Optional[Dict[str, Any]]
+    catalog_intelligence_output: Optional[Dict[str, Any]]
+    business_model_intelligence_output: Optional[Dict[str, Any]]
     llm_decision_output: Optional[Dict[str, Any]]
     structured_has_product_catalog: Optional[bool]
     structured_has_organization: Optional[bool]

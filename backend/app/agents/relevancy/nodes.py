@@ -1,21 +1,55 @@
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+import logging
+from typing import Dict, List, Optional, Tuple
 from urllib.parse import urljoin
 
 from app.agents.relevancy.schemas import CollectPageSourcesOutput, PageSource
 from app.agents.relevancy.state import RelevancyAgentState
 from app.agents.relevancy.tools_v2 import (
+    catalog_intelligence,
     collect_page_sources,
     detect_platform,
     extract_clean_text_and_sections,
     extract_structured_signals,
+    business_model_intelligence,
     llm_relevance_judge,
     marketplace_filter,
     shopify_probe,
 )
 
 MAX_PAGESOURCE_HTML = 39000
+PRIORITY_ROUTE_LABELS: Tuple[str, ...] = (
+    "wholesale",
+    "trade",
+    "stockists",
+    "retailers",
+    "stores",
+    "about",
+    "contact",
+    "faq",
+    "shipping",
+    "products",
+    "shop",
+    "collections",
+    "category",
+)
+PRIORITY_ROUTE_SLUGS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
+    ("wholesale", ("wholesale", "grosshandel", "b2b")),
+    ("trade", ("trade", "trade-program", "haendler")),
+    ("stockists", ("stockists", "stockist", "where-to-buy")),
+    ("retailers", ("retailers", "retailer", "retail-partners")),
+    ("stores", ("stores", "store-locator", "storefinder")),
+    ("about", ("about", "about-us", "ueber-uns")),
+    ("contact", ("contact", "kontakt", "support")),
+    ("faq", ("faq", "faqs", "haeufige-fragen")),
+    ("shipping", ("shipping", "delivery", "versand")),
+    ("products", ("products", "produkt", "produkte")),
+    ("shop", ("shop", "store", "einkaufen")),
+    ("collections", ("collections", "collection", "kollektionen")),
+    ("category", ("category", "categories", "kategorie")),
+)
+logger = logging.getLogger(__name__)
 
 
 def _normalize_url(url: Optional[str]) -> Optional[str]:
@@ -41,6 +75,9 @@ def _collect_errors(fetch_result: Dict[str, object]) -> List[str]:
     block_reason = fetch_result.get("block_reason")
     if blocked and isinstance(block_reason, str) and block_reason.strip():
         errors.append(f"blocked:{block_reason.strip()}")
+    fallback_reason = fetch_result.get("fallback_reason")
+    if isinstance(fallback_reason, str) and fallback_reason.strip():
+        errors.append(f"fallback:{fallback_reason.strip()}")
     return errors[:12]
 
 
@@ -66,6 +103,12 @@ def _collect_routing_fields(fetch_result: Dict[str, object]) -> Dict[str, object
 def _to_page_source(label: str, requested_url: str, fetch_result: Dict[str, object]) -> PageSource:
     status_code = _as_status_code(fetch_result.get("status_code"))
     final_url = fetch_result.get("final_url")
+    fetch_method = fetch_result.get("fetch_method")
+    title = fetch_result.get("title")
+    rendered_title = fetch_result.get("rendered_title")
+    text_snippet = fetch_result.get("text_snippet")
+    rendered_text_excerpt = fetch_result.get("rendered_text_excerpt")
+    page_diagnostics = fetch_result.get("page_diagnostics") if isinstance(fetch_result.get("page_diagnostics"), list) else []
     raw_html = fetch_result.get("html")
     html_len: Optional[int] = None
     html_truncated = False
@@ -87,14 +130,84 @@ def _to_page_source(label: str, requested_url: str, fetch_result: Dict[str, obje
         requested_url=requested_url,
         final_url=str(final_url) if isinstance(final_url, str) else None,
         fetched=fetched,
+        fetch_method=(
+            str(fetch_method)
+            if isinstance(fetch_method, str) and fetch_method in {"curl_cffi", "httpx", "playwright"}
+            else None
+        ),
         status_code=status_code,
         content_type=None,
-        title=None,
+        title=str(title).strip() if isinstance(title, str) and title.strip() else None,
+        rendered_title=str(rendered_title).strip()
+        if isinstance(rendered_title, str) and str(rendered_title).strip()
+        else None,
+        text_excerpt=str(text_snippet).strip() if isinstance(text_snippet, str) and text_snippet.strip() else None,
+        rendered_text_excerpt=str(rendered_text_excerpt).strip()
+        if isinstance(rendered_text_excerpt, str) and str(rendered_text_excerpt).strip()
+        else None,
         html=html,
         html_len=html_len,
         html_truncated=html_truncated,
+        blocked=blocked,
+        block_reason=(
+            str(fetch_result.get("block_reason")).strip()
+            if isinstance(fetch_result.get("block_reason"), str) and str(fetch_result.get("block_reason")).strip()
+            else None
+        ),
+        needs_browser=bool(fetch_result.get("needs_browser")),
+        browser_fallback_reason=(
+            str(fetch_result.get("fallback_reason")).strip()
+            if isinstance(fetch_result.get("fallback_reason"), str) and str(fetch_result.get("fallback_reason")).strip()
+            else None
+        ),
+        browser_improved=bool(fetch_result.get("browser_improved")),
+        page_diagnostics=[str(item).strip() for item in page_diagnostics if str(item).strip()][:6],
         error=" | ".join(expose_errors) if expose_errors else None,
     )
+
+
+def _normalized_label(value: object, fallback: str = "page") -> str:
+    text = str(value or "").strip().lower()
+    if not text:
+        return fallback
+    clean = "".join(ch for ch in text if ch.isalnum() or ch in {"_", "-", " "}).strip()
+    if not clean:
+        return fallback
+    return clean[:40]
+
+
+def _homepage_link_candidates(base_url: str, homepage_result: Dict[str, object]) -> List[Tuple[str, str]]:
+    candidates: List[Tuple[int, int, int, str, str]] = []
+    label_rank = {label: idx for idx, label in enumerate(PRIORITY_ROUTE_LABELS)}
+    raw_links = homepage_result.get("internal_links")
+    if isinstance(raw_links, list):
+        for item in raw_links[:16]:
+            if not isinstance(item, dict):
+                continue
+            target = str(item.get("url") or "").strip()
+            if not target:
+                continue
+            label = _normalized_label(item.get("label"), fallback="page")
+            priority = label_rank.get(label, len(PRIORITY_ROUTE_LABELS) + 2)
+            score = int(item.get("score") or 0)
+            candidates.append((priority, 0, -score, label[:40], target))
+
+    for label, slugs in PRIORITY_ROUTE_SLUGS:
+        priority = label_rank.get(label, len(PRIORITY_ROUTE_LABELS) + 2)
+        for slug in slugs:
+            target = urljoin(base_url.rstrip("/") + "/", slug)
+            candidates.append((priority, 1, 0, label[:40], target))
+
+    candidates.sort(key=lambda item: (item[0], item[1], item[2], len(item[4])))
+    deduped: List[Tuple[str, str]] = []
+    seen_urls: set[str] = set()
+    for _, _, _, label, target in candidates:
+        key = target.rstrip("/")
+        if not key or key in seen_urls:
+            continue
+        seen_urls.add(key)
+        deduped.append((label[:40], target))
+    return deduped[:16]
 
 
 def marketplace_filter_node(state: RelevancyAgentState):
@@ -114,7 +227,7 @@ def collect_page_sources_node(state: RelevancyAgentState):
             "collect_status_code": None,
         }
 
-    homepage_result = collect_page_sources(normalized)
+    homepage_result = collect_page_sources(normalized, collect_internal_links=True, max_internal_pages=8)
     routing_fields = _collect_routing_fields(homepage_result)
     homepage = _to_page_source("homepage", normalized, homepage_result)
     homepage_status = homepage.status_code
@@ -132,6 +245,10 @@ def collect_page_sources_node(state: RelevancyAgentState):
             normalized_website=normalized,
             homepage=homepage,
             pages=[],
+            fetch_method=homepage.fetch_method,
+            browser_fallback_reason=homepage.browser_fallback_reason,
+            browser_improved=homepage.browser_improved,
+            diagnostics=[str(item).strip() for item in (homepage_result.get("diagnostics") or []) if str(item).strip()],
             errors=errors,
         )
         output_data = output.model_dump()
@@ -151,23 +268,63 @@ def collect_page_sources_node(state: RelevancyAgentState):
         }
 
     base_url = homepage.final_url or normalized
-    candidates = ["about", "products", "shop", "collections", "contact"]
     pages: List[PageSource] = []
     collected_errors: List[str] = []
+    seen_targets: set[str] = set()
+    force_browser_for_routes = bool(homepage_result.get("needs_browser"))
 
-    for slug in candidates:
-        target = urljoin(base_url.rstrip("/") + "/", slug)
-        page_result = collect_page_sources(target, timeout_s=12)
-        pages.append(_to_page_source(slug, target, page_result))
-        page_errors = _collect_errors(page_result)
-        if page_errors:
-            collected_errors.append(f"{slug}:{page_errors[0]}")
+    raw_browser_pages = homepage_result.get("browser_pages")
+    if isinstance(raw_browser_pages, list):
+        for browser_page in raw_browser_pages[:8]:
+            if not isinstance(browser_page, dict):
+                continue
+            requested = str(browser_page.get("requested_url") or browser_page.get("final_url") or "").strip()
+            if not requested:
+                continue
+            target_key = requested.rstrip("/")
+            if target_key in seen_targets:
+                continue
+            label = _normalized_label(browser_page.get("label"), fallback="page")
+            pages.append(_to_page_source(label, requested, browser_page))
+            seen_targets.add(target_key)
+            page_errors = _collect_errors(browser_page)
+            if page_errors:
+                collected_errors.append(f"{label}:{page_errors[0]}")
+            if len(pages) >= 8:
+                break
+
+    use_browser_session_pages = homepage.fetch_method == "playwright" and bool(raw_browser_pages)
+    if not use_browser_session_pages:
+        for label, target in _homepage_link_candidates(base_url, homepage_result):
+            if len(pages) >= 8:
+                break
+            target_key = target.rstrip("/")
+            if target_key in seen_targets:
+                continue
+            page_result = collect_page_sources(target, timeout_s=12, force_browser=force_browser_for_routes)
+            pages.append(_to_page_source(label, target, page_result))
+            seen_targets.add(target_key)
+            page_errors = _collect_errors(page_result)
+            if page_errors:
+                collected_errors.append(f"{label}:{page_errors[0]}")
+
+    logger.info(
+        "collect_v2 node website=%s homepage_method=%s homepage_browser=%s pages=%s",
+        base_url,
+        homepage.fetch_method,
+        homepage.needs_browser,
+        len(pages),
+    )
 
     output = CollectPageSourcesOutput(
         website_exists=True,
         normalized_website=base_url,
         homepage=homepage,
         pages=pages,
+        fetch_method=homepage.fetch_method,
+        browser_fallback_reason=homepage.browser_fallback_reason,
+        browser_improved=homepage.browser_improved,
+        diagnostics=[str(item).strip() for item in (homepage_result.get("diagnostics") or []) if str(item).strip()],
         errors=collected_errors,
     )
     output_data = output.model_dump()
@@ -201,6 +358,14 @@ def extract_structured_signals_node(state: RelevancyAgentState):
 
 def extract_clean_text_and_sections_node(state: RelevancyAgentState):
     return extract_clean_text_and_sections(state)
+
+
+def catalog_intelligence_node(state: RelevancyAgentState):
+    return catalog_intelligence(state)
+
+
+def business_model_intelligence_node(state: RelevancyAgentState):
+    return business_model_intelligence(state)
 
 
 def llm_relevance_judge_node(state: RelevancyAgentState):

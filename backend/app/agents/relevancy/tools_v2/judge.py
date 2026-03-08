@@ -93,8 +93,10 @@ def _dedupe_limited(items: Iterable[str], limit: int = 12) -> List[str]:
 def _available_signal_tags(state: RelevancyAgentState) -> List[str]:
     structured = state.get("structured_signals_output") or {}
     clean = state.get("clean_text_output") or {}
+    catalog = state.get("catalog_intelligence_output") or {}
     platform = state.get("platform_detection_output") or {}
     shopify = state.get("shopify_probe_output") or {}
+    business_model = state.get("business_model_intelligence_output") or {}
     tags: Set[str] = set()
 
     structured_used = structured.get("structured_signals_used") or state.get("structured_signals_used") or []
@@ -123,12 +125,36 @@ def _available_signal_tags(state: RelevancyAgentState) -> List[str]:
 
     if clean.get("text_excerpt"):
         tags.add("clean_text_excerpt")
+    if catalog.get("has_catalog") is True:
+        tags.add("catalog_present")
+    catalog_mode = str(catalog.get("catalog_mode") or "").strip().lower()
+    if catalog_mode in {"storefront", "marketplace", "directory", "brand_catalog"}:
+        tags.add(f"catalog_mode.{catalog_mode}")
+    if catalog.get("marketplace_like") is True:
+        tags.add("catalog.marketplace")
+    if catalog.get("directory_like") is True:
+        tags.add("catalog.directory")
+    listing_density = str(catalog.get("listing_density") or "").strip().lower()
+    if listing_density in {"medium", "high"}:
+        tags.add(f"catalog_density.{listing_density}")
     if platform.get("platform") and platform.get("platform") != "unknown":
         tags.add("platform_detect")
     if shopify.get("performed") is True and (shopify.get("detected") is True or bool(shopify.get("signals"))):
         tags.add("shopify_catalog")
     if state.get("collect_blocked") is True or (state.get("collect_sources_output") or {}).get("blocked") is True:
         tags.add("blocked_status")
+    if business_model.get("primary_model") in {
+        "retailer",
+        "wholesaler",
+        "manufacturer",
+        "distributor",
+        "brand",
+        "marketplace",
+        "service_business",
+    }:
+        tags.add("business_model_intel")
+    if business_model.get("customer_model"):
+        tags.add(f"business_model_customer.{str(business_model.get('customer_model')).lower()}")
     return _dedupe_limited(sorted(tags), limit=12)
 
 
@@ -153,6 +179,7 @@ def _compact_entities(structured: Dict[str, object]) -> List[Dict[str, object]]:
 def _compact_signals(state: RelevancyAgentState) -> Dict[str, object]:
     structured = state.get("structured_signals_output") or {}
     clean = state.get("clean_text_output") or {}
+    catalog = state.get("catalog_intelligence_output") or {}
     platform = state.get("platform_detection_output") or {}
     shopify = state.get("shopify_probe_output") or {}
     text_excerpt = (clean.get("text_excerpt") or "")[:MAX_CLEAN_EXCERPT]
@@ -179,6 +206,26 @@ def _compact_signals(state: RelevancyAgentState) -> Dict[str, object]:
             "counts": structured.get("counts") or {},
             "signal_flags": (structured.get("signal_flags") or [])[:5],
             "top_entities": _compact_entities(structured),
+        },
+        "catalog": {
+            "has_catalog": bool(catalog.get("has_catalog")),
+            "catalog_confidence": _clamp_float(catalog.get("catalog_confidence")),
+            "catalog_breadth": catalog.get("catalog_breadth"),
+            "catalog_mode": catalog.get("catalog_mode"),
+            "marketplace_like": bool(catalog.get("marketplace_like")),
+            "directory_like": bool(catalog.get("directory_like")),
+            "listing_density": catalog.get("listing_density"),
+            "marketplace_signals": (catalog.get("marketplace_signals") or [])[:4],
+        },
+        "business_model": {
+            "primary_model": (state.get("business_model_intelligence_output") or {}).get("primary_model"),
+            "customer_model": (state.get("business_model_intelligence_output") or {}).get("customer_model"),
+            "fulfillment_model": (state.get("business_model_intelligence_output") or {}).get("fulfillment_model"),
+            "catalog_present": bool(
+                (state.get("business_model_intelligence_output") or {}).get("catalog_present")
+            ),
+            "service_heavy": bool((state.get("business_model_intelligence_output") or {}).get("service_heavy")),
+            "confidence": _clamp_float((state.get("business_model_intelligence_output") or {}).get("confidence")),
         },
         "clean_text": {
             "used": bool(text_excerpt),
@@ -323,6 +370,20 @@ def _homepage_retail_evidence(state: RelevancyAgentState) -> List[str]:
     return evidence
 
 
+def _business_model_favors_b2b(state: RelevancyAgentState) -> bool:
+    model_output = state.get("business_model_intelligence_output") or {}
+    primary = str(model_output.get("primary_model") or "").strip().lower()
+    customer = str(model_output.get("customer_model") or "").strip().lower()
+    confidence = _clamp_float(model_output.get("confidence"), 0.0, 1.0)
+    if confidence < 0.55:
+        return False
+    if customer in {"b2b", "mixed"} and primary in {"wholesaler", "manufacturer", "distributor", "brand", "marketplace"}:
+        return True
+    if customer == "b2b" and primary == "retailer":
+        return False
+    return False
+
+
 def _apply_confidence_policy(decision: LLMRelevanceDecision, policy: str) -> LLMRelevanceDecision:
     payload = decision.model_dump()
     confidence = _clamp_float(payload.get("confidence"))
@@ -356,8 +417,13 @@ def _deterministic_prejudge(state: RelevancyAgentState, signals: Dict[str, objec
     signal_tags = _safe_list(signals.get("available_signal_labels"))
     structured = signals.get("structured") or {}
     clean = signals.get("clean_text") or {}
+    catalog = signals.get("catalog") or {}
     platform = signals.get("platform") or {}
     shopify = signals.get("shopify_probe") or {}
+    business_model = signals.get("business_model") or {}
+    business_model_primary = str(business_model.get("primary_model") or "").strip().lower()
+    business_model_customer = str(business_model.get("customer_model") or "").strip().lower()
+    business_model_conf = _clamp_float(business_model.get("confidence"), 0.0, 1.0)
 
     if _is_blocked(state, signal_tags):
         block_reason = _blocked_reason(state)
@@ -374,11 +440,35 @@ def _deterministic_prejudge(state: RelevancyAgentState, signals: Dict[str, objec
 
     has_catalog = bool(structured.get("structured_has_product_catalog"))
     has_jsonld_product_offer = _contains_jsonld_product_or_offer(structured)
+    catalog_has = bool(catalog.get("has_catalog"))
+    catalog_confidence = _clamp_float(catalog.get("catalog_confidence"))
+    catalog_mode = str(catalog.get("catalog_mode") or "").strip().lower()
+    catalog_marketplace_like = bool(catalog.get("marketplace_like"))
+    catalog_directory_like = bool(catalog.get("directory_like"))
+    catalog_marketplace_signals = _safe_list(catalog.get("marketplace_signals"))
     platform_name = str(platform.get("platform") or "").strip().lower()
     platform_confidence = _clamp_float(platform.get("confidence"))
     platform_ecommerce = platform_name in ECOMMERCE_PLATFORMS
     shopify_probe_detected = bool(shopify.get("performed") is True and shopify.get("detected") is True)
     homepage_retail_evidence = _homepage_retail_evidence(state)
+    marketplace_context_score = 0
+    if catalog_has and catalog_mode in {"marketplace", "directory"}:
+        marketplace_context_score += 2
+    if catalog_marketplace_like:
+        marketplace_context_score += 1
+    if catalog_directory_like:
+        marketplace_context_score += 1
+    if catalog_marketplace_signals:
+        marketplace_context_score += min(2, max(1, len(catalog_marketplace_signals) // 2))
+    if catalog_confidence >= 0.65:
+        marketplace_context_score += 1
+    if business_model_primary == "marketplace" and business_model_conf >= 0.58:
+        marketplace_context_score += 2
+    if business_model_customer in {"b2b", "mixed"}:
+        marketplace_context_score += 1
+    if _business_model_favors_b2b(state):
+        marketplace_context_score += 1
+    marketplace_b2b_context = marketplace_context_score >= 4
 
     ecommerce_signal_score = 0
     ecommerce_mismatch: List[str] = ["Ecommerce retailer / DTC store"]
@@ -407,7 +497,11 @@ def _deterministic_prejudge(state: RelevancyAgentState, signals: Dict[str, objec
         if "platform_detect" in signal_tags:
             ecommerce_signals.append("platform_detect")
 
-    if ecommerce_signal_score > 0:
+    if ecommerce_signal_score > 0 and not marketplace_b2b_context and not (
+        business_model_conf >= 0.62
+        and business_model_customer in {"b2b", "mixed"}
+        and business_model_primary in {"wholesaler", "manufacturer", "distributor", "brand"}
+    ):
         if ecommerce_signal_score >= 5:
             confidence = 0.75
         elif ecommerce_signal_score >= 3:
@@ -426,6 +520,45 @@ def _deterministic_prejudge(state: RelevancyAgentState, signals: Dict[str, objec
         )
         return _apply_confidence_policy(decision, "irrelevant_ecommerce"), "irrelevant_ecommerce"
 
+    if marketplace_b2b_context:
+        if marketplace_context_score >= 7:
+            confidence = 0.84
+        elif marketplace_context_score >= 5:
+            confidence = 0.76
+        else:
+            confidence = 0.68
+
+        match_reasons: List[str] = []
+        if catalog_mode in {"marketplace", "directory"}:
+            match_reasons.append(f"Catalog intelligence classifies the site as {catalog_mode}.")
+        if catalog_marketplace_signals:
+            match_reasons.append(
+                f"Marketplace signals detected: {', '.join(catalog_marketplace_signals[:4])}."
+            )
+        if business_model_primary == "marketplace" and business_model_conf >= 0.58:
+            match_reasons.append("Business-model intelligence favors a B2B marketplace.")
+
+        decision = _build_decision(
+            relevance_decision="relevant",
+            manual_review=marketplace_context_score < 6,
+            confidence=confidence,
+            relevance_reason="B2B marketplace / supplier directory signals detected.",
+            match_reasons=match_reasons,
+            mismatch_reasons=[],
+            signals_used=_decision_signals(
+                signal_tags,
+                [
+                    "catalog_present",
+                    f"catalog_mode.{catalog_mode}" if catalog_mode else "",
+                    "catalog.marketplace" if catalog_marketplace_like else "",
+                    "catalog.directory" if catalog_directory_like else "",
+                    "business_model_intel",
+                ],
+            ),
+            business_type="B2B marketplace" if catalog_mode == "marketplace" else "Supplier directory",
+        )
+        return _apply_confidence_policy(decision, "relevant_b2b"), "relevant_b2b_marketplace"
+
     clean_excerpt = str(clean.get("text_excerpt") or "")
     structured_tokens: List[str] = []
     for item in structured.get("top_entities") or []:
@@ -434,6 +567,11 @@ def _deterministic_prejudge(state: RelevancyAgentState, signals: Dict[str, objec
         structured_tokens.append(str(item.get("type_hint") or ""))
         structured_tokens.append(str(item.get("name") or ""))
         structured_tokens.extend(str(key) for key in (item.get("keys") or []))
+    bm_wholesale = bool(
+        business_model_primary in {"wholesaler", "manufacturer", "distributor"}
+        and business_model_conf >= 0.6
+    )
+    bm_service = business_model_primary == "service_business" and business_model_conf >= 0.6
     business_text = " ".join(
         [
             str((signals.get("business") or {}).get("category") or ""),
@@ -444,6 +582,10 @@ def _deterministic_prejudge(state: RelevancyAgentState, signals: Dict[str, objec
     b2b_hits = _b2b_term_hits(b2b_corpus)
     has_org_schema = bool(structured.get("structured_has_organization"))
     b2b_signal_score = len(b2b_hits) + (1 if has_org_schema else 0)
+    if bm_wholesale:
+        b2b_signal_score += 2
+    if bm_service:
+        b2b_signal_score = max(0, b2b_signal_score - 1)
 
     if b2b_signal_score >= 2:
         if b2b_signal_score >= 5:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from html import unescape
 from typing import Dict, List, Literal, Optional, Tuple
@@ -9,30 +10,31 @@ import httpx
 
 from app.agents.relevancy.schemas import ShopifyProbeOutput
 from app.agents.relevancy.state import RelevancyAgentState
+from app.agents.relevancy.tools_v2.browser_collect import collect_with_playwright
 
 try:
     from curl_cffi import requests as curl_requests
 except Exception:
     curl_requests = None
 
-try:
-    from playwright.sync_api import sync_playwright
-except Exception:
-    sync_playwright = None
-
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
 )
 
+logger = logging.getLogger(__name__)
 FetchMethod = Literal["curl_cffi", "httpx", "playwright"]
 MIN_HTML_BYTES = 800
+MIN_HOMEPAGE_TEXT = 140
+MIN_ROUTE_TEXT = 110
 BLOCK_MARKERS: Tuple[Tuple[str, str], ...] = (
     ("turnstile", "turnstile"),
     ("cf-challenge", "cloudflare_challenge"),
     ("challenge-platform", "cloudflare_challenge"),
     ("cloudflare ray id", "cloudflare_challenge"),
     ("checking your browser", "checking_your_browser"),
+    ("verify you are human", "bot_challenge"),
+    ("are you human", "bot_challenge"),
     ("access denied", "access_denied"),
     ("captcha", "captcha"),
 )
@@ -63,12 +65,21 @@ def _new_result(fetch_method: FetchMethod) -> Dict[str, object]:
     return {
         "final_url": None,
         "status_code": None,
+        "title": None,
+        "rendered_title": None,
         "html": None,
         "text_snippet": None,
+        "rendered_text_excerpt": None,
         "blocked": False,
         "block_reason": None,
         "fetch_method": fetch_method,
         "needs_browser": False,
+        "fallback_reason": None,
+        "browser_improved": False,
+        "page_diagnostics": [],
+        "internal_links": [],
+        "browser_pages": [],
+        "diagnostics": [],
         "errors": [],
     }
 
@@ -81,13 +92,45 @@ def _extract_text_snippet(html: Optional[str]) -> Optional[str]:
     text = WS_RE.sub(" ", unescape(no_tags)).strip()
     if not text:
         return None
-    return text[:350]
+    return text[:900]
 
 
 def _is_html_too_short(html: Optional[str]) -> bool:
     if not html:
         return True
     return len(html.encode("utf-8", errors="ignore")) < MIN_HTML_BYTES
+
+
+def _path_kind(url: str) -> str:
+    path = (urlparse(url).path or "/").strip().lower()
+    if path in {"", "/"}:
+        return "homepage"
+    for token in ("/shop", "/store", "/products", "/product", "/collections", "/collection", "/category", "/catalog"):
+        if token in path:
+            return "commerce"
+    for token in ("/about", "/contact", "/support"):
+        if token in path:
+            return "info"
+    return "other"
+
+
+def _is_text_weak(text_snippet: Optional[str], path_kind: str) -> bool:
+    if not text_snippet:
+        return True
+    snippet_len = len(text_snippet.strip())
+    if path_kind == "homepage":
+        return snippet_len < MIN_HOMEPAGE_TEXT
+    if path_kind in {"commerce", "info"}:
+        return snippet_len < MIN_ROUTE_TEXT
+    return snippet_len < 85
+
+
+def _is_js_heavy_low_text(html: Optional[str], text_snippet: Optional[str]) -> bool:
+    if not html:
+        return False
+    script_count = html.lower().count("<script")
+    snippet_len = len((text_snippet or "").strip())
+    return script_count >= 20 and snippet_len < 120
 
 
 def _contains_js_gate(html: Optional[str]) -> bool:
@@ -107,16 +150,25 @@ def _detect_block(status_code: Optional[int], html: Optional[str]) -> Tuple[bool
     return False, None
 
 
-def _fallback_reason(status_code: Optional[int], html: Optional[str], blocked: bool, block_reason: Optional[str]) -> str:
-    if blocked and block_reason:
-        return block_reason
-    if _contains_js_gate(html):
-        return "javascript_required"
+def _weak_content_reason(
+    url: str,
+    status_code: Optional[int],
+    html: Optional[str],
+    text_snippet: Optional[str],
+) -> Optional[str]:
     if status_code in (403, 429):
         return f"http_{status_code}"
+    if status_code in (204, 205):
+        return "empty_status_body"
+    if _contains_js_gate(html):
+        return "javascript_required"
     if _is_html_too_short(html):
         return "html_too_short"
-    return "browser_fallback"
+    if _is_js_heavy_low_text(html, text_snippet):
+        return "js_heavy_low_text"
+    if _is_text_weak(text_snippet, _path_kind(url)):
+        return "text_too_short"
+    return None
 
 
 def _fetch_with_httpx(url: str, timeout_s: int) -> Tuple[Optional[str], Optional[int], Optional[str]]:
@@ -148,45 +200,41 @@ def _fetch_with_curl_cffi(url: str, timeout_s: int) -> Tuple[Optional[str], Opti
     return final_url, int(status_code) if isinstance(status_code, int) else None, html
 
 
-def _fetch_with_playwright(url: str, timeout_s: int) -> Tuple[Optional[str], Optional[int], Optional[str]]:
-    if sync_playwright is None:
-        raise RuntimeError("playwright is not installed")
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=True)
-        context = browser.new_context(user_agent=USER_AGENT, locale="en-US")
-        page = context.new_page()
-        try:
-            response = page.goto(url, wait_until="domcontentloaded", timeout=max(timeout_s, 1) * 1000)
-            page.wait_for_timeout(250)
-            html = page.content() or None
-            status_code = response.status if response else None
-            return page.url or url, status_code, html
-        finally:
-            context.close()
-            browser.close()
-
-
 def _build_result(
     fetch_method: FetchMethod,
     final_url: Optional[str],
     status_code: Optional[int],
     html: Optional[str],
+    title: Optional[str],
+    text_snippet: Optional[str],
+    rendered_title: Optional[str],
+    rendered_text_excerpt: Optional[str],
+    page_diagnostics: Optional[List[str]],
     errors: List[str],
 ) -> Dict[str, object]:
     blocked, block_reason = _detect_block(status_code, html)
     result = _new_result(fetch_method)
     result["final_url"] = final_url
     result["status_code"] = status_code
+    result["title"] = title
+    result["rendered_title"] = rendered_title
     result["html"] = html
-    result["text_snippet"] = _extract_text_snippet(html)
+    result["text_snippet"] = text_snippet if text_snippet is not None else _extract_text_snippet(html)
+    result["rendered_text_excerpt"] = rendered_text_excerpt
     result["blocked"] = blocked
     result["block_reason"] = block_reason
-    result["needs_browser"] = getattr(result, "needs_browser", False) if type(result) is dict and "needs_browser" in result else False
+    result["page_diagnostics"] = [str(item).strip() for item in (page_diagnostics or []) if str(item).strip()][:6]
     result["errors"] = errors
     return result
 
 
-def collect_page_sources(url: str, timeout_s: int = 15) -> Dict[str, object]:
+def collect_page_sources(
+    url: str,
+    timeout_s: int = 15,
+    force_browser: bool = False,
+    collect_internal_links: bool = False,
+    max_internal_pages: int = 4,
+) -> Dict[str, object]:
     normalized = _normalize_url(url)
     errors: List[str] = []
 
@@ -202,7 +250,18 @@ def collect_page_sources(url: str, timeout_s: int = 15) -> Dict[str, object]:
     if curl_requests is not None:
         try:
             final_url, status_code, html = _fetch_with_curl_cffi(normalized, timeout_s)
-            primary_result = _build_result("curl_cffi", final_url, status_code, html, list(errors))
+            primary_result = _build_result(
+                "curl_cffi",
+                final_url,
+                status_code,
+                html,
+                None,
+                None,
+                None,
+                None,
+                None,
+                list(errors),
+            )
         except Exception as exc:
             errors.append(f"curl_cffi:{type(exc).__name__}:{exc}")
     else:
@@ -211,50 +270,164 @@ def collect_page_sources(url: str, timeout_s: int = 15) -> Dict[str, object]:
     if primary_result is None:
         try:
             final_url, status_code, html = _fetch_with_httpx(normalized, timeout_s)
-            primary_result = _build_result("httpx", final_url, status_code, html, list(errors))
+            primary_result = _build_result(
+                "httpx",
+                final_url,
+                status_code,
+                html,
+                None,
+                None,
+                None,
+                None,
+                None,
+                list(errors),
+            )
         except Exception as exc:
             errors.append(f"httpx:{type(exc).__name__}:{exc}")
             failed = _new_result("httpx")
             failed["blocked"] = True
             failed["block_reason"] = "fetch_failed"
+            failed["diagnostics"] = ["path=http", "fetch=failed"]
             failed["errors"] = errors
             return failed
 
     status_code = primary_result.get("status_code")
     html = primary_result.get("html")
+    text_snippet = primary_result.get("text_snippet")
+    method_used = str(primary_result.get("fetch_method") or "httpx")
+
     blocked = bool(primary_result.get("blocked"))
     block_reason = primary_result.get("block_reason")
-    html_short = _is_html_too_short(html if isinstance(html, str) else None)
-    js_gate = _contains_js_gate(html if isinstance(html, str) else None)
-    needs_browser = html_short or js_gate
-
-    primary_result["needs_browser"] = needs_browser
-    fallback_required = blocked or needs_browser
-
-    if not fallback_required:
-        primary_result["errors"] = errors
-        return primary_result
-
-    reason = _fallback_reason(
+    weak_reason = _weak_content_reason(
+        normalized,
         status_code if isinstance(status_code, int) else None,
         html if isinstance(html, str) else None,
-        blocked,
-        block_reason if isinstance(block_reason, str) else None,
+        text_snippet if isinstance(text_snippet, str) else None,
     )
-    active_method = str(primary_result.get("fetch_method") or "httpx")
-    errors.append(f"{active_method}:fallback:{reason}")
+    needs_browser = force_browser or blocked or bool(weak_reason)
+
+    primary_result["needs_browser"] = needs_browser
+    primary_result["diagnostics"] = [
+        "path=http",
+        f"method={method_used}",
+        f"blocked={blocked}",
+    ]
+    if weak_reason:
+        primary_result["diagnostics"].append(f"weak={weak_reason}")
+    if force_browser:
+        primary_result["diagnostics"].append("browser=forced")
+
+    if not needs_browser:
+        primary_result["errors"] = errors
+        logger.info(
+            "collect_v2 path=http url=%s method=%s status=%s blocked=%s",
+            normalized,
+            method_used,
+            status_code,
+            blocked,
+        )
+        return primary_result
+
+    reason = "forced_browser"
+    if blocked and isinstance(block_reason, str) and block_reason:
+        reason = block_reason
+    elif weak_reason:
+        reason = weak_reason
+    errors.append(f"{method_used}:fallback:{reason}")
+    logger.info("collect_v2 fallback url=%s from=%s reason=%s", normalized, method_used, reason)
 
     try:
-        final_url, pw_status, pw_html = _fetch_with_playwright(normalized, timeout_s)
-        pw_result = _build_result("playwright", final_url, pw_status, pw_html, list(errors))
-        pw_result["needs_browser"] = True  # Inherit that it needed the browser
+        browser_payload = collect_with_playwright(
+            normalized,
+            timeout_s=timeout_s,
+            user_agent=USER_AGENT,
+            include_internal_pages=collect_internal_links,
+            max_internal_pages=max_internal_pages,
+        )
+        homepage = browser_payload.get("homepage") if isinstance(browser_payload.get("homepage"), dict) else {}
+        final_url = homepage.get("final_url")
+        pw_status = homepage.get("status_code")
+        pw_html = homepage.get("html")
+        pw_title = homepage.get("title")
+        pw_rendered_title = homepage.get("rendered_title")
+        pw_text = homepage.get("text_snippet")
+        pw_rendered_text = homepage.get("rendered_text_excerpt")
+        page_diagnostics = homepage.get("page_diagnostics") if isinstance(homepage.get("page_diagnostics"), list) else []
+
+        pw_result = _build_result(
+            "playwright",
+            str(final_url) if isinstance(final_url, str) else normalized,
+            pw_status if isinstance(pw_status, int) else None,
+            pw_html if isinstance(pw_html, str) else None,
+            str(pw_title) if isinstance(pw_title, str) else None,
+            str(pw_text) if isinstance(pw_text, str) else None,
+            str(pw_rendered_title) if isinstance(pw_rendered_title, str) else None,
+            str(pw_rendered_text) if isinstance(pw_rendered_text, str) else None,
+            [str(item).strip() for item in page_diagnostics if str(item).strip()],
+            list(errors),
+        )
+        pw_result["needs_browser"] = True
+        pw_result["fallback_reason"] = reason
+        pw_result["internal_links"] = (
+            browser_payload.get("internal_links") if isinstance(browser_payload.get("internal_links"), list) else []
+        )
+        pw_result["browser_pages"] = (
+            browser_payload.get("visited_pages") if isinstance(browser_payload.get("visited_pages"), list) else []
+        )
+        diagnostics = list(primary_result.get("diagnostics") or [])
+        browser_diags = browser_payload.get("diagnostics") if isinstance(browser_payload.get("diagnostics"), list) else []
+        diagnostics.extend(str(item).strip() for item in browser_diags if str(item).strip())
+        pw_result["diagnostics"] = diagnostics[:12]
+
+        pw_weak_reason = _weak_content_reason(
+            str(pw_result.get("final_url") or normalized),
+            pw_result.get("status_code") if isinstance(pw_result.get("status_code"), int) else None,
+            pw_result.get("html") if isinstance(pw_result.get("html"), str) else None,
+            pw_result.get("text_snippet") if isinstance(pw_result.get("text_snippet"), str) else None,
+        )
+        primary_text_len = len(str(text_snippet or "").strip())
+        browser_text_len = len(
+            str(pw_result.get("rendered_text_excerpt") or pw_result.get("text_snippet") or "").strip()
+        )
+        improved = bool(
+            not pw_result.get("blocked")
+            and (
+                (bool(weak_reason) and not pw_weak_reason)
+                or browser_text_len > (primary_text_len + 80)
+                or (
+                    bool(str(pw_result.get("rendered_title") or "").strip())
+                    and not bool(str(primary_result.get("title") or "").strip())
+                )
+            )
+        )
+        pw_result["browser_improved"] = improved
+        if pw_weak_reason:
+            diagnostics = list(pw_result.get("diagnostics") or [])
+            diagnostics.append(f"browser_weak={pw_weak_reason}")
+            pw_result["diagnostics"] = diagnostics[:12]
+
+        logger.info(
+            "collect_v2 path=browser url=%s status=%s blocked=%s improved=%s reason=%s",
+            pw_result.get("final_url") or normalized,
+            pw_result.get("status_code"),
+            pw_result.get("blocked"),
+            improved,
+            reason,
+        )
         return pw_result
     except Exception as exc:
         errors.append(f"playwright:{type(exc).__name__}:{exc}")
         primary_result["errors"] = errors
-        if not primary_result.get("blocked") and not needs_browser:
-            primary_result["blocked"] = True
-            primary_result["block_reason"] = reason
+        primary_result["fallback_reason"] = reason
+        diagnostics = list(primary_result.get("diagnostics") or [])
+        diagnostics.append("path=http:fallback_failed")
+        primary_result["diagnostics"] = diagnostics[:12]
+        logger.info(
+            "collect_v2 path=http_fallback_failed url=%s method=%s reason=%s",
+            normalized,
+            method_used,
+            reason,
+        )
         return primary_result
 
 

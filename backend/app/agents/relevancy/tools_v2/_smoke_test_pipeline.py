@@ -71,6 +71,8 @@ def _build_initial_state(url: str, exporter_profile: str) -> RelevancyAgentState
             "structured_signals_used": [],
         },
         "clean_text_output": {"text_excerpt": "", "sections": {}},
+        "catalog_intelligence_output": {},
+        "business_model_intelligence_output": {},
         "llm_decision_output": {},
         "structured_has_product_catalog": False,
         "structured_has_organization": False,

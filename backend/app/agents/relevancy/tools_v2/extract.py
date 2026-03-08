@@ -23,6 +23,7 @@ META_GENERATOR_RE = re.compile(
     r'<meta[^>]+name=["\']generator["\'][^>]+content=["\']([^"\']+)["\']',
     re.IGNORECASE,
 )
+WS_RE = re.compile(r"\s+")
 
 
 def _pages_from_state(state: RelevancyAgentState) -> List[Dict[str, Any]]:
@@ -67,6 +68,52 @@ def _extract_structured_entities(html: str, url: str) -> List[StructuredEntity]:
                 )
             )
     return entities[:30]
+
+
+def _normalized_text_key(value: str, max_len: int = 220) -> str:
+    return WS_RE.sub(" ", str(value or "").strip().lower())[:max_len]
+
+
+def _is_weak_clean_text(value: str) -> bool:
+    trimmed = str(value or "").strip()
+    if not trimmed:
+        return True
+    words = trimmed.split()
+    return len(trimmed) < 180 or len(words) < 32
+
+
+def _is_very_short_clean_text(value: str) -> bool:
+    trimmed = str(value or "").strip()
+    if not trimmed:
+        return True
+    words = trimmed.split()
+    return len(trimmed) < 90 or len(words) < 16
+
+
+def _preferred_page_excerpt(page: Dict[str, Any]) -> str:
+    rendered = str(page.get("rendered_text_excerpt") or "").strip()
+    if rendered:
+        return rendered
+    return str(page.get("text_excerpt") or "").strip()
+
+
+def _put_section(sections: Dict[str, str], label: str, content: str) -> None:
+    if not content:
+        return
+    content_key = _normalized_text_key(content, max_len=320)
+    for existing in sections.values():
+        if _normalized_text_key(existing, max_len=320) == content_key:
+            return
+    base = (str(label or "page").strip().lower() or "page")[:40]
+    key = base
+    if key in sections and sections[key] == content:
+        return
+    index = 2
+    while key in sections and sections[key] != content:
+        suffix = f"_{index}"
+        key = f"{base[: max(1, 40 - len(suffix))]}{suffix}"
+        index += 1
+    sections[key] = content
 
 
 def _maybe_refetch_full_html(page: Dict[str, Any], state: RelevancyAgentState) -> str:
@@ -223,24 +270,43 @@ def extract_structured_signals(state: RelevancyAgentState) -> Dict[str, object]:
 def extract_clean_text_and_sections(state: RelevancyAgentState) -> Dict[str, object]:
     chunks: List[str] = []
     sections: Dict[str, str] = {}
+    seen_chunk_keys: Set[str] = set()
 
     for page in _pages_from_state(state):
         label = page.get("label") or "page"
         html = page.get("html") or ""
-        if not html:
+        fallback_excerpt = _preferred_page_excerpt(page)
+        chosen_text = ""
+
+        if html:
+            clean_text = trafilatura.extract(
+                html,
+                include_comments=False,
+                include_links=False,
+                favor_recall=False,
+                deduplicate=True,
+            )
+            if clean_text:
+                trimmed = clean_text.strip()
+                if trimmed:
+                    # Prefer rendered browser text when parser output is weak or very short.
+                    if fallback_excerpt and (_is_weak_clean_text(trimmed) or _is_very_short_clean_text(trimmed)):
+                        chosen_text = fallback_excerpt
+                    else:
+                        chosen_text = trimmed
+        if not chosen_text and fallback_excerpt:
+            chosen_text = fallback_excerpt
+        if not chosen_text:
             continue
-        clean_text = trafilatura.extract(
-            html,
-            include_comments=False,
-            include_links=False,
-            favor_recall=False,
-            deduplicate=True,
-        )
-        if clean_text:
-            trimmed = clean_text.strip()
-            if trimmed:
-                sections[str(label)] = trimmed[:500]
-                chunks.append(trimmed[:900])
+
+        chunk_text = chosen_text[:900]
+        dedupe_key = _normalized_text_key(chunk_text)
+        if dedupe_key in seen_chunk_keys:
+            continue
+        seen_chunk_keys.add(dedupe_key)
+
+        _put_section(sections, str(label), chosen_text[:500])
+        chunks.append(chunk_text)
         if len(chunks) >= 8:
             break
 
