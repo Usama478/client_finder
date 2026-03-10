@@ -786,11 +786,11 @@ def _derive_customer_model(model_scores: Dict[str, float], signals: Dict[str, Li
     b2c = model_scores["retailer"] + model_scores["brand"] + len(signals["retail_signals"]) * 0.07
     if b2b >= 1.2 and b2c >= 1.2:
         return "mixed"
-    if b2b >= max(0.9, b2c * 1.15):
+    if b2b >= max(0.65, b2c * 1.15):
         return "b2b"
-    if b2c >= max(0.9, b2b * 1.15):
+    if b2c >= max(0.65, b2b * 1.15):
         return "b2c"
-    if b2b > 0.5 and b2c > 0.5:
+    if b2b > 0.45 and b2c > 0.45:
         return "mixed"
     return "unknown"
 

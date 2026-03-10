@@ -37,6 +37,46 @@ def _pages_from_state(state: RelevancyAgentState) -> List[Dict[str, Any]]:
     return combined
 
 
+def _first_scalar_string(value: Any) -> str | None:
+    if value is None:
+        return None
+
+    if isinstance(value, str):
+        value = WS_RE.sub(" ", value).strip()
+        return value or None
+
+    if isinstance(value, (list, tuple, set)):
+        for item in value:
+            normalized = _first_scalar_string(item)
+            if normalized:
+                return normalized
+        return None
+
+    if isinstance(value, dict):
+        # Sometimes nested structured fields appear like {"@id": "..."} or {"url": "..."}
+        for key in ("@id", "url", "name", "headline", "title"):
+            if key in value:
+                normalized = _first_scalar_string(value.get(key))
+                if normalized:
+                    return normalized
+        return None
+
+    try:
+        text = WS_RE.sub(" ", str(value)).strip()
+        return text or None
+    except Exception:
+        return None
+
+
+def _normalized_keys(item: Dict[str, Any]) -> List[str]:
+    keys: List[str] = []
+    for key in item.keys():
+        text = _first_scalar_string(key)
+        if text:
+            keys.append(text[:80])
+    return keys[:18]
+
+
 def _extract_structured_entities(html: str, url: str) -> List[StructuredEntity]:
     try:
         data = extruct.extract(
@@ -48,6 +88,7 @@ def _extract_structured_entities(html: str, url: str) -> List[StructuredEntity]:
         )
     except Exception:
         return []
+
     entities: List[StructuredEntity] = []
     syntax_map = [("json-ld", "json-ld"), ("microdata", "microdata"), ("rdfa", "rdfa")]
 
@@ -56,17 +97,36 @@ def _extract_structured_entities(html: str, url: str) -> List[StructuredEntity]:
         for item in items[:12]:
             if not isinstance(item, dict):
                 continue
-            type_hint = item.get("@type") or item.get("type")
-            if isinstance(type_hint, list):
-                type_hint = ", ".join(str(x) for x in type_hint[:3])
-            name = item.get("name") or item.get("headline") or item.get("title")
-            item_url = item.get("url")
-            keys = list(item.keys())[:18]
-            entities.append(
-                StructuredEntity(
-                    source=source, type_hint=str(type_hint) if type_hint else None, name=name, url=item_url, keys=keys
+
+            raw_type_hint = item.get("@type") or item.get("type")
+            if isinstance(raw_type_hint, list):
+                type_hint = ", ".join(
+                    str(x).strip() for x in raw_type_hint[:3] if str(x).strip()
+                ) or None
+            else:
+                type_hint = _first_scalar_string(raw_type_hint)
+
+            raw_name = item.get("name") or item.get("headline") or item.get("title")
+            raw_url = item.get("url")
+
+            name = _first_scalar_string(raw_name)
+            item_url = _first_scalar_string(raw_url)
+            keys = _normalized_keys(item)
+
+            try:
+                entities.append(
+                    StructuredEntity(
+                        source=source,
+                        type_hint=type_hint,
+                        name=name,
+                        url=item_url,
+                        keys=keys,
+                    )
                 )
-            )
+            except Exception:
+                # Skip malformed entity instead of crashing the whole pipeline
+                continue
+
     return entities[:30]
 
 

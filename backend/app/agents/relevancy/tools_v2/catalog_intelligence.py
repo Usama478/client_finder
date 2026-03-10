@@ -104,29 +104,14 @@ PRICING_WORD_MARKERS: Sequence[str] = (
     "from £",
 )
 MARKETPLACE_MARKERS: Sequence[str] = (
-    "supplier",
-    "suppliers",
-    "manufacturer",
-    "manufacturers",
-    "wholesaler",
-    "wholesalers",
-    "buyers",
-    "request for quotation",
-    "request a quotation",
-    "rfq",
     "list your products",
     "seller",
     "sellers",
     "vendor",
     "vendors",
-    "source now",
     "marketplace",
     "multi-supplier",
     "trade platform",
-    "industry categories",
-    "global suppliers",
-    "factory",
-    "factories",
     "manufacturer listings",
     "supplier listings",
     "verified suppliers",
@@ -227,15 +212,6 @@ COMMERCE_ROUTE_TOKENS: Sequence[str] = (
     "/new",
 )
 MARKETPLACE_ROUTE_TOKENS: Sequence[str] = (
-    "/suppliers",
-    "/supplier",
-    "/manufacturers",
-    "/manufacturer",
-    "/wholesale",
-    "/buyers",
-    "/rfq",
-    "/request-for-quotation",
-    "/source",
     "/marketplace",
     "/vendors",
     "/sellers",
@@ -1452,11 +1428,11 @@ def _finalize_catalog_output(evidence: Dict[str, Any]) -> Dict[str, Any]:
     )
 
     has_catalog = (
-        (direct_signal_count >= 2 and positive_score >= 0.50)
-        or (direct_signal_count >= 3 and positive_score >= 0.40)
+        (direct_signal_count >= 2 and positive_score >= 0.45)
+        or (direct_signal_count >= 3 and positive_score >= 0.35)
         or (
             marketplace_like
-            and positive_score >= 0.46
+            and positive_score >= 0.40
             and (
                 int(evidence.get("marketplace_route_hits") or 0) > 0
                 or listing_density in {"medium", "high"}

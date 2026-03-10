@@ -55,8 +55,6 @@ PRIORITY_ROUTE_PATTERNS: Dict[str, Tuple[str, ...]] = {
     "wholesale": (
         "/wholesale",
         " wholesale ",
-        "grosshandel",
-        "wiederverkaeufer",
         "reseller",
         "b2b",
     ),
@@ -65,8 +63,6 @@ PRIORITY_ROUTE_PATTERNS: Dict[str, Tuple[str, ...]] = {
         " trade ",
         "trade program",
         "trade account",
-        "haendler",
-        "fachhandel",
     ),
     "stockists": (
         "/stockist",
@@ -74,7 +70,6 @@ PRIORITY_ROUTE_PATTERNS: Dict[str, Tuple[str, ...]] = {
         "stockist",
         "stockists",
         "where to buy",
-        "haendlerliste",
     ),
     "retailers": (
         "/retailer",
@@ -89,23 +84,17 @@ PRIORITY_ROUTE_PATTERNS: Dict[str, Tuple[str, ...]] = {
         "/storefinder",
         "find a store",
         "store locator",
-        "filialen",
-        "geschaefte",
     ),
     "about": (
         "/about",
         "/about-us",
         "/our-story",
         " about ",
-        "ueber-uns",
-        "uber-uns",
     ),
     "contact": (
         "/contact",
-        "/kontakt",
         "/support",
         " contact ",
-        "kontakt",
     ),
     "faq": (
         "/faq",
@@ -113,37 +102,28 @@ PRIORITY_ROUTE_PATTERNS: Dict[str, Tuple[str, ...]] = {
         "/questions",
         " faq ",
         "frequently asked",
-        "haeufige fragen",
     ),
     "shipping": (
         "/shipping",
         "/delivery",
-        "/versand",
         "shipping",
         "delivery",
-        "versand",
-        "lieferung",
     ),
     "products": (
         "/products",
         "/product",
         "products",
-        "produkt",
-        "produkte",
     ),
     "shop": (
         "/shop",
         "/store",
         " shop ",
         "store",
-        "einkaufen",
     ),
     "collections": (
         "/collections",
         "/collection",
         "collections",
-        "kollektion",
-        "kollektionen",
     ),
     "category": (
         "/category",
@@ -151,24 +131,27 @@ PRIORITY_ROUTE_PATTERNS: Dict[str, Tuple[str, ...]] = {
         "/catalog",
         "category",
         "categories",
-        "kategorie",
     ),
 }
 HEURISTIC_ROUTE_PATHS: Dict[str, Tuple[str, ...]] = {
-    "wholesale": ("wholesale", "grosshandel", "b2b"),
-    "trade": ("trade", "trade-program", "haendler"),
-    "stockists": ("stockists", "stockist", "where-to-buy"),
-    "retailers": ("retailers", "retailer", "retail-partners"),
     "stores": ("stores", "store-locator", "storefinder"),
-    "about": ("about", "about-us", "ueber-uns"),
-    "contact": ("contact", "kontakt", "support"),
-    "faq": ("faq", "faqs", "haeufige-fragen"),
-    "shipping": ("shipping", "delivery", "versand"),
-    "products": ("products", "produkt", "produkte"),
-    "shop": ("shop", "store", "einkaufen"),
-    "collections": ("collections", "collection", "kollektionen"),
-    "category": ("category", "categories", "kategorie"),
+    "about": ("about", "about-us"),
+    "contact": ("contact", "support"),
+    "faq": ("faq", "faqs"),
+    "shipping": ("shipping", "delivery"),
+    "products": ("products", "product"),
+    "shop": ("shop", "store"),
+    "collections": ("collections", "collection"),
+    "category": ("category", "categories", "catalog"),
 }
+DOWNRANK_ROUTE_PATTERNS: Tuple[str, ...] = (
+    "editorial",
+    "magazine",
+    "campaign",
+    "feedback",
+    "trending",
+    "help",
+)
 HIGH_VOLUME_LABELS = {"products", "shop", "collections", "category", "stores"}
 SCRIPT_STYLE_RE = re.compile(r"(?is)<(script|style).*?>.*?</\1>")
 TAG_RE = re.compile(r"(?s)<[^>]+>")
@@ -217,8 +200,13 @@ def _detect_block(status_code: Optional[int], html: str, text_excerpt: str) -> T
     if status_code in (403, 429):
         return True, f"http_{status_code}"
     lowered = f"{html}\n{text_excerpt}".lower()
+    
+    is_rich = bool(status_code == 200 and len((text_excerpt or "").strip()) > 350)
+    
     for keyword, reason in BLOCK_MARKERS:
         if keyword in lowered:
+            if is_rich and reason in {"captcha", "bot_challenge", "cloudflare_challenge"}:
+                continue
             return True, reason
     return False, None
 
@@ -277,7 +265,10 @@ def _classify_priority_label(target_url: str, anchor_text: str) -> Tuple[str, in
     route_blob = f"{target_url.lower()} {anchor_text.lower()}"
     best_label = ""
     best_score = 0
-    best_rank = len(PRIORITY_LABEL_ORDER) + 2
+    best_rank = len(PRIORITY_ROUTE_PATTERNS) + 2
+
+    is_downranked = any(pattern in route_blob for pattern in DOWNRANK_ROUTE_PATTERNS)
+    base_penalty = -20 if is_downranked else 0
 
     for label in PRIORITY_LABEL_ORDER:
         tokens = PRIORITY_ROUTE_PATTERNS.get(label, ())
@@ -285,11 +276,15 @@ def _classify_priority_label(target_url: str, anchor_text: str) -> Tuple[str, in
         if token_hits <= 0:
             continue
         rank = _label_priority(label)
-        score = (token_hits * 10) + max(0, 18 - rank)
+        score = (token_hits * 10) + max(0, 18 - rank) + base_penalty
         if score > best_score or (score == best_score and rank < best_rank):
             best_label = label
             best_score = score
             best_rank = rank
+    
+    if is_downranked and not best_label:
+        return "page", -20
+        
     return best_label, best_score
 
 
@@ -370,13 +365,18 @@ def _select_internal_targets(
     homepage_url: str,
     discovered_links: List[Dict[str, object]],
     max_internal_pages: int,
+    homepage_blocked: bool = False,
 ) -> List[Dict[str, object]]:
     limit = max(1, min(max_internal_pages, 8))
     homepage_key = homepage_url.rstrip("/")
     seen_urls: set[str] = {homepage_key}
     deduped: List[Dict[str, object]] = []
 
-    for candidate in [*discovered_links, *_heuristic_route_candidates(homepage_url)]:
+    candidates = list(discovered_links)
+    if not homepage_blocked and len(candidates) < limit:
+        candidates.extend(_heuristic_route_candidates(homepage_url))
+
+    for candidate in candidates:
         if not isinstance(candidate, dict):
             continue
         target_url = str(candidate.get("url") or "").strip()
@@ -390,8 +390,8 @@ def _select_internal_targets(
 
     deduped.sort(
         key=lambda item: (
-            _label_priority(str(item.get("label") or "")),
             0 if str(item.get("source") or "") == "discovered" else 1,
+            _label_priority(str(item.get("label") or "")),
             -int(item.get("score", 0)),
             len(str(item.get("url") or "")),
         )
@@ -512,6 +512,7 @@ def collect_with_playwright(
                 "--window-size=1920,1080",
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
             ],
         )
         context = browser.new_context(
@@ -525,13 +526,23 @@ def collect_with_playwright(
         try:
             homepage = _collect_page_with_browser(page, url, timeout_s)
             homepage_url = str(homepage.get("final_url") or url)
+            homepage_blocked = bool(homepage.get("blocked"))
             internal_links = _extract_internal_links(page, homepage_url)
             diagnostics.append(f"discovered={len(internal_links)}")
 
             visited_pages: List[Dict[str, object]] = []
             if include_internal_pages:
-                targets = _select_internal_targets(homepage_url, internal_links, max_internal_pages=max_internal_pages)
-                diagnostics.append(f"selected={len(targets)}")
+                if homepage_blocked:
+                    diagnostics.append("internal_crawl_skipped=blocked_homepage")
+                    targets = []
+                else:
+                    targets = _select_internal_targets(
+                        homepage_url,
+                        internal_links,
+                        max_internal_pages=max_internal_pages,
+                        homepage_blocked=homepage_blocked
+                    )
+                    diagnostics.append(f"selected={len(targets)}")
                 seen_urls: set[str] = {homepage_url.rstrip("/")}
                 for target in targets:
                     target_url = str(target.get("url") or "").strip()
@@ -542,6 +553,8 @@ def collect_with_playwright(
                     if normalized_target in seen_urls:
                         continue
                     page_result = _collect_page_with_browser(page, target_url, min(timeout_s, 12))
+                    if page_result.get("status_code") == 404:
+                        continue
                     page_result["label"] = label
                     page_result["fetch_method"] = "playwright"
                     page_result["needs_browser"] = True

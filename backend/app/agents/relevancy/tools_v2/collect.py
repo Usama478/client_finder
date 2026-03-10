@@ -130,7 +130,7 @@ def _is_js_heavy_low_text(html: Optional[str], text_snippet: Optional[str]) -> b
         return False
     script_count = html.lower().count("<script")
     snippet_len = len((text_snippet or "").strip())
-    return script_count >= 20 and snippet_len < 120
+    return script_count >= 15 and snippet_len < 3000
 
 
 def _contains_js_gate(html: Optional[str]) -> bool:
@@ -140,12 +140,17 @@ def _contains_js_gate(html: Optional[str]) -> bool:
     return any(marker in lowered for marker in JS_REQUIRED_MARKERS)
 
 
-def _detect_block(status_code: Optional[int], html: Optional[str]) -> Tuple[bool, Optional[str]]:
+def _detect_block(status_code: Optional[int], html: Optional[str], text_snippet: Optional[str]) -> Tuple[bool, Optional[str]]:
     if status_code in (403, 429):
         return True, f"http_{status_code}"
     lowered = (html or "").lower()
+    
+    is_rich = bool(status_code == 200 and len((text_snippet or "").strip()) > 350)
+    
     for keyword, reason in BLOCK_MARKERS:
         if keyword in lowered:
+            if is_rich and reason in {"captcha", "bot_challenge", "cloudflare_challenge"}:
+                continue
             return True, reason
     return False, None
 
@@ -212,14 +217,15 @@ def _build_result(
     page_diagnostics: Optional[List[str]],
     errors: List[str],
 ) -> Dict[str, object]:
-    blocked, block_reason = _detect_block(status_code, html)
+    computed_text = text_snippet if text_snippet is not None else _extract_text_snippet(html)
+    blocked, block_reason = _detect_block(status_code, html, computed_text)
     result = _new_result(fetch_method)
     result["final_url"] = final_url
     result["status_code"] = status_code
     result["title"] = title
     result["rendered_title"] = rendered_title
     result["html"] = html
-    result["text_snippet"] = text_snippet if text_snippet is not None else _extract_text_snippet(html)
+    result["text_snippet"] = computed_text
     result["rendered_text_excerpt"] = rendered_text_excerpt
     result["blocked"] = blocked
     result["block_reason"] = block_reason
@@ -366,6 +372,11 @@ def collect_page_sources(
             [str(item).strip() for item in page_diagnostics if str(item).strip()],
             list(errors),
         )
+        # Fix 2: If Playwright natively detected a block, ensure pw_result captures it.
+        if homepage.get("blocked"):
+            pw_result["blocked"] = True
+            pw_result["block_reason"] = homepage.get("block_reason")
+            
         pw_result["needs_browser"] = True
         pw_result["fallback_reason"] = reason
         pw_result["internal_links"] = (
@@ -383,7 +394,7 @@ def collect_page_sources(
             str(pw_result.get("final_url") or normalized),
             pw_result.get("status_code") if isinstance(pw_result.get("status_code"), int) else None,
             pw_result.get("html") if isinstance(pw_result.get("html"), str) else None,
-            pw_result.get("text_snippet") if isinstance(pw_result.get("text_snippet"), str) else None,
+            str(pw_result.get("rendered_text_excerpt") or pw_result.get("text_snippet") or ""),
         )
         primary_text_len = len(str(text_snippet or "").strip())
         browser_text_len = len(
@@ -419,6 +430,8 @@ def collect_page_sources(
         errors.append(f"playwright:{type(exc).__name__}:{exc}")
         primary_result["errors"] = errors
         primary_result["fallback_reason"] = reason
+        # Guarantee exported fetch_method represents the terminal fallback path used
+        primary_result["fetch_method"] = "playwright"
         diagnostics = list(primary_result.get("diagnostics") or [])
         diagnostics.append("path=http:fallback_failed")
         primary_result["diagnostics"] = diagnostics[:12]

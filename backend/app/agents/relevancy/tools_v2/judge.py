@@ -470,13 +470,31 @@ def _deterministic_prejudge(state: RelevancyAgentState, signals: Dict[str, objec
         marketplace_context_score += 1
     marketplace_b2b_context = marketplace_context_score >= 4
 
+    # Issue 1: Fast-track strict B2C retailer/storefront cases to irrelevant
+    if catalog_has and catalog_mode in {"storefront", "brand_catalog", "unknown"} and business_model_primary in {"retailer", "brand"} and business_model_customer == "b2c" and business_model_conf >= 0.62:
+        decision = _build_decision(
+            relevance_decision="irrelevant",
+            manual_review=False,
+            confidence=0.92,
+            relevance_reason="B2C retailer / DTC storefront mismatch with exporter profile.",
+            match_reasons=[],
+            mismatch_reasons=["Business model intelligence strongly indicates a B2C retailer.","Direct-to-consumer storefront catalog detected."],
+            signals_used=_decision_signals(signal_tags, ["catalog_present", f"catalog_mode.{catalog_mode}", "business_model_intel", "business_model_customer.b2c"]),
+            business_type="B2C Retailer / Brand",
+        )
+        return _apply_confidence_policy(decision, "irrelevant_ecommerce"), "irrelevant_ecommerce"
+
     ecommerce_signal_score = 0
-    ecommerce_mismatch: List[str] = ["Ecommerce retailer / DTC store"]
+    ecommerce_mismatch: List[str] = ["Ecommerce retailer / DTC store signals detected."]
     ecommerce_signals: List[str] = []
     if has_catalog:
         ecommerce_signal_score += 2
         ecommerce_mismatch.append("Structured product catalog markers detected.")
         ecommerce_signals.append("jsonld_catalog")
+    if catalog_has and catalog_mode in {"storefront", "brand_catalog"}:
+        ecommerce_signal_score += 2
+        ecommerce_mismatch.append(f"Catalog intelligence identifies the site as {catalog_mode}.")
+        ecommerce_signals.append(f"catalog_mode.{catalog_mode}")
     if has_jsonld_product_offer:
         ecommerce_signal_score += 2
         ecommerce_mismatch.append("JSON-LD product/offer entities detected.")
@@ -506,6 +524,8 @@ def _deterministic_prejudge(state: RelevancyAgentState, signals: Dict[str, objec
             confidence = 0.75
         elif ecommerce_signal_score >= 3:
             confidence = 0.68
+        elif ecommerce_signal_score >= 2 and business_model_primary in {"retailer", "brand"} and business_model_customer == "b2c":
+            confidence = 0.66
         else:
             confidence = 0.6
         decision = _build_decision(

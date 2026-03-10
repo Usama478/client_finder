@@ -150,19 +150,19 @@ def _to_page_source(label: str, requested_url: str, fetch_result: Dict[str, obje
         html_truncated=html_truncated,
         blocked=blocked,
         block_reason=(
-            str(fetch_result.get("block_reason")).strip()
+            str(fetch_result.get("block_reason")).strip()[:140]
             if isinstance(fetch_result.get("block_reason"), str) and str(fetch_result.get("block_reason")).strip()
             else None
         ),
         needs_browser=bool(fetch_result.get("needs_browser")),
         browser_fallback_reason=(
-            str(fetch_result.get("fallback_reason")).strip()
+            str(fetch_result.get("fallback_reason")).strip()[:140]
             if isinstance(fetch_result.get("fallback_reason"), str) and str(fetch_result.get("fallback_reason")).strip()
             else None
         ),
         browser_improved=bool(fetch_result.get("browser_improved")),
         page_diagnostics=[str(item).strip() for item in page_diagnostics if str(item).strip()][:6],
-        error=" | ".join(expose_errors) if expose_errors else None,
+        error=(" | ".join(expose_errors))[:300] if expose_errors else None,
     )
 
 
@@ -232,6 +232,19 @@ def collect_page_sources_node(state: RelevancyAgentState):
     homepage = _to_page_source("homepage", normalized, homepage_result)
     homepage_status = homepage.status_code
     website_exists = homepage.fetched and (homepage_status is None or homepage_status < 400)
+
+    if not website_exists and not homepage.blocked:
+        raw_browser_pages = homepage_result.get("browser_pages")
+        if isinstance(raw_browser_pages, list):
+            for bp in raw_browser_pages:
+                if not isinstance(bp, dict) or bp.get("blocked"):
+                    continue
+                bp_status = bp.get("status_code")
+                if bp_status is not None and (not isinstance(bp_status, int) or bp_status >= 400):
+                    continue
+                if str(bp.get("rendered_text_excerpt") or "").strip() or str(bp.get("rendered_title") or "").strip() or str(bp.get("html") or "").strip():
+                    website_exists = True
+                    break
 
     if not website_exists:
         errors = _collect_errors(homepage_result)
@@ -400,6 +413,19 @@ def end_irrelevant_node(state: RelevancyAgentState):
         mismatch_reasons = ["URL belongs to a marketplace domain."]
         signals_used = ["marketplace_filter"]
 
+    decision_output = {
+        "relevance_decision": decision,
+        "relevance_score": 0,
+        "relevance_reason": reason,
+        "business_type": "Unknown",
+        "primary_niche": "Unknown",
+        "manual_review": manual_review,
+        "confidence": confidence,
+        "match_reasons": [],
+        "mismatch_reasons": mismatch_reasons,
+        "signals_used": signals_used,
+    }
+
     return {
         "relevance_decision": decision,
         "relevance_score": 0,
@@ -411,6 +437,7 @@ def end_irrelevant_node(state: RelevancyAgentState):
         "match_reasons": [],
         "mismatch_reasons": mismatch_reasons,
         "signals_used": signals_used,
+        "llm_decision_output": decision_output,
         "is_finalized": True,
     }
 
@@ -419,6 +446,19 @@ def finalize_manual_review_node(state: RelevancyAgentState):
     block_reason = state.get("collect_block_reason") or "unknown"
     status_code = state.get("collect_status_code")
     status_text = status_code if isinstance(status_code, int) else "unknown"
+    decision_output = {
+        "relevance_decision": "unknown",
+        "relevance_score": 0,
+        "relevance_reason": f"blocked:{block_reason} status={status_text}",
+        "business_type": "Unknown",
+        "primary_niche": "Unknown",
+        "manual_review": True,
+        "confidence": 0.0,
+        "match_reasons": [],
+        "mismatch_reasons": [f"Blocked during collection ({block_reason})."],
+        "signals_used": ["blocked_status"],
+    }
+
     return {
         "relevance_decision": "unknown",
         "relevance_score": 0,
@@ -430,5 +470,6 @@ def finalize_manual_review_node(state: RelevancyAgentState):
         "match_reasons": [],
         "mismatch_reasons": [f"Blocked during collection ({block_reason})."],
         "signals_used": ["blocked_status"],
+        "llm_decision_output": decision_output,
         "is_finalized": True,
     }
