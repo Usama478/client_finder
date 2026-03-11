@@ -16,6 +16,7 @@ from app.agents.relevancy.tools_v2 import (
     llm_relevance_judge,
     marketplace_filter,
     shopify_probe,
+    social_profile_filter,
 )
 
 MAX_PAGESOURCE_HTML = 39000
@@ -214,6 +215,10 @@ def marketplace_filter_node(state: RelevancyAgentState):
     return marketplace_filter(state)
 
 
+def preclassify_target_node(state: RelevancyAgentState):
+    return social_profile_filter(state)
+
+
 def collect_page_sources_node(state: RelevancyAgentState):
     normalized = _normalize_url(state.get("website"))
     if not normalized:
@@ -407,6 +412,11 @@ def end_irrelevant_node(state: RelevancyAgentState):
             reason = "Website could not be reliably reached."
             mismatch_reasons = ["Website reachability is inconclusive with current fetch signals."]
             signals_used = ["collect_status", "headers_cookies"]
+    elif state.get("is_social_profile") is True:
+        reason = "Social media profile detected; skipping deep analysis."
+        confidence = 0.95
+        mismatch_reasons = ["URL belongs to a social media domain."]
+        signals_used = ["social_detect"]
     elif state.get("is_marketplace") is True:
         reason = "Marketplace URL filtered."
         confidence = 0.95

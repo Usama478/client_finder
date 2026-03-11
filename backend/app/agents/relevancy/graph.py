@@ -11,8 +11,15 @@ from app.agents.relevancy.nodes import (
     finalize_manual_review_node,
     llm_relevance_judge_node,
     shopify_probe_node,
+    preclassify_target_node,
 )
 from app.agents.relevancy.state import RelevancyAgentState
+
+
+def _route_after_preclassify(state: RelevancyAgentState) -> str:
+    if state.get("is_social_profile") is True:
+        return "end_irrelevant"
+    return "collect_page_sources"
 
 
 def _route_after_collect(state: RelevancyAgentState) -> str:
@@ -50,6 +57,7 @@ def _route_after_platform(state: RelevancyAgentState) -> str:
 
 workflow = StateGraph(RelevancyAgentState)
 
+workflow.add_node("preclassify_target", preclassify_target_node)
 workflow.add_node("collect_page_sources", collect_page_sources_node)
 workflow.add_node("extract_structured_signals", extract_structured_signals_node)
 workflow.add_node("extract_clean_text_and_sections", extract_clean_text_and_sections_node)
@@ -61,7 +69,17 @@ workflow.add_node("llm_relevance_judge", llm_relevance_judge_node)
 workflow.add_node("end_irrelevant", end_irrelevant_node)
 workflow.add_node("finalize_manual_review", finalize_manual_review_node)
 
-workflow.set_entry_point("collect_page_sources")
+workflow.set_entry_point("preclassify_target")
+
+workflow.add_conditional_edges(
+    "preclassify_target",
+    _route_after_preclassify,
+    {
+        "end_irrelevant": "end_irrelevant",
+        "collect_page_sources": "collect_page_sources",
+    },
+)
+
 workflow.add_conditional_edges(
     "collect_page_sources",
     _route_after_collect,

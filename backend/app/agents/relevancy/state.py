@@ -24,6 +24,7 @@ class RelevancyAgentState(TypedDict):
     # --- Tool Observations (Gatekeepers) ---
     website_exists: Optional[bool]
     is_marketplace: Optional[bool]
+    is_social_profile: Optional[bool]
 
     # --- v1 Compatibility ---
     evidence: Optional[Dict[str, Any]]

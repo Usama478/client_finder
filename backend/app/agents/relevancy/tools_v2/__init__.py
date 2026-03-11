@@ -4,6 +4,7 @@ from app.agents.relevancy.tools_v2.business_model_intelligence import business_m
 from app.agents.relevancy.tools_v2.extract import extract_clean_text_and_sections, extract_structured_signals
 from app.agents.relevancy.tools_v2.judge import llm_relevance_judge
 from app.agents.relevancy.tools_v2.platform_detect import detect_platform, marketplace_filter
+from app.agents.relevancy.tools_v2.social_detect import social_profile_filter
 
 __all__ = [
     "catalog_intelligence",
@@ -15,4 +16,5 @@ __all__ = [
     "llm_relevance_judge",
     "marketplace_filter",
     "shopify_probe",
+    "social_profile_filter",
 ]
