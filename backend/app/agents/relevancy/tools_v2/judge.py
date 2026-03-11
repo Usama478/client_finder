@@ -40,7 +40,33 @@ HOMEPAGE_RETAIL_MARKERS: Tuple[str, ...] = (
     "shop now",
     "shop all",
 )
+WEAK_STOREFRONT_MARKERS: Tuple[str, ...] = (
+    "add to cart",
+    "checkout",
+    "shop now",
+    "new arrivals",
+    "wishlist",
+    "size guide",
+    "shipping",
+    "returns",
+)
 HOMEPAGE_RETAIL_NAV_MARKERS: Tuple[str, ...] = ("/shop", "/products", "/collections")
+B2B_RETAILER_TARGETING_MARKERS: Tuple[str, ...] = (
+    "wholesaler",
+    "distributor",
+    "retailer",
+    "retailers",
+    "boutique",
+    "boutiques",
+    "department store",
+)
+
+
+def _exporter_targets_retailers(state: RelevancyAgentState) -> bool:
+    exporter_profile = str(state.get("exporter_profile") or "").lower()
+    if not exporter_profile:
+        return False
+    return any(marker in exporter_profile for marker in B2B_RETAILER_TARGETING_MARKERS)
 
 
 def _to_db_decision_fields(decision: LLMRelevanceDecision) -> Dict[str, object]:
@@ -471,7 +497,8 @@ def _deterministic_prejudge(state: RelevancyAgentState, signals: Dict[str, objec
     marketplace_b2b_context = marketplace_context_score >= 4
 
     # Issue 1: Fast-track strict B2C retailer/storefront cases to irrelevant
-    if catalog_has and catalog_mode in {"storefront", "brand_catalog", "unknown"} and business_model_primary in {"retailer", "brand"} and business_model_customer == "b2c" and business_model_conf >= 0.62:
+    targets_retailers = _exporter_targets_retailers(state)
+    if not targets_retailers and catalog_has and catalog_mode in {"storefront", "brand_catalog", "unknown"} and business_model_primary in {"retailer", "brand"} and business_model_customer == "b2c" and business_model_conf >= 0.62:
         decision = _build_decision(
             relevance_decision="irrelevant",
             manual_review=False,
@@ -481,6 +508,28 @@ def _deterministic_prejudge(state: RelevancyAgentState, signals: Dict[str, objec
             mismatch_reasons=["Business model intelligence strongly indicates a B2C retailer.","Direct-to-consumer storefront catalog detected."],
             signals_used=_decision_signals(signal_tags, ["catalog_present", f"catalog_mode.{catalog_mode}", "business_model_intel", "business_model_customer.b2c"]),
             business_type="B2C Retailer / Brand",
+        )
+        return _apply_confidence_policy(decision, "irrelevant_ecommerce"), "irrelevant_ecommerce"
+
+    # Phase 2B: Stronger Weak-Storefront Rejection
+    # Condition: customer_model is b2c AND text evidence has store keywords AND NO strong B2B terms
+    clean_text_blob = str(clean.get("text_excerpt") or "").lower()
+    weak_storefront_hits = sum(1 for token in WEAK_STOREFRONT_MARKERS if token in clean_text_blob)
+    b2b_text_hits = _b2b_term_hits(clean_text_blob)
+    
+    if not targets_retailers and business_model_customer == "b2c" and weak_storefront_hits >= 2 and not b2b_text_hits:
+        decision = _build_decision(
+            relevance_decision="irrelevant",
+            manual_review=False,
+            confidence=0.88,
+            relevance_reason="Weak B2C storefront detected via text markers; lacking B2B signals.",
+            match_reasons=[],
+            mismatch_reasons=[
+                "Customer model identified as B2C.",
+                "Storefront phrasing detected (e.g., checkout, cart) without B2B wholesale terms."
+            ],
+            signals_used=_decision_signals(signal_tags, ["clean_text_excerpt", "business_model_customer.b2c"]),
+            business_type="B2C Storefront",
         )
         return _apply_confidence_policy(decision, "irrelevant_ecommerce"), "irrelevant_ecommerce"
 
@@ -515,7 +564,7 @@ def _deterministic_prejudge(state: RelevancyAgentState, signals: Dict[str, objec
         if "platform_detect" in signal_tags:
             ecommerce_signals.append("platform_detect")
 
-    if ecommerce_signal_score > 0 and not marketplace_b2b_context and not (
+    if not targets_retailers and ecommerce_signal_score > 0 and not marketplace_b2b_context and not (
         business_model_conf >= 0.62
         and business_model_customer in {"b2b", "mixed"}
         and business_model_primary in {"wholesaler", "manufacturer", "distributor", "brand"}
@@ -781,15 +830,16 @@ def llm_relevance_judge(state: RelevancyAgentState) -> Dict[str, object]:
 
         if _should_call_llm_refiner(pre_decision, state):
             llm_signals = dict(signals)
-            llm_signals["pre_judge"] = {
-                "relevance_decision": pre_decision.relevance_decision,
-                "manual_review": pre_decision.manual_review,
-                "confidence": pre_decision.confidence,
-                "relevance_reason": pre_decision.relevance_reason,
-                "match_reasons": pre_decision.match_reasons,
-                "mismatch_reasons": pre_decision.mismatch_reasons,
-                "signals_used": pre_decision.signals_used,
-            }
+            if pre_decision.relevance_decision != "unknown":
+                llm_signals["pre_judge"] = {
+                    "relevance_decision": pre_decision.relevance_decision,
+                    "manual_review": pre_decision.manual_review,
+                    "confidence": pre_decision.confidence,
+                    "relevance_reason": pre_decision.relevance_reason,
+                    "match_reasons": pre_decision.match_reasons,
+                    "mismatch_reasons": pre_decision.mismatch_reasons,
+                    "signals_used": pre_decision.signals_used,
+                }
             prompt = build_relevancy_prompt(state.get("exporter_profile") or "", llm_signals)
             llm = ChatOpenAI(
                 model="gpt-4o-mini",
@@ -807,7 +857,11 @@ def llm_relevance_judge(state: RelevancyAgentState) -> Dict[str, object]:
                 payload = json.loads(content)
                 parsed = LLMRelevanceDecision.model_validate(payload)
                 decision = _merge_llm_refinement(pre_decision, parsed, typed_signal_tags, policy)
-            except Exception:
+            except Exception as e:
+                print("\n--- LLM PARSING ERROR ---")
+                print(f"Error: {e}")
+                print(f"Raw Output: {content}")
+                print("-------------------------\n")
                 decision = pre_decision
     except Exception as exc:
         blocked = state.get("collect_blocked") is True
