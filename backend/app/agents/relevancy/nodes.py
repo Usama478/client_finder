@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urljoin
 
@@ -220,6 +221,7 @@ def preclassify_target_node(state: RelevancyAgentState):
 
 
 def collect_page_sources_node(state: RelevancyAgentState):
+    start_time = time.time()
     normalized = _normalize_url(state.get("website"))
     if not normalized:
         output = CollectPageSourcesOutput(website_exists=False, normalized_website=None)
@@ -232,7 +234,7 @@ def collect_page_sources_node(state: RelevancyAgentState):
             "collect_status_code": None,
         }
 
-    homepage_result = collect_page_sources(normalized, collect_internal_links=True, max_internal_pages=8)
+    homepage_result = collect_page_sources(normalized, collect_internal_links=True, max_internal_pages=2)
     routing_fields = _collect_routing_fields(homepage_result)
     homepage = _to_page_source("homepage", normalized, homepage_result)
     homepage_status = homepage.status_code
@@ -293,7 +295,7 @@ def collect_page_sources_node(state: RelevancyAgentState):
 
     raw_browser_pages = homepage_result.get("browser_pages")
     if isinstance(raw_browser_pages, list):
-        for browser_page in raw_browser_pages[:8]:
+        for browser_page in raw_browser_pages[:2]:
             if not isinstance(browser_page, dict):
                 continue
             requested = str(browser_page.get("requested_url") or browser_page.get("final_url") or "").strip()
@@ -308,18 +310,28 @@ def collect_page_sources_node(state: RelevancyAgentState):
             page_errors = _collect_errors(browser_page)
             if page_errors:
                 collected_errors.append(f"{label}:{page_errors[0]}")
-            if len(pages) >= 8:
+            if len(pages) >= 2:
                 break
 
-    use_browser_session_pages = homepage.fetch_method == "playwright" and bool(raw_browser_pages)
+    use_browser_session_pages = homepage_result.get("fetch_method") == "playwright" and bool(raw_browser_pages)
     if not use_browser_session_pages:
         for label, target in _homepage_link_candidates(base_url, homepage_result):
-            if len(pages) >= 8:
+            if len(pages) >= 2:
                 break
+            
+            elapsed = time.time() - start_time
+            remaining_budget = 60.0 - elapsed
+            if remaining_budget <= 0:
+                logger.warning(f"collect_v2 node global timeout budget exceeded (60s) on {base_url}")
+                collected_errors.append("timeout:global_60s_budget_exceeded")
+                break
+
             target_key = target.rstrip("/")
             if target_key in seen_targets:
                 continue
-            page_result = collect_page_sources(target, timeout_s=12, force_browser=force_browser_for_routes)
+            
+            fetch_timeout = max(5, int(remaining_budget))
+            page_result = collect_page_sources(target, timeout_s=fetch_timeout, force_browser=force_browser_for_routes)
             pages.append(_to_page_source(label, target, page_result))
             seen_targets.add(target_key)
             page_errors = _collect_errors(page_result)

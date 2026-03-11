@@ -2,7 +2,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import (
     search_routes,
-    relevancy_routes,
     relevancy_v2_routes,
     verification_routes,
     context_routes,
@@ -27,7 +26,6 @@ app.add_middleware(
 )
 
 app.include_router(search_routes.router)
-app.include_router(relevancy_routes.router)
 app.include_router(relevancy_v2_routes.router)
 app.include_router(verification_routes.router)
 app.include_router(context_routes.router)

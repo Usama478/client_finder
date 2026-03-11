@@ -13,7 +13,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 EXPORTER_PROFILE = "We are a premium clothing wholesaler looking for B2B fashion retailers, boutiques, and department stores."
-TARGET_IDS = list(range(30, 35)) # Testing 30 to 34
+TARGET_IDS = list(range(35, 40)) # Testing 30 to 34
 
 def build_state(row):
     raw = row.raw_data if row.raw_data else {}
