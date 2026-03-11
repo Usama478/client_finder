@@ -6,17 +6,17 @@ from urllib.parse import urlparse
 from app.agents.relevancy.state import RelevancyAgentState
 
 SOCIAL_DOMAINS = {
-    "facebook.",
-    "instagram.",
-    "linkedin.",
-    "twitter.",
-    "x.",
-    "tiktok.",
-    "youtube.",
-    "pinterest.",
-    "reddit.",
-    "snapchat.",
-    "threads.",
+    "facebook.com",
+    "instagram.com",
+    "linkedin.com",
+    "twitter.com",
+    "x.com",
+    "tiktok.com",
+    "youtube.com",
+    "pinterest.com",
+    "reddit.com",
+    "snapchat.com",
+    "threads.net",
 }
 
 def social_profile_filter(state: RelevancyAgentState) -> Dict[str, object]:
@@ -31,7 +31,14 @@ def social_profile_filter(state: RelevancyAgentState) -> Dict[str, object]:
         
     domain = urlparse(raw_url).netloc.lower()
     
-    # Check if the domain matches any known social domains
-    is_social_profile = any(token in domain for token in SOCIAL_DOMAINS)
+    # Clean 'www.' to make matching easier
+    if domain.startswith("www."):
+        domain = domain[4:]
+    
+    # Check if domain matches exactly OR is a subdomain (like m.facebook.com)
+    is_social_profile = any(
+        domain == social_domain or domain.endswith(f".{social_domain}")
+        for social_domain in SOCIAL_DOMAINS
+    )
     
     return {"is_social_profile": is_social_profile}
