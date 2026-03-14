@@ -1,4 +1,4 @@
-import React from 'react';
+import type { FC } from 'react';
 import { Users, LineChart, Target, ShieldCheck } from 'lucide-react';
 
 interface DashboardProps {
@@ -6,7 +6,7 @@ interface DashboardProps {
     verifiedLeads: number;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ totalLeads, verifiedLeads }) => {
+export const Dashboard: FC<DashboardProps> = ({ totalLeads, verifiedLeads }) => {
     const stats = [
         {
             title: 'Total Leads Found',

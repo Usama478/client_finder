@@ -212,12 +212,11 @@ def _homepage_link_candidates(base_url: str, homepage_result: Dict[str, object])
     return deduped[:16]
 
 
-def marketplace_filter_node(state: RelevancyAgentState):
-    return marketplace_filter(state)
-
-
 def preclassify_target_node(state: RelevancyAgentState):
-    return social_profile_filter(state)
+    # Run both social and marketplace filters, merging results into shared state
+    social_result = social_profile_filter(state)
+    marketplace_result = marketplace_filter(state)
+    return {**social_result, **marketplace_result}
 
 
 def collect_page_sources_node(state: RelevancyAgentState):
@@ -383,7 +382,27 @@ def shopify_probe_node(state: RelevancyAgentState):
 
 
 def extract_structured_signals_node(state: RelevancyAgentState):
-    return extract_structured_signals(state)
+    result = extract_structured_signals(state)
+    if not isinstance(result, dict):
+        return result
+
+    # Cap signals_used at 12 (previously done by the router via in-place mutation).
+    existing = result.get("signals_used")
+    capped: list = [str(s).strip() for s in (existing or []) if str(s).strip()][:12]
+
+    # If this run qualifies for the fast-path (strong structured signal with a
+    # product catalog), inject the tag here so the router stays side-effect-free.
+    structured_out = result.get("structured_signals_output") or {}
+    fast_path = (
+        str(structured_out.get("structured_signal_strength") or "").lower() == "strong"
+        and structured_out.get("structured_has_product_catalog") is True
+    )
+    if fast_path and "structured.strong_signal" not in capped:
+        capped.append("structured.strong_signal")
+        capped = capped[:12]
+
+    result["signals_used"] = capped
+    return result
 
 
 def extract_clean_text_and_sections_node(state: RelevancyAgentState):
@@ -413,7 +432,7 @@ def end_irrelevant_node(state: RelevancyAgentState):
     if state.get("website_exists") is False:
         status_code = state.get("collect_status_code")
         if isinstance(status_code, int) and status_code in (404, 410):
-            reason = f"Website unavailable (HTTP {status_code})."
+            reason = f"[SITE_UNREACHABLE] Website unavailable (HTTP {status_code})."
             confidence = 0.9
             mismatch_reasons = [f"Website returned HTTP {status_code}."]
             signals_used = ["collect_status"]
@@ -421,16 +440,16 @@ def end_irrelevant_node(state: RelevancyAgentState):
             decision = "unknown"
             manual_review = True
             confidence = 0.2
-            reason = "Website could not be reliably reached."
+            reason = "[SITE_UNREACHABLE] Website could not be reliably reached."
             mismatch_reasons = ["Website reachability is inconclusive with current fetch signals."]
             signals_used = ["collect_status", "headers_cookies"]
     elif state.get("is_social_profile") is True:
-        reason = "Social media profile detected; skipping deep analysis."
+        reason = "[SOCIAL_PROFILE_REJECTION] Social media profile detected; skipping deep analysis."
         confidence = 0.95
         mismatch_reasons = ["URL belongs to a social media domain."]
         signals_used = ["social_detect"]
     elif state.get("is_marketplace") is True:
-        reason = "Marketplace URL filtered."
+        reason = "[MARKETPLACE_REJECTION] Marketplace URL filtered."
         confidence = 0.95
         mismatch_reasons = ["URL belongs to a marketplace domain."]
         signals_used = ["marketplace_filter"]
@@ -468,10 +487,21 @@ def finalize_manual_review_node(state: RelevancyAgentState):
     block_reason = state.get("collect_block_reason") or "unknown"
     status_code = state.get("collect_status_code")
     status_text = status_code if isinstance(status_code, int) else "unknown"
+
+    # Derive a machine-readable prefix from the block reason.
+    block_lower = block_reason.lower()
+    if status_code == 403 or "access_denied" in block_lower or "http_403" in block_lower:
+        prefix = "[ACCESS_DENIED]"
+    elif any(token in block_lower for token in ("cloudflare", "turnstile", "bot_challenge", "checking_your_browser")):
+        prefix = "[CLOUDFLARE_BLOCKED]"
+    else:
+        prefix = "[COLLECTION_FAILED]"
+
+    reason = f"{prefix} blocked:{block_reason} status={status_text}"
     decision_output = {
         "relevance_decision": "unknown",
         "relevance_score": 0,
-        "relevance_reason": f"blocked:{block_reason} status={status_text}",
+        "relevance_reason": reason,
         "business_type": "Unknown",
         "primary_niche": "Unknown",
         "manual_review": True,
@@ -484,7 +514,7 @@ def finalize_manual_review_node(state: RelevancyAgentState):
     return {
         "relevance_decision": "unknown",
         "relevance_score": 0,
-        "relevance_reason": f"blocked:{block_reason} status={status_text}",
+        "relevance_reason": reason,
         "business_type": "Unknown",
         "primary_niche": "Unknown",
         "manual_review": True,

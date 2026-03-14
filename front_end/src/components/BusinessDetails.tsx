@@ -14,9 +14,10 @@ const getRiskLevelText = (relevance_score?: number | null) => {
 interface BusinessDetailsProps {
   business: SearchResult | null;
   onBack: () => void;
+  backLabel?: string;
 }
 
-export function BusinessDetails({ business, onBack }: BusinessDetailsProps) {
+export function BusinessDetails({ business, onBack, backLabel = 'Go Back' }: BusinessDetailsProps) {
   if (!business) {
     return (
       <div className="p-8 bg-gray-50 dark:bg-black min-h-screen flex items-center justify-center">
@@ -24,7 +25,7 @@ export function BusinessDetails({ business, onBack }: BusinessDetailsProps) {
           <p className="text-gray-500 dark:text-zinc-400 mb-4">No business selected</p>
           <Button variant="outline" onClick={onBack} className="text-gray-500 dark:text-zinc-400">
             <ArrowLeft className="w-4 h-4 mr-2" />
-            Go Back
+            {backLabel}
           </Button>
         </div>
       </div>
@@ -65,7 +66,7 @@ export function BusinessDetails({ business, onBack }: BusinessDetailsProps) {
           className="text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:text-white mb-4"
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
-          Back to Clients
+          {backLabel}
         </Button>
         <h1 className="text-gray-900 dark:text-white text-3xl mb-2">Business Details</h1>
         <p className="text-gray-500 dark:text-zinc-400">Complete AI verification information and status</p>

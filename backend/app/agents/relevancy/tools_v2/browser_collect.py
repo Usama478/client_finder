@@ -1,15 +1,23 @@
 from __future__ import annotations
 
+import logging
 import re
+import threading
 from html import unescape
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 from urllib.parse import urljoin, urlparse
+
+logger = logging.getLogger(__name__)
 
 try:
     from playwright.sync_api import Page, sync_playwright
 except Exception:
     Page = Any  # type: ignore[assignment]
     sync_playwright = None
+
+# Limit to 3 concurrent Chromium instances to prevent memory exhaustion
+# under high API concurrency. Additional callers block and queue here.
+BROWSER_SEMAPHORE = threading.Semaphore(3)
 
 BLOCK_MARKERS: Tuple[Tuple[str, str], ...] = (
     ("turnstile", "turnstile"),
@@ -503,6 +511,21 @@ def collect_with_playwright(
         raise RuntimeError("playwright is not installed")
 
     diagnostics: List[str] = ["path=browser", "session=reused"]
+    logger.info("browser_collect waiting for concurrency lock business_url=%s", url)
+    with BROWSER_SEMAPHORE:
+        logger.info("browser_collect lock acquired business_url=%s", url)
+        return _run_playwright_session(url, timeout_s, user_agent, include_internal_pages, max_internal_pages, diagnostics)
+
+
+def _run_playwright_session(
+    url: str,
+    timeout_s: int,
+    user_agent: str,
+    include_internal_pages: bool,
+    max_internal_pages: int,
+    diagnostics: List[str],
+) -> Dict[str, object]:
+    """Inner helper: called only while BROWSER_SEMAPHORE is held."""
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(
             headless=True,

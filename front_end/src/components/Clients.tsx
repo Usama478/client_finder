@@ -1,25 +1,33 @@
-import { useState } from 'react';
-import { Search, CheckSquare, Square, Trash2, Loader2, Download } from 'lucide-react';
+import { useState, type MouseEvent } from 'react';
+import { Search, Trash2, Loader2, Download } from 'lucide-react';
 import { exportClients } from '../services/api';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
-import { Card, CardContent } from './ui/card';
 import { Badge } from './ui/badge';
 import type { SearchResult } from '../types/search-result';
 import { getResultId, getVerificationStatusText } from '../types/search-result';
+import { EmptyState } from './page/EmptyState';
+import { ErrorState } from './page/ErrorState';
+import { PageHeader } from './page/PageHeader';
+import { StatusNotice } from './page/StatusNotice';
+import { WorkflowProgress } from './page/WorkflowProgress';
+import { LeadCard } from './LeadCard';
 
 
 interface ClientsProps {
+  actionError?: string | null;
+  isRefreshing?: boolean;
   results: SearchResult[];
   processingIds: Set<string>;
   processingAction: string | null;
+  onRefresh: () => void;
   onSelectBusiness: (businessId: string) => void;
   onRunRelevancy: (ids: string[]) => void;
   onRunVerification: (ids: string[]) => void;
   onRemoveFromClients: (ids: string[]) => void;
 }
 
-export function Clients({ results, processingIds, processingAction, onSelectBusiness, onRunRelevancy, onRunVerification, onRemoveFromClients }: ClientsProps) {
+export function Clients({ actionError, isRefreshing = false, results, processingIds, processingAction, onRefresh, onSelectBusiness, onRunRelevancy, onRunVerification, onRemoveFromClients }: ClientsProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isExporting, setIsExporting] = useState(false);
@@ -45,7 +53,7 @@ export function Clients({ results, processingIds, processingAction, onSelectBusi
     }
   };
 
-  const toggleSelection = (e: React.MouseEvent, id: string) => {
+  const toggleSelection = (e: MouseEvent, id: string) => {
     e.stopPropagation();
     const newSelected = new Set(selectedIds);
     if (newSelected.has(id)) {
@@ -111,10 +119,61 @@ export function Clients({ results, processingIds, processingAction, onSelectBusi
 
   return (
     <div className="p-8 bg-gray-50 dark:bg-black min-h-screen">
-      <div className="mb-8">
-        <h1 className="text-gray-900 dark:text-white text-3xl mb-2">Clients</h1>
-        <p className="text-gray-500 dark:text-zinc-400">Manage your saved and verified clients</p>
-      </div>
+      <PageHeader
+        title="Clients"
+        description="Manage your saved and verified clients"
+        actions={(
+          <Button variant="outline" onClick={onRefresh} disabled={isRefreshing}>
+            {isRefreshing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            {isRefreshing ? 'Refreshing...' : 'Refresh'}
+          </Button>
+        )}
+      />
+      <WorkflowProgress
+        currentStage="clients"
+        summary="Saved businesses live here for follow-up, export, and detailed review."
+        nextAction={
+          processingIds.size > 0
+            ? 'Wait for the requested rerun to update, or refresh this page to sync the latest client statuses.'
+            : selectedIds.size > 0
+              ? 'Run another relevancy or validation pass, or export the selected clients.'
+              : filteredClients.length > 0
+                ? 'Open a client to review details or select clients for a new pass.'
+                : 'Save businesses from earlier stages to build your client list.'
+        }
+      />
+      <StatusNotice
+        tone={
+          processingIds.size > 0
+            ? processingAction === 'verification'
+              ? 'warning'
+              : 'info'
+            : 'info'
+        }
+        title={
+          processingIds.size > 0
+            ? processingAction === 'verification'
+              ? `Validation rerun requested for ${processingIds.size} clients`
+              : `Relevancy rerun requested for ${processingIds.size} clients`
+            : 'Clients is your stable review and export stage'
+        }
+        description={
+          processingIds.size > 0
+            ? processingAction === 'verification'
+              ? 'Validation still depends on the prototype verification backend. This page will refresh real status updates when they are available, but some items may remain pending longer.'
+              : 'Relevancy updates come from the live backend path. This page refreshes the latest saved-client statuses automatically while the job runs.'
+            : 'Use this stage to review saved businesses, export them, or open a record for more detail.'
+        }
+        className="mb-6"
+      />
+
+      {actionError && (
+        <ErrorState
+          title="Unable to update Clients"
+          message={actionError}
+          className="mb-6"
+        />
+      )}
 
       {/* Top Controls */}
       <div className="flex flex-col md:flex-row gap-4 mb-6">
@@ -151,7 +210,7 @@ export function Clients({ results, processingIds, processingAction, onSelectBusi
               disabled={selectedIds.size === 0}
               className="bg-gray-100 dark:bg-zinc-800 hover:bg-zinc-700 text-gray-700 dark:text-zinc-300 border border-gray-300 dark:border-zinc-700 whitespace-nowrap"
             >
-              🚀 Run Relevancy AI
+              Re-run Relevancy
             </Button>
             <Button
               size="sm"
@@ -159,7 +218,7 @@ export function Clients({ results, processingIds, processingAction, onSelectBusi
               disabled={selectedIds.size === 0}
               className="bg-blue-600 hover:bg-blue-700 text-gray-900 dark:text-white whitespace-nowrap"
             >
-              🛡️ Run Validation AI
+              Re-run Validation
             </Button>
             <Button
               size="sm"
@@ -195,91 +254,67 @@ export function Clients({ results, processingIds, processingAction, onSelectBusi
           const cardId = getResultId(client);
 
           return (
-            <Card
+            <LeadCard
               key={cardId}
-              className={`bg-white dark:bg-zinc-900 border-gray-200 dark:border-zinc-800 hover:bg-gray-100 dark:bg-zinc-800/50 transition-all relative flex flex-col h-full overflow-hidden ${selectedIds.has(cardId) ? 'border-blue-500' : ''}`}
-            >
-              {/* Card Selection */}
-              <div
-                className="absolute left-6 top-6 cursor-pointer z-10"
-                onClick={(e) => toggleSelection(e, cardId)}
-              >
-                {selectedIds.has(cardId) ? (
-                  <CheckSquare className="w-5 h-5 text-blue-500" />
-                ) : (
-                  <Square className="w-5 h-5 text-zinc-500 hover:text-gray-500 dark:text-zinc-400" />
-                )}
-              </div>
-
-              <CardContent className="p-6 pl-16 flex flex-col flex-grow">
-                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-4">
-                  <div className="flex items-start gap-4 flex-1">
-                    <div className="w-12 h-12 bg-gray-100 dark:bg-zinc-800 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <span className="text-zinc-500 font-bold text-xl">{client.business_name?.[0]?.toUpperCase()}</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-gray-900 dark:text-white mb-1 flex flex-wrap items-center gap-2 min-w-0">
-                        <span className="truncate max-w-[60%]" title={client.business_name || undefined}>
-                          {client.business_name}
-                        </span>
-                        <Badge variant="secondary" className={`whitespace-nowrap flex-shrink-0 ${getVerificationStatusText(client) === "Verified"
-                          ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
-                          : getVerificationStatusText(client) === "Partially Verified"
-                            ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
-                            : "bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 border-gray-300 dark:border-zinc-700"
-                          }`}>
-                          {getVerificationStatusText(client)}
-                        </Badge>
-                      </h3>
-                      <p className="text-gray-500 dark:text-zinc-400 capitalize text-sm truncate">{category}</p>
-                    </div>
-                  </div>
+              selected={selectedIds.has(cardId)}
+              onToggleSelect={(e) => toggleSelection(e, cardId)}
+              title={client.business_name || 'Unknown Business'}
+              titleSuffix={(
+                <Badge variant="secondary" className={`whitespace-nowrap flex-shrink-0 ${getVerificationStatusText(client) === "Verified"
+                  ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
+                  : getVerificationStatusText(client) === "Partially Verified"
+                    ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
+                    : "bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 border-gray-300 dark:border-zinc-700"
+                  }`}>
+                  {getVerificationStatusText(client)}
+                </Badge>
+              )}
+              subtitle={<p className="capitalize truncate">{category}</p>}
+              location={<p className="text-sm truncate">{client.address || 'No address'}</p>}
+              leading={(
+                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-gray-100 dark:bg-zinc-800">
+                  <span className="text-xl font-bold text-zinc-500">{client.business_name?.[0]?.toUpperCase()}</span>
                 </div>
-
-                <div className="space-y-2 mb-4">
-                  <p className="text-gray-500 dark:text-zinc-400 text-sm truncate">{client.address || 'No address'}</p>
-                </div>
-
-                <div className="flex flex-col gap-3 mt-4">
-                  <div className="flex flex-wrap items-center gap-2 w-full">
-                    <Badge variant="secondary" className="bg-blue-500/10 text-blue-400 border-blue-500/20">
-                      Score: {client.relevance_score ?? 0}
-                    </Badge>
-                    <Badge variant="secondary" className="bg-purple-500/10 text-purple-400 border-purple-500/20">
-                      Verification Score: {client.verification_score ?? 0}
-                    </Badge>
-                  </div>
-                  {processingIds.has(cardId) && (
-                    <div className="flex">
-                      <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 border">
-                        <Loader2 className="w-3 h-3 animate-spin mr-1 inline" />
-                        {processingAction === 'relevancy' ? 'Analyzing...' : 'Running deep checks...'}
-                      </Badge>
-                    </div>
-                  )}
-                </div>
-
-                <div className="mt-auto pt-4 border-t border-gray-200 dark:border-zinc-800 flex justify-end">
-                  <Button
-                    variant="link"
-                    className="text-blue-400 hover:text-blue-300 px-0 h-auto font-medium"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSelectBusiness(cardId);
-                    }}
-                  >
-                    View Details
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+              )}
+              badges={(
+                <>
+                  <Badge variant="secondary" className="bg-blue-500/10 text-blue-400 border-blue-500/20">
+                    Score: {client.relevance_score ?? 0}
+                  </Badge>
+                  <Badge variant="secondary" className="bg-purple-500/10 text-purple-400 border-purple-500/20">
+                    Verification Score: {client.verification_score ?? 0}
+                  </Badge>
+                </>
+              )}
+              status={processingIds.has(cardId) ? (
+                <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 border">
+                  <Loader2 className="w-3 h-3 animate-spin mr-1 inline" />
+                  {processingAction === 'relevancy' ? 'Analyzing...' : 'Running deep checks...'}
+                </Badge>
+              ) : undefined}
+              footer={(
+                <Button
+                  variant="link"
+                  className="text-blue-400 hover:text-blue-300 px-0 h-auto font-medium"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectBusiness(cardId);
+                  }}
+                >
+                  View Details
+                </Button>
+              )}
+              className="h-full"
+            />
           );
         })}
 
         {filteredClients.length === 0 && (
-          <div className="col-span-full text-center py-12 text-zinc-500">
-            No saved or verified clients match your search criteria.
-          </div>
+          <EmptyState
+            title="No matching clients"
+            description="No saved or verified clients match your current search criteria."
+            className="col-span-full"
+          />
         )}
       </div>
     </div>

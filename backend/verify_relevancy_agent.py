@@ -1,6 +1,6 @@
 import logging
 from collections import Counter
-from app.agents.relevancy.graph import relevancy_graph
+from app.agents.relevancy.service_v2 import run_relevancy_v2_for_business
 from app.db.session import SessionLocal
 from app.models.search_result import SearchResult
 
@@ -13,24 +13,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 EXPORTER_PROFILE = "We are a premium clothing wholesaler looking for B2B fashion retailers, boutiques, and department stores."
-TARGET_IDS = list(range(35, 40)) # Testing 30 to 34
-
-def build_state(row):
-    raw = row.raw_data if row.raw_data else {}
-    return {
-        "business_id": row.result_id,
-        "search_id": row.search_id or 0,
-        "business_name": row.business_name,
-        "category": raw.get("category"),
-        "website": row.website,
-        "exporter_profile": EXPORTER_PROFILE,
-        "collect_sources_output": {},
-        "llm_decision_output": {},
-    }
+TARGET_IDS = list(range(61, 81)) # Testing 61 to 80
 
 def run_batch():
     summary = Counter()
-    logger.info(f"Starting batch test for IDs: {TARGET_IDS}")
+    logger.info(f"Starting REAL SaaS batch test for IDs: {TARGET_IDS}")
 
     with SessionLocal() as db:
         rows = db.query(SearchResult).filter(SearchResult.result_id.in_(TARGET_IDS)).all()
@@ -44,25 +31,26 @@ def run_batch():
         logger.info(f"🎯 TARGET: ID {row.result_id:02d} | {row.business_name} | {row.website}")
         
         try:
-            seen_nodes = []
-            final_state = {}
+            # CALLING THE ACTUAL PRODUCTION SERVICE LAYER
+            result = run_relevancy_v2_for_business(
+                business_id=row.result_id,
+                website=row.website,
+                exporter_profile=EXPORTER_PROFILE,
+                search_id=row.search_id or 0,
+                business_name=row.business_name,
+            )
             
-            # Stream the graph and log every node as it finishes
-            for chunk in relevancy_graph.stream(build_state(row)):
-                node_name = list(chunk.keys())[0]
-                logger.info(f"  🟢 Node Complete: {node_name}")
-                seen_nodes.append(node_name)
+            # Check if our concurrency lock blocked it
+            if result.get("status") == "ignored":
+                logger.warning("⚠️ ALREADY PROCESSING (Lock working)")
+                summary["IGNORED_LOCKED"] += 1
+                continue
                 
-                for v in chunk.values():
-                    if isinstance(v, dict):
-                        final_state.update(v)
-
-            decision = final_state.get("llm_decision_output") or {}
-            relevance = decision.get('relevance_decision', 'unknown')
+            relevance = result.get("relevance_decision", "unknown")
             summary[relevance] += 1
             
             logger.info(f"✅ DECISION: {relevance.upper()}")
-            logger.info(f"📝 REASON  : {decision.get('relevance_reason')}")
+            logger.info(f"📝 REASON  : {result.get('relevance_reason')}")
             
         except Exception as e:
             logger.error(f"❌ CRASH ON ID {row.result_id}: {type(e).__name__} - {str(e)}")

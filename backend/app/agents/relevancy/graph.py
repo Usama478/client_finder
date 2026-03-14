@@ -19,6 +19,8 @@ from app.agents.relevancy.state import RelevancyAgentState
 def _route_after_preclassify(state: RelevancyAgentState) -> str:
     if state.get("is_social_profile") is True:
         return "end_irrelevant"
+    if state.get("is_marketplace") is True:
+        return "end_irrelevant"
     return "collect_page_sources"
 
 
@@ -38,11 +40,8 @@ def _route_after_structured(state: RelevancyAgentState) -> str:
         has_catalog = state.get("structured_has_product_catalog")
 
     if signal_strength == "strong" and has_catalog is True:
-        existing = state.get("signals_used") or []
-        used = [str(item).strip() for item in existing if str(item).strip()]
-        if "structured.strong_signal" not in used:
-            used.append("structured.strong_signal")
-        state["signals_used"] = used[:12]
+        # Note: "structured.strong_signal" is appended by extract_structured_signals_node
+        # via its signals_used output key — no state mutation needed here.
         return "catalog_intelligence"
     return "extract_clean_text_and_sections"
 

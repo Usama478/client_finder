@@ -4,6 +4,10 @@ import { Badge } from './ui/badge';
 import { useState, useEffect } from 'react';
 import { fetchDashboardStats } from '../services/api';
 import type { SearchResult } from '../types/search-result';
+import { EmptyState } from './page/EmptyState';
+import { LoadingState } from './page/LoadingState';
+import { PageHeader } from './page/PageHeader';
+import { StatCard } from './StatCard';
 
 const getVerificationStatusText = (verificationStatus?: string | null, verification_score?: number | null) => {
   if (verificationStatus !== 'completed') return "Unverified";
@@ -104,40 +108,33 @@ export function DashboardOverview({ history, onSelectHistory }: DashboardProps) 
   ];
 
   if (isLoading) {
-    return (
-      <div className="p-8 max-w-7xl mx-auto flex justify-center items-center min-h-[50vh]">
-        <div className="text-gray-500 animate-pulse">Loading global dashboard metrics...</div>
-      </div>
-    );
+    return <LoadingState message="Loading global dashboard metrics..." />;
   }
 
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-gray-900 dark:text-white mb-2 text-2xl font-bold">Dashboard Overview</h1>
-        <p className="text-gray-600 dark:text-gray-400">Monitor your business verification and client discovery metrics</p>
-      </div>
+      <PageHeader
+        title="Dashboard Overview"
+        description="Monitor your business verification and client discovery metrics"
+      />
 
       {/* Top Stats */}
       <div className="grid grid-cols-4 gap-6 mb-8">
         {stats.map((stat, idx) => {
           const Icon = stat.icon;
           return (
-            <div key={idx} className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl p-6 shadow-sm">
-              <div className="flex items-start justify-between mb-4">
-                <div className="w-12 h-12 bg-gray-100 dark:bg-zinc-800 rounded-lg flex items-center justify-center">
-                  <Icon className="w-6 h-6 text-gray-500 dark:text-zinc-400" />
-                </div>
-                {stat.trend === 'up' && (
-                  <Badge className="bg-green-500/10 text-green-400 border-green-500/20 border text-xs">
-                    {stat.change}
-                  </Badge>
-                )}
-              </div>
-              <div className="text-sm text-gray-500 dark:text-zinc-400 mb-1">{stat.label}</div>
-              <div className="text-3xl font-bold text-gray-900 dark:text-white">{stat.value}</div>
-            </div>
+            <StatCard
+              key={idx}
+              title={stat.label}
+              value={stat.value}
+              icon={<Icon className="w-6 h-6 text-gray-500 dark:text-zinc-400" />}
+              badge={stat.trend === 'up' ? (
+                <Badge className="border border-green-500/20 bg-green-500/10 text-xs text-green-400">
+                  {stat.change}
+                </Badge>
+              ) : undefined}
+            />
           );
         })}
       </div>
@@ -217,7 +214,11 @@ export function DashboardOverview({ history, onSelectHistory }: DashboardProps) 
         <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl p-6 shadow-sm overflow-y-auto max-h-[400px]">
           <h3 className="text-gray-900 dark:text-white mb-4">Recent Searches</h3>
           {history.length === 0 ? (
-            <div className="text-gray-500 text-sm">No recent searches found.</div>
+            <EmptyState
+              title="No recent searches yet"
+              description="Recent search sessions will appear here once you start scanning."
+              className="px-4 py-10"
+            />
           ) : (
             <div className="space-y-3">
               {history.map((search: any) => (

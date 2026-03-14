@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any, Dict, Iterable, List, Sequence, Set
+
+logger = logging.getLogger(__name__)
 
 from app.agents.relevancy.schemas import CatalogIntelligenceOutput
 from app.agents.relevancy.state import RelevancyAgentState
@@ -1552,5 +1555,17 @@ def catalog_intelligence(state: RelevancyAgentState) -> Dict[str, object]:
         )
         output = _finalize_catalog_output(merged)
         return {"catalog_intelligence_output": output}
-    except Exception:
-        return {"catalog_intelligence_output": default_output}
+    except Exception as exc:
+        logger.error(
+            "catalog_intelligence FAILED business_id=%s error=%s",
+            state.get("business_id"),
+            exc,
+            exc_info=True,
+        )
+        return {
+            "catalog_intelligence_output": {
+                **default_output,
+                "node_status": "failed",
+                "error_message": f"catalog_intelligence: {type(exc).__name__}: {exc}",
+            }
+        }

@@ -17,6 +17,12 @@ SOCIAL_DOMAINS = {
     "reddit.com",
     "snapchat.com",
     "threads.net",
+    "yelp.com",
+    "yellowpages.com",
+    "tripadvisor.com",
+    "etsy.com",
+    "amazon.com",
+    "linktr.ee",
 }
 
 def social_profile_filter(state: RelevancyAgentState) -> Dict[str, object]:

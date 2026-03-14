@@ -1,27 +1,31 @@
-import { useState } from 'react';
-import { Search, MapPin, ChevronDown, Filter, Loader2, CheckSquare, Square, CheckCircle, XCircle } from 'lucide-react';
+import { useState, type FormEvent, type MouseEvent } from 'react';
+import { Search, MapPin, ChevronDown, Filter, Loader2, CheckCircle, XCircle } from 'lucide-react';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
 import { Badge } from './ui/badge';
+import { Select } from './ui/select';
 import type { SearchResult } from '../types/search-result';
 import { getResultId, getVerificationStatusText } from '../types/search-result';
-
-// Add new imports for modal/dialog if we use one, or just simple state for a custom modal
-// For simplicity we can use a custom overlay for the "New Context" modal.
-
-
-
+import { EmptyState } from './page/EmptyState';
+import { ErrorState } from './page/ErrorState';
+import { PageHeader } from './page/PageHeader';
+import { StatusNotice } from './page/StatusNotice';
+import { WorkflowProgress } from './page/WorkflowProgress';
+import { LeadCard } from './LeadCard';
 interface SearchBusinessesProps {
   onFilterRelevant: () => void;
   query: string;
   setQuery: (q: string) => void;
-  handleSearch: (e?: React.FormEvent) => void;
+  handleSearch: (e?: FormEvent) => void;
   results: SearchResult[];
   searchError?: string | null;
+  actionError?: string | null;
   isSearching: boolean;
+  currentSearchId?: string | null;
   selectedIds: Set<string>;
   setSelectedIds: (ids: Set<string>) => void;
+  savingClientIds?: Set<string>;
   hasMore: boolean;
   handleLoadMore: () => void;
   onBusinessSelect: (id: string) => void;
@@ -35,18 +39,15 @@ interface SearchBusinessesProps {
 }
 
 export function SearchBusinesses({
-  onFilterRelevant, query, setQuery, handleSearch, results, searchError,
-  isSearching, selectedIds, setSelectedIds, hasMore, handleLoadMore, onBusinessSelect,
+  onFilterRelevant, query, setQuery, handleSearch, results, searchError, actionError,
+  isSearching, currentSearchId, selectedIds, setSelectedIds, savingClientIds = new Set(), hasMore, handleLoadMore, onBusinessSelect,
   history, onSelectHistory, onAddToClients,
   contexts = [], selectedContextId, setSelectedContextId, createContext
 }: SearchBusinessesProps) {
-
   const [isNewContextModalOpen, setIsNewContextModalOpen] = useState(false);
   const [newContextName, setNewContextName] = useState('');
   const [newContextPrompt, setNewContextPrompt] = useState('');
   const [isCreatingContext, setIsCreatingContext] = useState(false);
-
-
 
   const handleSelectAll = () => {
     if (selectedIds.size === results.length) {
@@ -57,7 +58,7 @@ export function SearchBusinesses({
     }
   };
 
-  const toggleSelection = (e: React.MouseEvent, id: string) => {
+  const toggleSelection = (e: MouseEvent, id: string) => {
     e.stopPropagation();
     const newSet = new Set(selectedIds);
     if (newSet.has(id)) {
@@ -68,7 +69,7 @@ export function SearchBusinesses({
     setSelectedIds(newSet);
   };
 
-  const handleCreateContextSubmit = async (e: React.FormEvent) => {
+  const handleCreateContextSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!newContextName.trim() || !newContextPrompt.trim() || !createContext) return;
 
@@ -87,10 +88,47 @@ export function SearchBusinesses({
 
   return (
     <div className="p-8 bg-gray-50 dark:bg-black min-h-screen">
-      <div className="mb-8">
-        <h1 className="text-gray-900 dark:text-white text-3xl mb-2">Search Businesses</h1>
-        <p className="text-gray-500 dark:text-zinc-400">Discover new businesses from multiple sources</p>
-      </div>
+      <PageHeader
+        title="Search Businesses"
+        description="Discover new businesses from multiple sources"
+      />
+      <WorkflowProgress
+        currentStage="search"
+        summary="Start with a search, review the results, and choose which businesses should move into the pipeline."
+        nextAction={
+          isSearching
+            ? 'Wait for the current search session to return results.'
+            : selectedIds.size > 0
+              ? `Continue ${selectedIds.size} selected businesses to relevancy.`
+              : results.length > 0
+                ? 'Select one or more businesses to continue to relevancy.'
+                : 'Run a search to begin the workflow.'
+        }
+        detail={currentSearchId ? `Search session #${currentSearchId}` : undefined}
+      />
+
+      {(isSearching || results.length > 0) && (
+        <StatusNotice
+          tone={isSearching ? 'info' : selectedIds.size > 0 ? 'success' : 'info'}
+          title={
+            isSearching
+              ? results.length > 0
+                ? 'Loading more results from this session'
+                : 'Search in progress'
+              : selectedIds.size > 0
+                ? `${selectedIds.size} businesses selected for relevancy`
+                : 'Review the results and choose what moves forward'
+          }
+          description={
+            isSearching
+              ? 'The backend is still gathering results. Existing cards remain interactive while the current search session updates.'
+              : selectedIds.size > 0
+                ? 'Continue to relevancy when you are ready. Businesses already saved to Clients stay marked as saved.'
+                : 'Select the businesses that should be scored for relevance before sending them to validation.'
+          }
+          className="mb-6"
+        />
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Main Content */}
@@ -112,7 +150,7 @@ export function SearchBusinesses({
 
                 {/* AI Context Selector */}
                 <div className="flex gap-2 w-full md:w-auto">
-                  <select
+                  <Select
                     className="h-12 px-4 bg-gray-100 dark:bg-zinc-800 border border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-white rounded-md flex-1 md:w-48 appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500"
                     value={selectedContextId || ''}
                     onChange={(e) => setSelectedContextId && setSelectedContextId(e.target.value)}
@@ -127,7 +165,7 @@ export function SearchBusinesses({
                         </option>
                       ))
                     )}
-                  </select>
+                  </Select>
                   <Button
                     type="button"
                     variant="outline"
@@ -151,17 +189,19 @@ export function SearchBusinesses({
 
           {/* Error Message */}
           {searchError && (
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-400 p-4 rounded-md">
-              <p className="font-semibold mb-1">Search Failed</p>
-              <p className="text-sm">{searchError}</p>
-            </div>
+            <ErrorState title="Search Failed" message={searchError} />
+          )}
+
+          {actionError && (
+            <ErrorState title="Unable to update Clients" message={actionError} />
           )}
 
           {/* Empty State */}
           {!isSearching && !searchError && results.length === 0 && (
-            <div className="text-center py-12 px-4 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg">
-              <p className="text-gray-500 dark:text-zinc-400 text-lg">No businesses found. Try adjusting your search query or AI Context.</p>
-            </div>
+            <EmptyState
+              title="No businesses found"
+              description="Try adjusting your search query or AI context, then select businesses to continue to relevancy."
+            />
           )}
 
           {/* Search Results List */}
@@ -184,77 +224,70 @@ export function SearchBusinesses({
               const cardId = getResultId(business);
               const isSelected = selectedIds.has(cardId);
               const category = business.types?.[0]?.replace(/_/g, ' ') || 'Local Business';
+              const isSavingToClients = savingClientIds.has(cardId);
+              const isSavedClient = !!business.is_saved_client;
 
               return (
-                <Card
+                <LeadCard
                   key={cardId}
-                  className={`bg-white dark:bg-zinc-900 border-gray-200 dark:border-zinc-800 hover:bg-gray-100 dark:bg-zinc-800/50 transition-all relative ${isSelected ? 'border-blue-500' : ''}`}
-                >
-                  {/* Card Selection */}
-                  <div
-                    className="absolute left-6 top-6 cursor-pointer z-10"
-                    onClick={(e) => toggleSelection(e, cardId)}
-                  >
-                    {isSelected ? (
-                      <CheckSquare className="w-5 h-5 text-blue-500" />
-                    ) : (
-                      <Square className="w-5 h-5 text-zinc-500 hover:text-gray-500 dark:text-zinc-400" />
-                    )}
-                  </div>
-
-                  <CardContent className="p-6 pl-16">
-                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-gray-900 dark:text-white text-lg mb-2 truncate" title={business.business_name || 'Unknown Business'}>
-                          {business.business_name || 'Unknown Business'}
-                        </h3>
-                        <p className="text-gray-500 dark:text-zinc-400 mb-2 capitalize truncate">{category}</p>
-                        <div className="flex items-center gap-2 text-gray-500 dark:text-zinc-400">
-                          <MapPin className="w-4 h-4" />
-                          <span className="text-sm">{business.address || 'Address not found'}</span>
-                        </div>
-                        <div className="flex flex-wrap gap-2 mt-3">
-                          <Badge className={
-                            getVerificationStatusText(business) === "Verified"
-                              ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20 inline-flex items-center"
-                              : getVerificationStatusText(business) === "Partially Verified"
-                                ? "bg-amber-500/10 text-amber-500 border-amber-500/20 inline-flex items-center"
-                                : "bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 border-gray-300 dark:border-zinc-700 inline-flex items-center"
-                          }>
-                            {getVerificationStatusText(business) === "Verified" ? (
-                              <CheckCircle className="w-3 h-3 mr-1 inline" />
-                            ) : (
-                              <XCircle className="w-3 h-3 mr-1 inline" />
-                            )}
-                            {getVerificationStatusText(business)}
-                          </Badge>
-                          {business.relevance_score != null ? (
-                            <Badge variant="secondary" className="bg-blue-500/10 text-blue-400 border-blue-500/20">
-                              Score: {business.relevance_score}
-                            </Badge>
-                          ) : (
-                            <Badge variant="secondary" className="bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 border-gray-300 dark:border-zinc-700">
-                              Pending Score
-                            </Badge>
-                          )}
-                          {business.verification_status !== 'completed' && business.relevance_score == null && (
-                            <Badge className="bg-blue-600 text-gray-900 dark:text-white border-blue-500 text-xs">
-                              New
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex flex-col gap-2 flex-shrink-0 w-full sm:w-32">
-                        <Button variant="outline" className="bg-gray-100 dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-white hover:bg-zinc-700 w-full" onClick={(e) => { e.stopPropagation(); onBusinessSelect(cardId); }}>
-                          View Details
-                        </Button>
-                        <Button className="bg-emerald-600 hover:bg-emerald-700 text-gray-900 dark:text-white w-full" onClick={(e) => { e.stopPropagation(); onAddToClients(business); }}>
-                          Quick Add
-                        </Button>
-                      </div>
+                  selected={isSelected}
+                  onToggleSelect={(e) => toggleSelection(e, cardId)}
+                  title={business.business_name || 'Unknown Business'}
+                  subtitle={<p className="capitalize truncate">{category}</p>}
+                  location={(
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4" />
+                      <span className="text-sm">{business.address || 'Address not found'}</span>
                     </div>
-                  </CardContent>
-                </Card>
+                  )}
+                  badges={(
+                    <>
+                      <Badge className={
+                        getVerificationStatusText(business) === "Verified"
+                          ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20 inline-flex items-center"
+                          : getVerificationStatusText(business) === "Partially Verified"
+                            ? "bg-amber-500/10 text-amber-500 border-amber-500/20 inline-flex items-center"
+                            : "bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 border-gray-300 dark:border-zinc-700 inline-flex items-center"
+                      }>
+                        {getVerificationStatusText(business) === "Verified" ? (
+                          <CheckCircle className="w-3 h-3 mr-1 inline" />
+                        ) : (
+                          <XCircle className="w-3 h-3 mr-1 inline" />
+                        )}
+                        {getVerificationStatusText(business)}
+                      </Badge>
+                      {business.relevance_score != null ? (
+                        <Badge variant="secondary" className="bg-blue-500/10 text-blue-400 border-blue-500/20">
+                          Score: {business.relevance_score}
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" className="bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 border-gray-300 dark:border-zinc-700">
+                          Pending Score
+                        </Badge>
+                      )}
+                      {business.verification_status !== 'completed' && business.relevance_score == null && (
+                        <Badge className="bg-blue-600 text-gray-900 dark:text-white border-blue-500 text-xs">
+                          New
+                        </Badge>
+                      )}
+                    </>
+                  )}
+                  actions={(
+                    <>
+                      <Button variant="outline" className="bg-gray-100 dark:bg-zinc-800 border-gray-300 dark:border-zinc-700 text-gray-900 dark:text-white hover:bg-zinc-700 w-full" onClick={(e) => { e.stopPropagation(); onBusinessSelect(cardId); }}>
+                        View Details
+                      </Button>
+                      <Button
+                        className="bg-emerald-600 hover:bg-emerald-700 text-gray-900 dark:text-white w-full"
+                        onClick={(e) => { e.stopPropagation(); onAddToClients(business); }}
+                        disabled={isSavingToClients || isSavedClient}
+                      >
+                        {isSavingToClients ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        {isSavedClient ? 'Saved to Clients' : isSavingToClients ? 'Saving...' : 'Quick Add'}
+                      </Button>
+                    </>
+                  )}
+                />
               );
             })}
           </div>
@@ -274,7 +307,7 @@ export function SearchBusinesses({
                 className="bg-blue-600 hover:bg-blue-700 text-gray-900 dark:text-white disabled:opacity-50"
               >
                 <Filter className="w-4 h-4 mr-2" />
-                Filter Relevant Businesses ({selectedIds.size})
+                Continue to Relevancy ({selectedIds.size})
               </Button>
             </div>
           )}
@@ -289,7 +322,11 @@ export function SearchBusinesses({
                 Recent Searches
               </h3>
               {!Array.isArray(history) || history.length === 0 ? (
-                <div className="text-zinc-500 text-sm">No recent searches found.</div>
+                <EmptyState
+                  title="No recent searches"
+                  description="Your recent search sessions will appear here."
+                  className="px-4 py-8"
+                />
               ) : (
                 <div className="space-y-3">
                   {history.map((search: any) => {

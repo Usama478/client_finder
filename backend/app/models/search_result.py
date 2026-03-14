@@ -40,6 +40,9 @@ class SearchResult(Base):
     business_type = Column(String, nullable=True)
     primary_niche = Column(String, nullable=True)
 
+    # Relevancy structured artifact blob (platform, catalog_mode, fetch_method, timeout_hit, etc.)
+    relevancy_artifacts = Column(JSON, nullable=True)
+
     # Verification agent
     verification_status = Column(String, default="pending")
     verification_result = Column(String, nullable=True)

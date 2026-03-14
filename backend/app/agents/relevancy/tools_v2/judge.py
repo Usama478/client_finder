@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from typing import Dict, Iterable, List, Sequence, Set, Tuple
+
+logger = logging.getLogger(__name__)
 
 from langchain_openai import ChatOpenAI
 
@@ -858,10 +861,12 @@ def llm_relevance_judge(state: RelevancyAgentState) -> Dict[str, object]:
                 parsed = LLMRelevanceDecision.model_validate(payload)
                 decision = _merge_llm_refinement(pre_decision, parsed, typed_signal_tags, policy)
             except Exception as e:
-                print("\n--- LLM PARSING ERROR ---")
-                print(f"Error: {e}")
-                print(f"Raw Output: {content}")
-                print("-------------------------\n")
+                _raw = locals().get("content", "<not captured>")
+                logger.warning(
+                    "LLM refinement failed — falling back to pre-judge. error=%s raw=%.200s",
+                    e,
+                    _raw if isinstance(_raw, str) else repr(_raw),
+                )
                 decision = pre_decision
     except Exception as exc:
         blocked = state.get("collect_blocked") is True
@@ -896,4 +901,53 @@ def llm_relevance_judge(state: RelevancyAgentState) -> Dict[str, object]:
         typed_signal_tags or _available_signal_tags(state),
     )
     decision = LLMRelevanceDecision.model_validate({**decision.model_dump(), **strict_payload})
+    decision = _apply_reason_code(decision, state)
     return _decision_to_state_update(decision)
+
+
+def _apply_reason_code(decision: LLMRelevanceDecision, state: RelevancyAgentState) -> LLMRelevanceDecision:
+    """Prefix relevance_reason with a standardised bracketed reason code."""
+    reason = decision.relevance_reason or ""
+    # Skip if already prefixed
+    if reason.startswith("["):
+        return decision
+
+    rel = (decision.relevance_decision or "").lower()
+    block_reason = str(state.get("collect_block_reason") or "").lower()
+    catalog_out = state.get("catalog_intelligence_output") or {}
+    bmi_out = state.get("business_model_intelligence_output") or {}
+    node_failed = (
+        catalog_out.get("node_status") == "failed"
+        or bmi_out.get("node_status") == "failed"
+    )
+
+    if node_failed:
+        code = "[INTERNAL_ERROR]"
+    elif state.get("is_social_profile"):
+        code = "[SOCIAL_PROFILE_REJECTION]"
+    elif state.get("is_marketplace"):
+        code = "[MARKETPLACE_REJECTION]"
+    elif state.get("collect_blocked"):
+        if "cloudflare" in block_reason or "turnstile" in block_reason:
+            code = "[CLOUDFLARE_BLOCKED]"
+        else:
+            code = "[ACCESS_DENIED]"
+    elif rel == "relevant":
+        # Distinguish B2B supplier from retail buyer match
+        bmi_customer = str((bmi_out.get("customer_model") or "")).lower()
+        if bmi_customer == "b2b":
+            code = "[B2B_SUPPLIER_MATCH]"
+        else:
+            code = "[RETAIL_BUYER_MATCH]"
+    elif rel == "irrelevant":
+        signals = decision.signals_used or []
+        if any("storefront" in s or "b2c" in s or "retail" in s for s in signals):
+            code = "[STOREFRONT_REJECTION]"
+        else:
+            code = "[INSUFFICIENT_EVIDENCE]"
+    else:
+        code = "[INSUFFICIENT_EVIDENCE]"
+
+    updated = decision.model_dump()
+    updated["relevance_reason"] = f"{code} {reason}"
+    return LLMRelevanceDecision.model_validate(updated)

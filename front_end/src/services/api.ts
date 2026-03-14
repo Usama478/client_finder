@@ -63,6 +63,11 @@ export const fetchDashboardStats = async () => {
     return response.data;
 };
 
+export const fetchApiHealth = async () => {
+    const response = await api.get('/health');
+    return response.data;
+};
+
 export const exportClients = async (resultIds: string[] = []) => {
     // We use native fetch here instead of axios to perfectly handle the binary Blob
     // without any of the global axios JSON interceptors mangling the stream.

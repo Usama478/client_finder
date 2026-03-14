@@ -129,14 +129,25 @@ def detect_platform(state: RelevancyAgentState) -> Dict[str, object]:
         confidence = 0.76
         shopify_confidence = 0.76
         reasons.append("shopify cookie markers")
-    elif "wp-content" in html or "woocommerce" in html:
-        platform = "woocommerce"
-        confidence = 0.86
-        reasons.append("wordpress/woocommerce signatures")
     elif "wp-content" in html:
-        platform = "wordpress"
-        confidence = 0.65
-        reasons.append("wordpress asset path")
+        # Require explicit WooCommerce-specific markers; bare wp-content alone means WordPress
+        woocommerce_markers = (
+            "woocommerce",   # class/script text present in page
+            "/wc-api/",      # WooCommerce REST API path
+            "?add-to-cart=", # WooCommerce cart query param
+        )
+        is_woocommerce = (
+            any(marker in html for marker in woocommerce_markers)
+            or "woocommerce_" in cookie_blob
+        )
+        if is_woocommerce:
+            platform = "woocommerce"
+            confidence = 0.86
+            reasons.append("woocommerce specific signatures")
+        else:
+            platform = "wordpress"
+            confidence = 0.65
+            reasons.append("wordpress asset path (no woocommerce markers)")
     elif "myshopify.com" in final_url:
         platform = "shopify"
         confidence = 0.81

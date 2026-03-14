@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+import logging
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
+
+logger = logging.getLogger(__name__)
 
 from app.agents.relevancy.graph import relevancy_graph
 from app.agents.relevancy.state import RelevancyAgentState
@@ -23,19 +26,28 @@ def _hostname(url: str) -> str:
     return parsed.netloc or url
 
 
-def _build_initial_state(business_id: int, url: str, exporter_profile: str) -> RelevancyAgentState:
-    host = _hostname(url)
+def _build_initial_state(
+    business_id: int,
+    search_id: int,
+    url: str,
+    exporter_profile: str,
+    business_name: Optional[str] = None,
+    category: Optional[str] = None,
+    address: Optional[str] = None,
+    description: Optional[str] = None,
+) -> RelevancyAgentState:
     return {
         "business_id": business_id,
-        "search_id": 0,
-        "business_name": host,
-        "category": None,
+        "search_id": search_id,
+        "business_name": business_name or _hostname(url),
+        "category": category,
         "website": url,
-        "address": None,
-        "description": None,
+        "address": address,
+        "description": description,
         "exporter_profile": exporter_profile,
         "website_exists": None,
         "is_marketplace": False,
+        "is_social_profile": False,
         "evidence": None,
         "collect_sources_output": {},
         "collect_blocked": False,
@@ -64,11 +76,11 @@ def _build_initial_state(business_id: int, url: str, exporter_profile: str) -> R
             "structured_has_organization": False,
             "structured_signal_strength": "none",
             "structured_signals_used": [],
-            },
-            "clean_text_output": {"text_excerpt": "", "sections": {}},
-            "catalog_intelligence_output": {},
-            "business_model_intelligence_output": {},
-            "llm_decision_output": {},
+        },
+        "clean_text_output": {"text_excerpt": "", "sections": {}},
+        "catalog_intelligence_output": {},
+        "business_model_intelligence_output": {},
+        "llm_decision_output": {},
         "structured_has_product_catalog": False,
         "structured_has_organization": False,
         "structured_signal_strength": "none",
@@ -188,8 +200,52 @@ def _persist_to_db(business_id: int, final_state: RelevancyAgentState, strict_ou
         if final_state.get("relevance_score") is not None:
             lead.relevance_score = float(final_state.get("relevance_score") or 0.0)
 
+        # Analyst classification fields
+        llm_out = final_state.get("llm_decision_output") or {}
+        business_type = final_state.get("business_type") or llm_out.get("business_type")
+        primary_niche = final_state.get("primary_niche") or llm_out.get("primary_niche")
+        if business_type and str(business_type).strip() not in ("", "Unknown"):
+            lead.business_type = str(business_type).strip()
+        if primary_niche and str(primary_niche).strip() not in ("", "Unknown"):
+            lead.primary_niche = str(primary_niche).strip()
+
+        # Scrape artifact — clean text for downstream agents to read without re-scraping
+        clean_text = (final_state.get("clean_text_output") or {}).get("text_excerpt")
+        if clean_text and str(clean_text).strip():
+            lead.scraped_text_content = str(clean_text).strip()
+
+        # Structured artifact blob — platform, full intelligence outputs, timeout flag, collection metadata
+        collect = final_state.get("collect_sources_output") or {}
+        platform_out = final_state.get("platform_detection_output") or {}
+        catalog_out = final_state.get("catalog_intelligence_output") or {}
+        business_model_out = final_state.get("business_model_intelligence_output") or {}
+        structured_out = final_state.get("structured_signals_output") or {}
+        collected_errors = collect.get("errors") or []
+        lead.relevancy_artifacts = {
+            # Collection metadata
+            "fetch_method": collect.get("fetch_method"),
+            "timeout_hit": any("timeout" in str(e) for e in collected_errors),
+            "collect_blocked": bool(final_state.get("collect_blocked")),
+            "collect_status_code": final_state.get("collect_status_code"),
+            # Platform
+            "platform": platform_out.get("platform"),
+            # Full catalog intelligence — replaces the former single-field "catalog_mode"
+            "catalog_intelligence_full": catalog_out,
+            # Full business model intelligence
+            "business_model_full": business_model_out,
+            # Key structured-signal fields for quick downstream inspection
+            "structured_entities": structured_out.get("entities") or [],
+            "structured_signal_flags": structured_out.get("signal_flags") or [],
+        }
+
         db.commit()
-    except Exception:
+        logger.info(
+            "persist_relevancy business_id=%s decision=%s artifacts_saved=True",
+            business_id,
+            strict_output.get("relevance_decision"),
+        )
+    except Exception as exc:
+        logger.error("persist_relevancy FAILED business_id=%s error=%s", business_id, exc, exc_info=True)
         db.rollback()
         raise
     finally:
@@ -200,21 +256,126 @@ def run_relevancy_v2_for_business(
     business_id: int,
     website: str,
     exporter_profile: str,
+    search_id: int = 0,
+    business_name: Optional[str] = None,
+    category: Optional[str] = None,
+    address: Optional[str] = None,
+    description: Optional[str] = None,
 ) -> Dict[str, object]:
     """
     Runs relevancy_graph.invoke(initial_state) and returns strict contract dict.
-    Persists decision fields to DB for the business row.
+    Persists decision fields and rich artifacts to DB for the business row.
+
+    Guards:
+    - Processing lock: returns immediately if the lead is already being processed.
+    - Outer crash net: catches any graph-level exception and marks the lead as
+      "failed" in the DB so callers never receive a silent 500.
     """
     normalized_website = _normalize_url(website)
     if not normalized_website:
         raise ValueError("website is required")
 
+    # ------------------------------------------------------------------ #
+    # Task 1 – Processing lock                                            #
+    # ------------------------------------------------------------------ #
+    lock_db = SessionLocal()
+    try:
+        lead = lock_db.query(SearchResult).filter(SearchResult.result_id == business_id).with_for_update().first()
+
+        # Fail fast: if the row doesn't exist there is nothing to process and
+        # nothing to persist — surface a clear 404 rather than silently no-op.
+        if not lead:
+            raise ValueError(f"Business ID {business_id} not found in database.")
+
+        if lead.relevance_status == "processing":
+            logger.info(
+                "run_relevancy_v2 SKIP business_id=%s reason=already_processing",
+                business_id,
+            )
+            return {"status": "ignored", "message": "Already processing"}
+
+        # Stamp the row as "processing" before the graph starts so that any
+        # concurrent caller hitting this guard will see the lock immediately.
+        # Also wipe all stale data from a previous run so it cannot contaminate
+        # the fresh result: artifact fields, classification fields, and every
+        # decision field that _persist_to_db will later overwrite.
+        lead.relevance_status = "processing"
+        # Artifact / classification fields
+        lead.scraped_text_content = None
+        lead.relevancy_artifacts = None
+        lead.business_type = None
+        lead.primary_niche = None
+        # Decision fields — including reason so no ghost string survives
+        lead.relevance_decision = None
+        lead.relevance_reason = None
+        lead.relevance_score = None
+        lead.confidence = None
+        lead.manual_review = False
+        lead.match_reasons = []
+        lead.mismatch_reasons = []
+        lead.signals_used = []
+        lock_db.commit()
+    except ValueError:
+        # ValueError is raised intentionally (e.g. business_id not found).
+        # Rollback any partial work and re-raise without logging an error.
+        lock_db.rollback()
+        raise
+    except Exception as lock_exc:
+        logger.error(
+            "run_relevancy_v2 lock_write FAILED business_id=%s error=%s",
+            business_id,
+            lock_exc,
+            exc_info=True,
+        )
+        lock_db.rollback()
+        raise
+    finally:
+        lock_db.close()
+
+    # ------------------------------------------------------------------ #
+    # Task 2 – Outer crash net around graph execution                     #
+    # ------------------------------------------------------------------ #
     initial_state = _build_initial_state(
         business_id=business_id,
+        search_id=search_id,
         url=normalized_website,
         exporter_profile=exporter_profile,
+        business_name=business_name,
+        category=category,
+        address=address,
+        description=description,
     )
-    final_state = relevancy_graph.invoke(initial_state)
+
+    try:
+        final_state = relevancy_graph.invoke(initial_state)
+    except Exception as graph_exc:
+        logger.error(
+            "run_relevancy_v2 GRAPH_CRASH business_id=%s error=%s",
+            business_id,
+            graph_exc,
+            exc_info=True,
+        )
+        # Write the failure status so the lead is never stuck in "processing".
+        crash_db = SessionLocal()
+        try:
+            failed_lead = crash_db.query(SearchResult).filter(SearchResult.result_id == business_id).first()
+            if failed_lead:
+                failed_lead.relevance_status = "failed"
+                failed_lead.relevance_reason = (
+                    f"[CRITICAL_FAILURE] Graph execution crashed: {type(graph_exc).__name__}: {graph_exc}"
+                )
+                crash_db.commit()
+        except Exception as persist_exc:
+            logger.error(
+                "run_relevancy_v2 crash_persist FAILED business_id=%s error=%s",
+                business_id,
+                persist_exc,
+                exc_info=True,
+            )
+            crash_db.rollback()
+        finally:
+            crash_db.close()
+        raise
 
     output = _strict_contract_output(final_state)
     if not _has_required_contract(output):
@@ -222,5 +383,41 @@ def run_relevancy_v2_for_business(
     if not output.get("relevance_decision"):
         output = _fallback_from_final_state(final_state)
 
-    _persist_to_db(business_id=business_id, final_state=final_state, strict_output=output)
+    # ------------------------------------------------------------------ #
+    # Persistence crash net                                               #
+    # If _persist_to_db throws (DB down, constraint, serialization error),#
+    # the lead must not remain stuck in "processing" forever.            #
+    # ------------------------------------------------------------------ #
+    try:
+        _persist_to_db(business_id=business_id, final_state=final_state, strict_output=output)
+    except Exception as persist_exc:
+        logger.error(
+            "run_relevancy_v2 PERSIST_FAILED business_id=%s error=%s",
+            business_id,
+            persist_exc,
+            exc_info=True,
+        )
+        persist_fail_db = SessionLocal()
+        try:
+            failed_lead = persist_fail_db.query(SearchResult).filter(
+                SearchResult.result_id == business_id
+            ).first()
+            if failed_lead:
+                failed_lead.relevance_status = "failed"
+                failed_lead.relevance_reason = (
+                    f"[CRITICAL_FAILURE] persist_failed: {persist_exc}"
+                )
+                persist_fail_db.commit()
+        except Exception as fallback_exc:
+            logger.error(
+                "run_relevancy_v2 persist_fail_write FAILED business_id=%s error=%s",
+                business_id,
+                fallback_exc,
+                exc_info=True,
+            )
+            persist_fail_db.rollback()
+        finally:
+            persist_fail_db.close()
+        raise
+
     return output

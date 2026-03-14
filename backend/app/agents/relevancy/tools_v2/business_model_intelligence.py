@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any, Dict, Iterable, List, Sequence, Set, Tuple
+
+logger = logging.getLogger(__name__)
 
 from app.agents.relevancy.schemas import BusinessModelIntelligenceOutput
 from app.agents.relevancy.state import RelevancyAgentState
@@ -991,5 +994,17 @@ def business_model_intelligence(state: RelevancyAgentState) -> Dict[str, object]
         text_blob = _collect_clean_text_blob(clean, business_name, category, description, website).lower()
         output = _build_output(evidence, clean_text=text_blob)
         return {"business_model_intelligence_output": output}
-    except Exception:
-        return {"business_model_intelligence_output": default_output}
+    except Exception as exc:
+        logger.error(
+            "business_model_intelligence FAILED business_id=%s error=%s",
+            state.get("business_id"),
+            exc,
+            exc_info=True,
+        )
+        return {
+            "business_model_intelligence_output": {
+                **default_output,
+                "node_status": "failed",
+                "error_message": f"business_model_intelligence: {type(exc).__name__}: {exc}",
+            }
+        }

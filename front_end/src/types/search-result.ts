@@ -23,6 +23,7 @@ export interface SearchResult {
   verification_reason?: string | null;
   email_found?: string | null;
   email_status?: string | null;
+  email_score?: number | null;
   raw_data?: Record<string, any> | null;
   types?: string[] | null;
   rating?: number | null;
@@ -38,6 +39,8 @@ export interface SearchResult {
   };
   verification_reasoning?: string | null;
   evidence_summary?: string | null;
+  email_subject?: string | null;
+  email_body?: string | null;
 }
 
 export const getResultId = (result: SearchResult): string => String(result.result_id);

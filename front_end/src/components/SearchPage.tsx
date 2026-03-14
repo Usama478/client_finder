@@ -1,14 +1,17 @@
-import React, { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Search, MapPin, Filter, Star, Building2, Loader2, CheckSquare, Square } from 'lucide-react';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
+import { Select } from './ui/select';
 import type { SearchResult } from '../types/search-result';
 import { getResultId, getVerificationBucket } from '../types/search-result';
+import { ErrorState } from './page/ErrorState';
+import { PageHeader } from './page/PageHeader';
 
 interface SearchPageProps {
   query: string;
   setQuery: (q: string) => void;
-  handleSearch: (e?: React.FormEvent) => void;
+  handleSearch: (e?: FormEvent) => void;
   results: SearchResult[];
   isSearching: boolean;
   error: string | null;
@@ -63,21 +66,13 @@ export function SearchPage({
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-gray-900 dark:text-white text-2xl font-bold mb-2">Search Businesses & Clients</h1>
-        <p className="text-gray-600 dark:text-gray-400">Find and verify business information across multiple data sources</p>
-      </div>
+      <PageHeader
+        title="Search Businesses & Clients"
+        description="Find and verify business information across multiple data sources"
+      />
 
       {error && (
-        <div className="mb-6 p-4 bg-red-900/30 border border-red-800 rounded-xl flex items-start gap-3">
-          <div className="w-6 h-6 rounded-full bg-red-900/50 flex items-center justify-center text-red-400 flex-shrink-0 mt-0.5">
-            !
-          </div>
-          <div>
-            <h4 className="text-sm font-semibold text-red-400">Scan Failed</h4>
-            <p className="text-sm text-red-300 mt-0.5">{error}</p>
-          </div>
-        </div>
+        <ErrorState title="Scan Failed" message={error} className="mb-6" />
       )}
 
       {/* Search Bar */}
@@ -107,7 +102,7 @@ export function SearchPage({
             <span className="text-sm text-gray-600 dark:text-gray-400">Filters:</span>
           </div>
 
-          <select
+          <Select
             value={selectedVerification}
             onChange={(e) => setSelectedVerification(e.target.value)}
             className="bg-gray-50 dark:bg-black border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 focus:outline-none focus:border-gray-600"
@@ -117,7 +112,7 @@ export function SearchPage({
                 {status === 'all' ? 'All Statuses' : status.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
               </option>
             ))}
-          </select>
+          </Select>
 
           {selectedVerification !== 'all' && (
             <Button

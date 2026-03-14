@@ -1,20 +1,25 @@
-import { useState } from 'react';
-import { MapPin, CheckCircle, XCircle, Loader2, ArrowLeft, CheckSquare, Square, ShieldAlert } from 'lucide-react';
+import { useState, type MouseEvent } from 'react';
+import { MapPin, CheckCircle, XCircle, Loader2, ArrowLeft, ShieldAlert } from 'lucide-react';
 import { Button } from './ui/button';
-import { Card, CardContent } from './ui/card';
 import { Badge } from './ui/badge';
 import type { SearchResult } from '../types/search-result';
 import { getResultId, getVerificationStatusText } from '../types/search-result';
+import { EmptyState } from './page/EmptyState';
+import { PageHeader } from './page/PageHeader';
+import { StatusNotice } from './page/StatusNotice';
+import { WorkflowProgress } from './page/WorkflowProgress';
+import { LeadCard } from './LeadCard';
 
 interface BusinessValidationProps {
   results: SearchResult[];
   processingIds: Set<string>;
+  searchId?: string | null;
   onAddToClients: (ids: string[]) => void;
   onBack: () => void;
   onSelectBusiness: (id: string) => void;
 }
 
-export function BusinessValidation({ results, processingIds, onAddToClients, onBack, onSelectBusiness }: BusinessValidationProps) {
+export function BusinessValidation({ results, processingIds, searchId, onAddToClients, onBack, onSelectBusiness }: BusinessValidationProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const validatingBusinesses = results.map(b => {
@@ -32,7 +37,7 @@ export function BusinessValidation({ results, processingIds, onAddToClients, onB
     }
   };
 
-  const toggleSelection = (e: React.MouseEvent, id: string) => {
+  const toggleSelection = (e: MouseEvent, id: string) => {
     e.stopPropagation();
     const newSelected = new Set(selectedIds);
     if (newSelected.has(id)) {
@@ -49,16 +54,56 @@ export function BusinessValidation({ results, processingIds, onAddToClients, onB
     }
   };
 
+  const pendingCount = processingIds.size;
+
   return (
     <div className="p-8 bg-gray-50 dark:bg-black min-h-screen">
-      <div className="mb-8">
-        <Button onClick={onBack} variant="ghost" className="mb-4 text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:text-white pl-0 hover:bg-transparent">
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Back to Search
-        </Button>
-        <h1 className="text-gray-900 dark:text-white text-3xl mb-2">Business Validation</h1>
-        <p className="text-gray-500 dark:text-zinc-400">Comprehensive AI validation checks for each business</p>
-      </div>
+      <PageHeader
+        title="Business Validation"
+        description="Comprehensive AI validation checks for each business"
+        overline={(
+          <Button onClick={onBack} variant="ghost" className="text-gray-500 dark:text-zinc-400 hover:text-gray-900 dark:text-white pl-0 hover:bg-transparent">
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to Search
+          </Button>
+        )}
+      />
+      <WorkflowProgress
+        currentStage="validation"
+        summary="Review verification status and save the right businesses to Clients."
+        nextAction={
+          pendingCount > 0
+            ? 'Wait for the prototype verification backend to return more completed statuses, or keep reviewing what is already visible.'
+            : selectedIds.size > 0
+              ? `Save ${selectedIds.size} selected businesses to Clients.`
+              : validatingBusinesses.length > 0
+                ? 'Select the businesses you want to save into Clients.'
+                : 'Return to Search to choose businesses for validation.'
+        }
+        detail={searchId ? `Search session #${searchId}` : undefined}
+      />
+      <StatusNotice
+        tone={pendingCount > 0 ? 'warning' : selectedIds.size > 0 ? 'success' : 'info'}
+        title={
+          pendingCount > 0
+            ? `Validation is still running for ${pendingCount} businesses`
+            : selectedIds.size > 0
+              ? `${selectedIds.size} businesses are ready to save`
+              : validatingBusinesses.length > 0
+                ? 'Review the validation results'
+                : 'No validation items are ready yet'
+        }
+        description={
+          pendingCount > 0
+            ? 'This stage still depends on the prototype verification backend. Completed results will update automatically when available, and some items may remain pending longer.'
+            : selectedIds.size > 0
+              ? 'Save the selected businesses to Clients when you are comfortable with their current status.'
+              : validatingBusinesses.length > 0
+                ? 'Select the businesses you want to save to Clients. Pending items can be revisited later.'
+                : 'Choose businesses from earlier stages to continue the workflow.'
+        }
+        className="mb-6"
+      />
 
       {/* Top Action Bar */}
       {validatingBusinesses.length > 0 && (
@@ -82,7 +127,7 @@ export function BusinessValidation({ results, processingIds, onAddToClients, onB
               disabled={selectedIds.size === 0}
               className="bg-emerald-600 hover:bg-emerald-700 text-gray-900 dark:text-white whitespace-nowrap"
             >
-              💾 Add Selected to Clients
+              Save to Clients ({selectedIds.size})
             </Button>
           </div>
         </div>
@@ -95,103 +140,80 @@ export function BusinessValidation({ results, processingIds, onAddToClients, onB
           const isSelected = selectedIds.has(business.cardId);
 
           return (
-            <Card
+            <LeadCard
               key={business.cardId}
-              className={`bg-white dark:bg-zinc-900 border-gray-200 dark:border-zinc-800 hover:bg-gray-100 dark:bg-zinc-800/50 transition-all relative ${isSelected ? 'border-blue-500' : ''}`}
-            >
-              {/* Card Selection */}
-              <div
-                className="absolute left-6 top-6 cursor-pointer z-10"
-                onClick={(e) => toggleSelection(e, business.cardId)}
-              >
-                {isSelected ? (
-                  <CheckSquare className="w-5 h-5 text-blue-500" />
-                ) : (
-                  <Square className="w-5 h-5 text-zinc-500 hover:text-gray-500 dark:text-zinc-400" />
-                )}
-              </div>
-
-              <CardContent className="p-6 pl-16">
-                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-4">
-                  <div className="flex items-start gap-4 flex-1 min-w-0">
-                    <div className="w-12 h-12 bg-gray-100 dark:bg-zinc-800 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <span className="text-zinc-500 font-bold text-xl">{business.business_name?.[0]?.toUpperCase()}</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-gray-900 dark:text-white mb-1 flex items-center gap-2 min-w-0">
-                        <span className="truncate" title={business.business_name || 'Unknown Business'}>
-                          {business.business_name || 'Unknown Business'}
-                        </span>
-                        {getVerificationStatusText(business) === "Verified" ? (
-                          <CheckCircle className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                        ) : (
-                          <ShieldAlert className="w-4 h-4 text-zinc-500 flex-shrink-0" />
-                        )}
-                      </h3>
-                      <p className="text-gray-500 dark:text-zinc-400 capitalize text-sm truncate">{category}</p>
-                    </div>
-                  </div>
+              selected={isSelected}
+              onToggleSelect={(e) => toggleSelection(e, business.cardId)}
+              title={business.business_name || 'Unknown Business'}
+              titleSuffix={getVerificationStatusText(business) === "Verified" ? (
+                <CheckCircle className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+              ) : (
+                <ShieldAlert className="w-4 h-4 text-zinc-500 flex-shrink-0" />
+              )}
+              subtitle={<p className="capitalize truncate">{category}</p>}
+              location={(
+                <div className="flex items-start gap-2">
+                  <MapPin className="w-4 h-4 mt-0.5 flex-shrink-0 text-gray-500 dark:text-zinc-400" />
+                  <span className="text-sm text-gray-500 dark:text-zinc-400 truncate">
+                    {business.address || 'Address not found'}
+                  </span>
                 </div>
-
-                <div className="space-y-2 mb-4">
-                  <div className="flex items-start gap-2">
-                    <MapPin className="w-4 h-4 mt-0.5 flex-shrink-0 text-gray-500 dark:text-zinc-400" />
-                    <span className="text-sm text-gray-500 dark:text-zinc-400 truncate">
-                      {business.address || 'Address not found'}
-                    </span>
-                  </div>
+              )}
+              leading={(
+                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-gray-100 dark:bg-zinc-800">
+                  <span className="text-xl font-bold text-zinc-500">{business.business_name?.[0]?.toUpperCase()}</span>
                 </div>
-
-                <div className="flex flex-col gap-3 mt-4">
-                  <div className="flex flex-wrap gap-2">
-                    <Badge className={
-                      getVerificationStatusText(business) === "Verified"
-                        ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20 inline-flex items-center"
-                        : getVerificationStatusText(business) === "Partially Verified"
-                          ? "bg-amber-500/10 text-amber-500 border-amber-500/20 inline-flex items-center"
-                          : "bg-gray-100 dark:bg-zinc-800 text-zinc-500 border-gray-300 dark:border-zinc-700 inline-flex items-center"
-                    }>
-                      {getVerificationStatusText(business) === "Verified" ? (
-                        <CheckCircle className="w-3 h-3 mr-1 inline" />
-                      ) : (
-                        <XCircle className="w-3 h-3 mr-1 inline" />
-                      )}
-                      {getVerificationStatusText(business)}
+              )}
+              badges={(
+                <>
+                  <Badge className={
+                    getVerificationStatusText(business) === "Verified"
+                      ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20 inline-flex items-center"
+                      : getVerificationStatusText(business) === "Partially Verified"
+                        ? "bg-amber-500/10 text-amber-500 border-amber-500/20 inline-flex items-center"
+                        : "bg-gray-100 dark:bg-zinc-800 text-zinc-500 border-gray-300 dark:border-zinc-700 inline-flex items-center"
+                  }>
+                    {getVerificationStatusText(business) === "Verified" ? (
+                      <CheckCircle className="w-3 h-3 mr-1 inline" />
+                    ) : (
+                      <XCircle className="w-3 h-3 mr-1 inline" />
+                    )}
+                    {getVerificationStatusText(business)}
+                  </Badge>
+                  {business.relevance_score != null && (
+                    <Badge variant="secondary" className="bg-blue-500/10 text-blue-400 border-blue-500/20">
+                      Score: {business.relevance_score}
                     </Badge>
-                    {business.relevance_score != null && (
-                      <Badge variant="secondary" className="bg-blue-500/10 text-blue-400 border-blue-500/20">
-                        Score: {business.relevance_score}
-                      </Badge>
-                    )}
-                    {business.isProcessing && (
-                      <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 border text-xs">
-                        <Loader2 className="w-3 h-3 animate-spin mr-1 inline" />
-                        Running deep checks...
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-
-                <div className="mt-4 pt-4 border-t border-gray-200 dark:border-zinc-800 flex justify-end">
-                  <Button
-                    variant="link"
-                    className="text-blue-400 hover:text-blue-300 px-0 h-auto font-medium"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSelectBusiness(business.cardId);
-                    }}
-                  >
-                    View Details
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+                  )}
+                  {business.isProcessing && (
+                    <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 border text-xs">
+                      <Loader2 className="w-3 h-3 animate-spin mr-1 inline" />
+                      Running deep checks...
+                    </Badge>
+                  )}
+                </>
+              )}
+              footer={(
+                <Button
+                  variant="link"
+                  className="text-blue-400 hover:text-blue-300 px-0 h-auto font-medium"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectBusiness(business.cardId);
+                  }}
+                >
+                  View Details
+                </Button>
+              )}
+            />
           );
         })}
         {validatingBusinesses.length === 0 && (
-          <div className="col-span-full text-center py-12 text-zinc-500">
-            No businesses are currently being validated.
-          </div>
+          <EmptyState
+            title="No businesses are being validated"
+            description="Selected businesses will appear here while validation is running, then you can save the right ones to Clients."
+            className="col-span-full"
+          />
         )}
       </div>
     </div>

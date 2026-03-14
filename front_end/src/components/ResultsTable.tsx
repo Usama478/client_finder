@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState, type FC } from 'react';
 import { Building2, MapPin, Phone, Globe, ShieldCheck, Mail } from 'lucide-react';
 import type { SearchResult } from '../types/search-result';
 import { getResultId, getVerificationBucket } from '../types/search-result';
@@ -17,7 +17,7 @@ interface ResultsTableProps {
     onSelect?: (id: string) => void;
 }
 
-export const ResultsTable: React.FC<ResultsTableProps> = ({ results, isLoading, onLoadMore, hasMore, selectedIds = new Set(), processingIds = new Set(), processingAction = 'relevancy', visibleIds = null, onSelect }) => {
+export const ResultsTable: FC<ResultsTableProps> = ({ results, isLoading, onLoadMore, hasMore, selectedIds = new Set(), processingIds = new Set(), processingAction = 'relevancy', visibleIds = null, onSelect }) => {
     const [expandedId, setExpandedId] = useState<string | null>(null);
 
     const currentlyProcessingId = Array.from(processingIds)[0];
