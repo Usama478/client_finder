@@ -1,36 +1,74 @@
-import { TrendingUp, Shield, AlertTriangle, Search } from 'lucide-react';
-import { PieChart, Pie, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { Badge } from './ui/badge';
+import { 
+  Search, 
+  Target, 
+  ShieldCheck, 
+  Users, 
+  Mail, 
+  Plus,
+  ArrowRight,
+  Clock,
+  MapPin,
+  ChevronRight
+} from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { fetchDashboardStats } from '../services/api';
 import type { SearchResult } from '../types/search-result';
 import { EmptyState } from './page/EmptyState';
 import { LoadingState } from './page/LoadingState';
 import { PageHeader } from './page/PageHeader';
-import { StatCard } from './StatCard';
+import { Button } from './ui/button';
+import { Card, CardContent } from './ui/card';
+import { cn } from './ui/utils';
 
-const getVerificationStatusText = (verificationStatus?: string | null, verification_score?: number | null) => {
-  if (verificationStatus !== 'completed') return "Unverified";
-  const score = verification_score ?? 0;
-  if (score === 0) return "Unverified";
-  if (score > 50) return "Verified";
-  return "Partially Verified";
-};
-
-const getRiskLevelText = (relevance_score?: number | null) => {
-  const score = relevance_score ?? 0;
-  if (score === 0 || score < 40) return "High Risk";
-  if (score > 70) return "Low Risk";
-  return "Medium Risk";
-};
 interface DashboardProps {
   history: any[];
   onSelectHistory: (searchId: string) => Promise<void>;
 }
 
+// Pipeline stage configuration
+const pipelineStages = [
+  { 
+    id: 'search', 
+    label: 'Search', 
+    icon: Search, 
+    description: 'Find businesses',
+    route: '/search'
+  },
+  { 
+    id: 'relevancy', 
+    label: 'Relevancy', 
+    icon: Target, 
+    description: 'Score leads',
+    route: '/relevancy'
+  },
+  { 
+    id: 'verification', 
+    label: 'Verification', 
+    icon: ShieldCheck, 
+    description: 'Verify trust',
+    route: '/validation'
+  },
+  { 
+    id: 'clients', 
+    label: 'Clients', 
+    icon: Users, 
+    description: 'Shortlist',
+    route: '/clients'
+  },
+  { 
+    id: 'outreach', 
+    label: 'Outreach', 
+    icon: Mail, 
+    description: 'Contact',
+    route: '/email'
+  },
+];
+
 export function DashboardOverview({ history, onSelectHistory }: DashboardProps) {
   const [statsData, setStatsData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const loadStats = async () => {
@@ -46,205 +84,321 @@ export function DashboardOverview({ history, onSelectHistory }: DashboardProps) 
     };
     loadStats();
   }, []);
-  const verifiedCount = statsData?.verified_clients || 0;
-  const notVerifiedCount = statsData?.unverified_clients || 0;
-  const totalLeads = statsData?.total_clients || 0;
+
+  const totalBusinessesFound = statsData?.total_results || statsData?.businesses_found || 0;
+  const relevantLeads = statsData?.relevant_leads || statsData?.scored_businesses || 0;
+  const verifiedLeads = statsData?.verified_clients || 0;
+  const savedClients = statsData?.total_clients || 0;
   const globalTotalSearches = statsData?.total_searches || 0;
 
-  const riskDistributionRaw = statsData?.risk_distribution || [];
-  const verificationDataRaw = statsData?.verification_data || [];
-
-  const clientsList: SearchResult[] = statsData?.clients || statsData?.saved_clients || statsData?.all_clients || [];
-
-  const verificationCounts = { "Unverified": 0, "Partially Verified": 0, "Verified": 0 };
-  const riskCounts = { "High Risk": 0, "Medium Risk": 0, "Low Risk": 0 };
-
-  if (clientsList.length > 0) {
-    clientsList.forEach((client) => {
-      const vScore = client.verification_score ?? 0;
-      const rScore = client.relevance_score ?? 0;
-      verificationCounts[getVerificationStatusText(client.verification_status, vScore) as keyof typeof verificationCounts]++;
-      riskCounts[getRiskLevelText(rScore) as keyof typeof riskCounts]++;
-    });
-  }
-
-  const verificationData = clientsList.length > 0 ? Object.entries(verificationCounts).map(([name, value]) => ({
-    name, value, color: name === 'Verified' ? '#10b981' : name === 'Partially Verified' ? '#f59e0b' : '#ef4444'
-  })) : verificationDataRaw;
-
-  const riskDistribution = clientsList.length > 0 ? Object.entries(riskCounts).map(([name, value]) => ({
-    name, value, color: name === 'Low Risk' ? '#10b981' : name === 'Medium Risk' ? '#f59e0b' : '#ef4444'
-  })) : riskDistributionRaw;
-
-  const stats = [
-    {
-      label: 'Global Saved Clients',
-      value: totalLeads.toString(),
-      change: '+100%',
-      icon: TrendingUp,
-      trend: 'up'
-    },
-    {
-      label: 'Verified Businesses',
-      value: verifiedCount.toString(),
-      change: totalLeads > 0 ? `${Math.round((verifiedCount / totalLeads) * 100)}%` : '0%',
-      icon: Shield,
-      trend: 'neutral'
-    },
-    {
-      label: 'Unverified Businesses',
-      value: notVerifiedCount.toString(),
-      change: totalLeads > 0 ? `${Math.round((notVerifiedCount / totalLeads) * 100)}%` : '0%',
-      icon: AlertTriangle,
-      trend: 'neutral'
-    },
-    {
-      label: 'Total Global Searches',
-      value: globalTotalSearches.toString(),
-      change: '+1',
-      icon: Search,
-      trend: 'up'
-    }
+  // Compute pipeline stats
+  const pipelineStats = [
+    { stage: 'search', count: globalTotalSearches, label: 'Searches' },
+    { stage: 'relevancy', count: relevantLeads, label: 'Scored' },
+    { stage: 'verification', count: verifiedLeads, label: 'Verified' },
+    { stage: 'clients', count: savedClients, label: 'Saved' },
   ];
 
+  // Determine next recommended action based on data
+  const getNextAction = () => {
+    if (globalTotalSearches === 0) {
+      return { message: 'Start by searching for businesses', route: '/search', cta: 'New Search' };
+    }
+    if (relevantLeads === 0 && totalBusinessesFound > 0) {
+      return { message: 'Score your results for relevancy', route: '/relevancy', cta: 'Score Leads' };
+    }
+    if (verifiedLeads === 0 && relevantLeads > 0) {
+      return { message: 'Verify your top leads', route: '/validation', cta: 'Start Verification' };
+    }
+    if (savedClients === 0 && verifiedLeads > 0) {
+      return { message: 'Save your best clients', route: '/clients', cta: 'View Clients' };
+    }
+    return { message: 'Continue building your pipeline', route: '/search', cta: 'New Search' };
+  };
+
+  const nextAction = getNextAction();
+
   if (isLoading) {
-    return <LoadingState message="Loading global dashboard metrics..." />;
+    return <LoadingState message="Loading your workspace..." />;
   }
 
+  const hasAnyData = globalTotalSearches > 0 || savedClients > 0;
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
+    <div className="p-6 lg:p-8 max-w-7xl mx-auto space-y-8">
+      {/* Header with primary action */}
       <PageHeader
-        title="Dashboard Overview"
-        description="Monitor your business verification and client discovery metrics"
+        title="Dashboard"
+        description="Your client discovery control center"
+        actions={
+          <Button onClick={() => navigate('/search')} className="gap-2">
+            <Plus className="w-4 h-4" />
+            New Search
+          </Button>
+        }
       />
 
-      {/* Top Stats */}
-      <div className="grid grid-cols-4 gap-6 mb-8">
-        {stats.map((stat, idx) => {
-          const Icon = stat.icon;
-          return (
-            <StatCard
-              key={idx}
-              title={stat.label}
-              value={stat.value}
-              icon={<Icon className="w-6 h-6 text-gray-500 dark:text-zinc-400" />}
-              badge={stat.trend === 'up' ? (
-                <Badge className="border border-green-500/20 bg-green-500/10 text-xs text-green-400">
-                  {stat.change}
-                </Badge>
-              ) : undefined}
-            />
-          );
-        })}
-      </div>
-
-      {/* Charts */}
-      {totalLeads > 0 && (
-        <div className="grid grid-cols-2 gap-6 mb-8">
-          {/* Risk Distribution */}
-          <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl p-6 shadow-sm">
-            <h3 className="text-gray-900 dark:text-white mb-4">Risk Distribution</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={riskDistribution}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, percent }) => `${name}: ${((percent || 0) * 100).toFixed(0)}%`}
-                  outerRadius={100}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {riskDistribution.map((entry: any, index: number) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#1a1a1a',
-                    border: '1px solid #333',
-                    borderRadius: '8px',
-                    color: '#fff'
-                  }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="flex items-center justify-center gap-4 mt-4">
-              {riskDistribution.map((item: any, idx: number) => (
-                <div key={idx} className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }} />
-                  <span className="text-sm text-gray-600 dark:text-gray-400">{item.name}</span>
-                </div>
-              ))}
+      {/* Next Action Banner - Contextual guidance */}
+      <Card className="border-primary-500/20 bg-primary-500/5 dark:bg-primary-500/10">
+        <CardContent className="p-5">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-500/10 dark:bg-primary-500/20">
+                <ArrowRight className="w-5 h-5 text-primary-500" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-900 dark:text-white">Recommended next step</p>
+                <p className="text-sm text-gray-500 dark:text-zinc-400">{nextAction.message}</p>
+              </div>
             </div>
+            <Button 
+              variant="default" 
+              size="sm" 
+              onClick={() => navigate(nextAction.route)}
+              className="shrink-0"
+            >
+              {nextAction.cta}
+              <ChevronRight className="w-4 h-4 ml-1" />
+            </Button>
           </div>
+        </CardContent>
+      </Card>
 
-          {/* Verification Status */}
-          <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl p-6 shadow-sm">
-            <h3 className="text-gray-900 dark:text-white mb-4">Verification Status</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={verificationData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                <XAxis dataKey="name" stroke="#666" />
-                <YAxis stroke="#666" />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#1a1a1a',
-                    border: '1px solid #333',
-                    borderRadius: '8px',
-                    color: '#fff'
-                  }}
-                />
-                <Bar dataKey="value" fill="#8884d8" radius={[8, 8, 0, 0]}>
-                  {verificationData.map((entry: any, index: number) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+      {/* Pipeline Overview Section */}
+      <section>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Pipeline Overview</h2>
         </div>
-      )}
-
-      {/* Activity Section */}
-      <div className="mb-8">
-        {/* Recent Searches */}
-        <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl p-6 shadow-sm overflow-y-auto max-h-[400px]">
-          <h3 className="text-gray-900 dark:text-white mb-4">Recent Searches</h3>
-          {history.length === 0 ? (
-            <EmptyState
-              title="No recent searches yet"
-              description="Recent search sessions will appear here once you start scanning."
-              className="px-4 py-10"
-            />
-          ) : (
-            <div className="space-y-3">
-              {history.map((search: any) => (
-                <div
-                  key={search.search_id}
-                  className="flex items-center justify-between p-3 bg-gray-50 dark:bg-black/30 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-100 dark:bg-gray-800 transition-colors"
-                  onClick={() => onSelectHistory(search.search_id.toString())}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-gray-100 dark:bg-gray-800 rounded-lg flex items-center justify-center">
-                      <Search className="w-4 h-4 text-gray-600 dark:text-gray-400" />
-                    </div>
-                    <div>
-                      <div className="text-gray-700 dark:text-gray-300 text-sm truncate max-w-[200px]">{search.query || search.search_query || 'Unknown Search'}</div>
-                      <div className="text-xs text-gray-500">{search.total_results || 0} results</div>
-                    </div>
+        
+        {/* Pipeline Flow Visual */}
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+              {pipelineStages.map((stage, index) => {
+                const Icon = stage.icon;
+                const stat = pipelineStats.find(s => s.stage === stage.id);
+                const isActive = stat && stat.count > 0;
+                
+                return (
+                  <div key={stage.id} className="flex items-center gap-3 lg:flex-1">
+                    {/* Stage Card */}
+                    <button
+                      onClick={() => navigate(stage.route)}
+                      className={cn(
+                        "flex-1 flex items-center gap-4 p-4 rounded-xl border transition-all",
+                        "hover:border-primary-500/50 hover:bg-gray-50 dark:hover:bg-zinc-800/50",
+                        isActive 
+                          ? "border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900" 
+                          : "border-gray-100 dark:border-zinc-800 bg-gray-50/50 dark:bg-zinc-900/50"
+                      )}
+                    >
+                      <div className={cn(
+                        "flex h-11 w-11 shrink-0 items-center justify-center rounded-lg",
+                        isActive 
+                          ? "bg-primary-500/10 text-primary-500" 
+                          : "bg-gray-100 dark:bg-zinc-800 text-gray-400 dark:text-zinc-500"
+                      )}>
+                        <Icon className="w-5 h-5" />
+                      </div>
+                      <div className="text-left min-w-0">
+                        <p className="text-sm font-medium text-gray-900 dark:text-white">{stage.label}</p>
+                        {stat ? (
+                          <p className="text-2xl font-bold text-gray-900 dark:text-white">{stat.count}</p>
+                        ) : (
+                          <p className="text-xs text-gray-500 dark:text-zinc-400">{stage.description}</p>
+                        )}
+                      </div>
+                    </button>
+                    
+                    {/* Connector Arrow (not on last item) */}
+                    {index < pipelineStages.length - 1 && (
+                      <div className="hidden lg:flex items-center justify-center w-6 shrink-0">
+                        <ChevronRight className="w-5 h-5 text-gray-300 dark:text-zinc-600" />
+                      </div>
+                    )}
                   </div>
-                  <div className="text-xs text-gray-500">
-                    {search.created_at ? new Date(search.created_at).toLocaleString() : 'Date missing'}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* Quick Stats Grid */}
+      <section>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Quick Stats</h2>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatBlock 
+            label="Total Searches" 
+            value={globalTotalSearches} 
+            icon={<Search className="w-5 h-5" />}
+            onClick={() => navigate('/search')}
+          />
+          <StatBlock 
+            label="Relevant Leads" 
+            value={relevantLeads} 
+            icon={<Target className="w-5 h-5" />}
+            onClick={() => navigate('/relevancy')}
+          />
+          <StatBlock 
+            label="Verified Leads" 
+            value={verifiedLeads} 
+            icon={<ShieldCheck className="w-5 h-5" />}
+            onClick={() => navigate('/validation')}
+          />
+          <StatBlock 
+            label="Saved Clients" 
+            value={savedClients} 
+            icon={<Users className="w-5 h-5" />}
+            onClick={() => navigate('/clients')}
+            highlighted={savedClients > 0}
+          />
+        </div>
+      </section>
+
+      {/* Recent Activity Section */}
+      <section>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Recent Searches</h2>
+          {history.length > 0 && (
+            <Button variant="ghost" size="sm" onClick={() => navigate('/search')}>
+              View all
+            </Button>
           )}
         </div>
-      </div>
+        
+        <Card>
+          <CardContent className="p-0">
+            {history.length === 0 ? (
+              <EmptyState
+                title="No searches yet"
+                description="Start your first search to discover potential clients"
+                icon={<Search className="w-5 h-5" />}
+                action={
+                  <Button onClick={() => navigate('/search')} className="gap-2">
+                    <Plus className="w-4 h-4" />
+                    Start First Search
+                  </Button>
+                }
+                className="border-0 rounded-xl py-12"
+              />
+            ) : (
+              <div className="divide-y divide-gray-100 dark:divide-zinc-800">
+                {history.slice(0, 5).map((search: any) => (
+                  <button
+                    key={search.search_id}
+                    className="w-full flex items-center gap-4 p-4 text-left hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition-colors first:rounded-t-xl last:rounded-b-xl"
+                    onClick={() => onSelectHistory(search.search_id.toString())}
+                  >
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gray-100 dark:bg-zinc-800">
+                      <Search className="w-4 h-4 text-gray-500 dark:text-zinc-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                        {search.query || search.search_query || 'Unknown Search'}
+                      </p>
+                      <div className="flex items-center gap-3 mt-1">
+                        {search.location && (
+                          <span className="flex items-center gap-1 text-xs text-gray-500 dark:text-zinc-400">
+                            <MapPin className="w-3 h-3" />
+                            {search.location}
+                          </span>
+                        )}
+                        <span className="text-xs text-gray-500 dark:text-zinc-400">
+                          {search.total_results || 0} results
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="flex items-center gap-1.5 text-xs text-gray-400 dark:text-zinc-500">
+                        <Clock className="w-3 h-3" />
+                        {search.created_at ? formatRelativeTime(search.created_at) : 'Unknown'}
+                      </span>
+                      <ChevronRight className="w-4 h-4 text-gray-300 dark:text-zinc-600" />
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* Empty state for completely new users */}
+      {!hasAnyData && (
+        <Card className="border-dashed">
+          <CardContent className="p-8 text-center">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary-500/10 mb-4">
+              <Search className="w-6 h-6 text-primary-500" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+              Welcome to Client Finder
+            </h3>
+            <p className="text-sm text-gray-500 dark:text-zinc-400 max-w-md mx-auto mb-6">
+              Discover, score, verify, and manage your ideal B2B clients. Start by searching for businesses in your target market.
+            </p>
+            <Button onClick={() => navigate('/search')} size="lg" className="gap-2">
+              <Plus className="w-4 h-4" />
+              Start Your First Search
+            </Button>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
+}
+
+// Helper component for stat blocks
+function StatBlock({ 
+  label, 
+  value, 
+  icon, 
+  onClick,
+  highlighted = false 
+}: { 
+  label: string; 
+  value: number; 
+  icon: React.ReactNode;
+  onClick?: () => void;
+  highlighted?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "flex flex-col items-start p-4 rounded-xl border transition-all text-left",
+        "hover:border-primary-500/50 hover:bg-gray-50 dark:hover:bg-zinc-800/50",
+        highlighted 
+          ? "border-emerald-500/30 bg-emerald-500/5 dark:bg-emerald-500/10" 
+          : "border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900"
+      )}
+    >
+      <div className={cn(
+        "flex h-9 w-9 items-center justify-center rounded-lg mb-3",
+        highlighted 
+          ? "bg-emerald-500/10 text-emerald-500" 
+          : "bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400"
+      )}>
+        {icon}
+      </div>
+      <p className="text-2xl font-bold text-gray-900 dark:text-white">{value}</p>
+      <p className="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">{label}</p>
+    </button>
+  );
+}
+
+// Helper function to format relative time
+function formatRelativeTime(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString();
 }
