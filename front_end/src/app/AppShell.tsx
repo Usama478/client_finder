@@ -1,5 +1,6 @@
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Sidebar } from '../components/Sidebar';
+import { Topbar } from '../components/Topbar';
 
 export function AppShell() {
   const location = useLocation();
@@ -13,11 +14,24 @@ export function AppShell() {
   };
 
   return (
-    <div className={`flex h-screen bg-gray-50 dark:bg-black transition-colors duration-200`}>
+    <div className="flex h-screen bg-gray-50 dark:bg-black">
+      {/* Sidebar */}
       <Sidebar currentPage={currentPage} onNavigate={handleNavigate} />
-      <main className="flex-1 overflow-auto bg-gray-50 dark:bg-black transition-colors duration-200">
-        <Outlet />
-      </main>
+      
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Topbar */}
+        <Topbar 
+          workspaceName="My Workspace"
+          userName="John Anderson"
+          userEmail="john@example.com"
+        />
+        
+        {/* Page Content */}
+        <main className="flex-1 overflow-auto bg-gray-50 dark:bg-black">
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }
