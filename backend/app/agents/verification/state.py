@@ -39,13 +39,21 @@ class VerificationAgentState(TypedDict):
     # Collection Fields (written by gatekeeper / collector nodes)         #
     # ------------------------------------------------------------------ #
     website_alive: Optional[bool]
+    accessibility_status: Optional[str]   # "live"|"blocked"|"ambiguous"|"dead"
     collection_blocked: Optional[bool]    # True if Cloudflare / bot-wall intercepted
     status_code: Optional[int]
     final_url: Optional[str]             # resolved URL after redirects
     full_site_text: Optional[str]        # cleaned, combined homepage + sub-page text
+    homepage_html: Optional[str]         # raw HTML of the root homepage (pre-tag-strip)
     contact_page_url: Optional[str]      # /contact URL actually crawled
+    contact_page_html: Optional[str]     # raw HTML of highest-scored contact page
+    about_page_html: Optional[str]       # raw HTML of highest-scored about page
+    homepage_emails: List[str]           # mailto: emails found on the homepage
     wholesale_page_found: Optional[bool]
     wholesale_page_url: Optional[str]
+    redirect_detected: Optional[bool]
+    collection_method: Optional[str]
+    collection_errors: List[str]
 
     # ------------------------------------------------------------------ #
     # Identity Fields (written by trust scanner / LLM analyst)            #
@@ -54,6 +62,7 @@ class VerificationAgentState(TypedDict):
     domain_matches_business: Optional[bool]   # website content matches listed business
     domain_match_confidence: Optional[float]  # 0.0–1.0
     country_confirmed: Optional[str]          # ISO-3166-1 alpha-2 (e.g. "DE", "US")
+    address_verified: Optional[bool]
 
     # ------------------------------------------------------------------ #
     # Contact Fields (written by contact hunter)                          #
@@ -62,6 +71,9 @@ class VerificationAgentState(TypedDict):
     primary_email: Optional[str]
     email_type: Optional[str]           # "buying"|"sales"|"info"|"generic"|"form_only"
     email_confidence: Optional[int]     # 0–100
+    email_on_domain: Optional[bool]     # None when email/domain context is unavailable
+    free_provider_email: Optional[bool] # None when no primary_email is available
+    outreach_safe_email: bool           # True only for explicitly safe email semantics
     all_phones: List[str]
     whatsapp_number: Optional[str]
     linkedin_company_url: Optional[str] # must be /company/ path, not personal profile
@@ -119,4 +131,7 @@ class VerificationAgentState(TypedDict):
     # ------------------------------------------------------------------ #
     # Internal                                                             #
     # ------------------------------------------------------------------ #
+    system_failure: bool
+    system_failure_stage: Optional[str]
+    system_failure_reason: Optional[str]
     is_finalized: bool

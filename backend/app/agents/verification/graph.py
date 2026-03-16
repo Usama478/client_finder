@@ -12,13 +12,18 @@ from app.agents.verification.state import VerificationAgentState
 
 def _route_after_gatekeeper(state: VerificationAgentState) -> str:
     """
-    Dead or blocked sites skip the full evidence pipeline and jump straight
-    to the email_context_compiler (metric_analyst) so that:
-    - email_context is always compiled (never NULL in DB)
-    - final_contract_builder still runs and produces a "failed" result
+    Route after the gatekeeper (site_accessibility_check) node.
+
+    Only truly dead sites (website_alive=False AND NOT bot-blocked) skip the full
+    evidence pipeline.  Bot-blocked / Cloudflare-protected sites continue to
+    site_collector so that the Playwright fallback inside collect_pages() can
+    still retrieve content.  This ensures:
+    - Blocked brands are never silently marked failed.
+    - email_context_compiler always sees a real verification_score (never None)
+      because final_contract_builder runs before it on every path.
     """
-    if state.get("website_alive") is False:
-        return "metric_analyst"
+    if state.get("website_alive") is False and state.get("collection_blocked") is not True:
+        return "final_contract_builder"
     return "site_collector"
 
 
@@ -51,8 +56,8 @@ workflow.add_conditional_edges(
     "gatekeeper",
     _route_after_gatekeeper,
     {
-        "site_collector": "site_collector",
-        "metric_analyst": "metric_analyst",
+        "site_collector":         "site_collector",
+        "final_contract_builder": "final_contract_builder",
     },
 )
 
@@ -62,11 +67,14 @@ workflow.add_edge("identity_resolver",   "contact_extractor")
 workflow.add_edge("contact_extractor",   "legitimacy_analyzer")
 workflow.add_edge("legitimacy_analyzer", "size_estimator")
 workflow.add_edge("size_estimator",      "llm_analyst")
-workflow.add_edge("llm_analyst",         "metric_analyst")
+workflow.add_edge("llm_analyst",         "final_contract_builder")
 
-# --- Both paths converge at metric_analyst → final_contract_builder → END ---
-workflow.add_edge("metric_analyst",         "final_contract_builder")
-workflow.add_edge("final_contract_builder", END)
+# --- Both paths converge at final_contract_builder → metric_analyst → END ---
+# final_contract_builder must run before metric_analyst so that
+# verification_score, verification_result, contactability_score, and
+# manual_review are all in state when email_context is assembled.
+workflow.add_edge("final_contract_builder", "metric_analyst")
+workflow.add_edge("metric_analyst",         END)
 
 # --- Compile (once) ---
 verification_graph = workflow.compile()

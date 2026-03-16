@@ -37,6 +37,36 @@ def _normalize_url(url: str) -> str:
     return f"https://{value}"
 
 
+def _site_root(url: str) -> str:
+    """
+    Return the scheme + netloc root of *url* with a trailing slash.
+
+    Examples
+    --------
+    "https://example.com/shop/page"  → "https://example.com/"
+    "http://example.com"             → "http://example.com/"
+    "example.com/blog/post"          → "https://example.com/"  (adds https)
+    ""                               → ""
+
+    Always preserves https when present.  Safe on malformed input.
+    """
+    try:
+        value = (url or "").strip()
+        if not value:
+            return ""
+        # Ensure there is a scheme so urlparse can find the netloc
+        if not value.startswith(("http://", "https://")):
+            value = f"https://{value}"
+        parsed = urlparse(value)
+        netloc = parsed.netloc
+        if not netloc:
+            return ""
+        scheme = parsed.scheme or "https"
+        return f"{scheme}://{netloc}/"
+    except Exception:
+        return ""
+
+
 def _safe_int(v, default: int = 0) -> int:
     try:
         return int(v) if v is not None else default
@@ -49,6 +79,86 @@ def _safe_float(v, default: float = 0.0) -> float:
         return float(v) if v is not None else default
     except (TypeError, ValueError):
         return default
+
+
+def _system_failure_payload(stage: str, reason: str) -> dict:
+    return {
+        "system_failure": True,
+        "system_failure_stage": stage,
+        "system_failure_reason": (reason or "")[:500],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Email-domain helpers (used by final_contract_builder)
+# ---------------------------------------------------------------------------
+
+_FREE_EMAIL_DOMAINS: frozenset = frozenset({
+    "gmail.com", "googlemail.com",
+    "yahoo.com", "yahoo.co.uk", "yahoo.com.au", "yahoo.fr", "yahoo.de",
+    "hotmail.com", "hotmail.co.uk", "hotmail.fr", "hotmail.de",
+    "outlook.com", "outlook.co.uk",
+    "live.com", "live.co.uk", "msn.com",
+    "icloud.com", "me.com", "mac.com",
+    "aol.com",
+    "protonmail.com", "proton.me",
+    "zoho.com",
+})
+
+
+def _is_free_email_provider(email: str) -> bool:
+    """Return True when the email belongs to a well-known free/consumer provider."""
+    try:
+        domain = email.split("@")[1].strip().lower()
+        return domain in _FREE_EMAIL_DOMAINS
+    except Exception:
+        return False
+
+
+def _is_on_domain_email(email: str, website: str) -> bool:
+    """
+    Return True when the email is suitable for a 'verified' result.
+
+    1. Must NOT be a free provider (gmail, etc.)
+    2. If website/final_url domain is available, must be on-domain.
+    3. If no domain is available (unit tests), any non-free email is acceptable.
+
+    Never raises.
+    """
+    try:
+        if not email or "@" not in email:
+            return False
+
+        # Always block common free/consumer providers for the 'verified' result
+        if _is_free_email_provider(email):
+            return False
+
+        # Extract root domain (netloc) from website/final_url
+        netloc = ""
+        if website:
+            try:
+                # Use urlparse to get the host, split to remove any port
+                netloc = urlparse(website).netloc.lower().split(":")[0]
+                if netloc.startswith("www."):
+                    netloc = netloc[4:]
+            except Exception:
+                netloc = ""
+
+        if not netloc:
+            # Fallback for unit tests: if we have no site domain to check against,
+            # having passed the free-provider check is enough to allow verification.
+            return True
+
+        # Enforce strict on-domain match
+        email_domain = email.split("@")[1].strip().lower()
+        if email_domain.startswith("www."):
+            email_domain = email_domain[4:]
+
+        # Match if email domain is exactly equal to site domain, or if site
+        # domain is a subdomain of the email domain (info@brand.com vs shop.brand.com).
+        return email_domain == netloc or netloc.endswith("." + email_domain)
+    except Exception:
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -64,7 +174,7 @@ def input_preparation(state: VerificationAgentState) -> dict:
         return {"website": normalized}
     except Exception as exc:
         logger.error("input_preparation FAILED error=%s", exc, exc_info=True)
-        return {}
+        return _system_failure_payload("input_preparation", f"exception:{type(exc).__name__}")
 
 
 # ---------------------------------------------------------------------------
@@ -74,22 +184,62 @@ def input_preparation(state: VerificationAgentState) -> dict:
 def site_accessibility_check(state: VerificationAgentState) -> dict:
     """
     Lightweight HEAD check + WHOIS domain-age lookup.
-    Sets: website_alive, ssl_valid, final_url, status_code, domain_age_years.
+    Sets: website_alive, accessibility_status, collection_blocked, ssl_valid, final_url,
+    status_code, domain_age_years.
+
+    collection_blocked is set to True when accessibility status is blocked or ambiguous.
+    A blocked/ambiguous site is NOT the same as a dead site and must not be routed down
+    the dead-site shortcut.
     """
-    url = state.get("website") or ""
+    original_url = state.get("website") or ""
+    normalized_url = _normalize_url(original_url)
+    probe_url = _site_root(normalized_url) or normalized_url
     try:
-        result = check_accessibility(url)
-        age = get_domain_age(url)
-        return {
+        result = check_accessibility(probe_url)
+        age = get_domain_age(result.get("final_url") or probe_url)
+        status = result.get("status")
+        accessibility_status = (
+            "live" if status in {"live", "redirect"}
+            else status if status in {"blocked", "ambiguous", "dead"}
+            else "ambiguous"
+        )
+
+        # Deep-link leads (e.g. /store-locator) should not hard-fail routing
+        # if the front-door probe still comes back dead/ambiguous.
+        deep_link_fallback = (
+            result.get("live") is False
+            and result.get("status") == "dead"
+            and probe_url != normalized_url
+        )
+
+        output = {
             "website_alive": result["live"],
+            "accessibility_status": accessibility_status,
+            "collection_blocked": status in {"blocked", "ambiguous"} or deep_link_fallback,
             "ssl_valid": result["ssl_valid"],
             "final_url": result["final_url"],
             "status_code": result.get("status_code"),
             "domain_age_years": age,
+            "redirect_detected": result.get("redirect_detected", False),
         }
+        if status == "system_error":
+            output.update(
+                _system_failure_payload(
+                    "site_accessibility_check",
+                    f"accessibility_{result.get('error_type') or 'unknown_error'}",
+                )
+            )
+            output["collection_blocked"] = True
+        return output
     except Exception as exc:
-        logger.error("site_accessibility_check FAILED url=%s error=%s", url, exc, exc_info=True)
-        return {"website_alive": False, "ssl_valid": False}
+        logger.error("site_accessibility_check FAILED url=%s error=%s", probe_url, exc, exc_info=True)
+        return {
+            "website_alive": False,
+            "accessibility_status": "ambiguous",
+            "collection_blocked": True,
+            "ssl_valid": False,
+            **_system_failure_payload("site_accessibility_check", f"exception:{type(exc).__name__}"),
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -100,10 +250,20 @@ def targeted_page_collector(state: VerificationAgentState) -> dict:
     """
     Fetch /contact, /about, /wholesale and other priority sub-pages.
     Skips URLs already collected by the Relevancy Agent.
-    Sets: full_site_text, contact_page_url, wholesale_page_found,
+    Sets: full_site_text, homepage_html, contact_page_url, wholesale_page_found,
           wholesale_page_url, collection_blocked.
+
+    Collection always starts from the site root (scheme + netloc), not the
+    original deep lead URL.  final_url is preferred because it reflects the
+    post-redirect resolved host; website is used as fallback.  Starting from a
+    deep path (e.g. /store-locator or /blog/post) would make the collector
+    treat that path as the homepage and discover sub-pages relative to it,
+    producing misleading homepage_html, wrong identity signals, and missing
+    contact/about pages.
     """
-    url = state.get("website") or ""
+    # Resolve to the site root: prefer final_url (post-redirect) over website.
+    raw_url = state.get("final_url") or state.get("website") or ""
+    url = _site_root(raw_url) or raw_url  # fallback to raw if root extraction fails
     try:
         # Correction 2: already_collected from relevancy artifact — usually empty
         already_collected = set(
@@ -126,14 +286,27 @@ def targeted_page_collector(state: VerificationAgentState) -> dict:
 
         return {
             "full_site_text": merged,
+            "homepage_html": result.get("homepage_html"),
             "contact_page_url": result.get("contact_page_url"),
             "wholesale_page_found": result.get("wholesale_page_found", False),
             "wholesale_page_url": result.get("wholesale_page_url"),
             "collection_blocked": collection_blocked,
+            "contact_page_html": result.get("contact_page_html"),
+            "about_page_html": result.get("about_page_html"),
+            "homepage_emails": result.get("homepage_emails") or [],
+            "collection_method": result.get("method"),
+            "collection_errors": result.get("errors") or [],
         }
     except Exception as exc:
         logger.error("targeted_page_collector FAILED url=%s error=%s", url, exc, exc_info=True)
-        return {"full_site_text": "", "collection_blocked": False}
+        return {
+            "full_site_text": "",
+            "collection_blocked": True,
+            "contact_page_html": None,
+            "homepage_emails": [],
+            "collection_errors": [f"collector_exception:{type(exc).__name__}"],
+            **_system_failure_payload("targeted_page_collector", f"exception:{type(exc).__name__}"),
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -143,16 +316,124 @@ def targeted_page_collector(state: VerificationAgentState) -> dict:
 def contact_extractor(state: VerificationAgentState) -> dict:
     """
     Extract emails, phones, WhatsApp, LinkedIn, social links, contact form flag.
+
+    Runs extract_contacts() on full visible text, then performs a second DOM-aware
+    pass over contact_page_html to catch mailto:/tel: hrefs, social link hrefs,
+    WhatsApp links, and <form> tags that are stripped from visible text.
+    Merges homepage_emails gathered by the collector.
     Falls back to scraped_text_content when full_site_text is unavailable.
     """
-    text = state.get("full_site_text") or state.get("scraped_text_content") or ""
-    url = state.get("website") or ""
     try:
-        result = extract_contacts(text, url)
+        text = (state.get("full_site_text") or
+                state.get("scraped_text_content") or "")
 
-        # Correction 3: "hello" is not an allowed email_type in state — remap to "generic"
-        if result.get("email_type") == "hello":
-            result["email_type"] = "generic"
+        result = extract_contacts(text, state.get("website") or "")
+
+        contact_html = state.get("contact_page_html") or ""
+        homepage_emails = state.get("homepage_emails") or []
+
+        if contact_html:
+            try:
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(contact_html, "html.parser")
+
+                # mailto: links
+                for a in soup.find_all("a", href=True):
+                    href = a["href"]
+                    if href.lower().startswith("mailto:"):
+                        email = href[7:].split("?")[0].strip().lower()
+                        if "@" in email and email not in result["all_emails"]:
+                            result["all_emails"].append(email)
+
+                # tel: links
+                for a in soup.find_all("a", href=True):
+                    href = a["href"]
+                    if href.lower().startswith("tel:"):
+                        phone = href[4:].strip()
+                        if phone and phone not in result["all_phones"]:
+                            result["all_phones"].append(phone)
+
+                # LinkedIn company URL
+                if not result.get("linkedin_company_url"):
+                    for a in soup.find_all("a", href=True):
+                        href = a["href"]
+                        if "linkedin.com/company/" in href.lower():
+                            result["linkedin_company_url"] = href
+                            break
+
+                # WhatsApp
+                if not result.get("whatsapp_number"):
+                    for a in soup.find_all("a", href=True):
+                        href = a["href"]
+                        if "wa.me/" in href.lower() or "whatsapp.com/" in href.lower():
+                            result["whatsapp_number"] = href
+                            break
+
+                # Social links from hrefs (more reliable than regex on rendered text)
+                _SOCIAL_DOMAINS = {
+                    "instagram.com": "instagram",
+                    "facebook.com": "facebook",
+                    "twitter.com": "twitter",
+                    "x.com": "twitter",
+                    "tiktok.com": "tiktok",
+                    "youtube.com": "youtube",
+                    "pinterest.com": "pinterest",
+                }
+                current_socials = result.get("social_links") or {}
+                for a in soup.find_all("a", href=True):
+                    href_lower = a["href"].lower()
+                    for domain, platform in _SOCIAL_DOMAINS.items():
+                        if domain in href_lower and platform not in current_socials:
+                            current_socials[platform] = a["href"]
+                result["social_links"] = current_socials
+
+                # Contact form detection
+                if soup.find("form"):
+                    result["contact_form_present"] = True
+
+            except Exception as html_exc:
+                logger.warning("contact_extractor html_parse failed: %s", html_exc)
+
+        # Merge homepage_emails into all_emails
+        for email in homepage_emails:
+            if email and email not in result["all_emails"]:
+                result["all_emails"].append(email)
+
+        # Re-rank primary_email after merging all sources
+        _EMAIL_RANKS = {
+            "buying": ["buying", "wholesale", "trade", "procurement"],
+            "sales":  ["sales", "export", "international"],
+            "info":   ["info", "contact", "enquiries", "hello", "team", "hi"],
+        }
+        best_email = None
+        best_type = "generic"
+        best_score = -1
+        for email in result["all_emails"]:
+            local = email.split("@")[0].lower()
+            for etype, keywords in _EMAIL_RANKS.items():
+                if any(k in local for k in keywords):
+                    score = {"buying": 3, "sales": 2, "info": 1}[etype]
+                    if score > best_score:
+                        best_score = score
+                        best_email = email
+                        best_type = etype
+                    break
+            else:
+                if best_score < 0:
+                    best_email = email
+                    best_type = "generic"
+
+        if best_email:
+            result["primary_email"] = best_email
+            result["email_type"] = best_type
+
+        # No email found but a contact form exists — signal this to the Email Agent
+        if not result.get("primary_email") and result.get("contact_form_present"):
+            result["email_type"] = "form_only"
+
+        # Re-calc confidence after any type re-mapping
+        _CONF_MAP = {"buying": 90, "sales": 75, "info": 50, "generic": 30, "form_only": 10}
+        result["email_confidence"] = _CONF_MAP.get(result.get("email_type"), 20) if result.get("primary_email") or result.get("email_type") == "form_only" else None
 
         return {
             "all_emails": result.get("all_emails") or [],
@@ -165,12 +446,20 @@ def contact_extractor(state: VerificationAgentState) -> dict:
             "social_links": result.get("social_links") or {},
             "contact_form_present": result.get("contact_form_present", False),
         }
+
     except Exception as exc:
         logger.error("contact_extractor FAILED error=%s", exc, exc_info=True)
         return {
             "all_emails": [],
+            "primary_email": None,
+            "email_type": None,
+            "email_confidence": 0,
             "all_phones": [],
+            "whatsapp_number": None,
+            "linkedin_company_url": None,
             "social_links": {},
+            "contact_form_present": False,
+            **_system_failure_payload("contact_extractor", f"exception:{type(exc).__name__}"),
         }
 
 
@@ -182,6 +471,10 @@ def identity_resolver(state: VerificationAgentState) -> dict:
     """
     Fuzzy-match the listed business name against website content.
     Detects country and verifies address presence.
+
+    Raw HTML sources are forwarded to resolve_identity() so that structured
+    signals (<title>, schema.org, <h1>, footer copyright) are available even
+    though full_site_text is stripped visible text.
     """
     text = state.get("full_site_text") or state.get("scraped_text_content") or ""
     try:
@@ -190,16 +483,20 @@ def identity_resolver(state: VerificationAgentState) -> dict:
             website=state.get("website") or "",
             text=text,
             address=state.get("address") or "",
+            homepage_html=state.get("homepage_html") or None,
+            about_page_html=state.get("about_page_html") or None,
+            contact_page_html=state.get("contact_page_html") or None,
         )
         return {
             "company_name_confirmed": result.get("company_name_confirmed"),
             "domain_matches_business": result.get("domain_matches_business"),
             "domain_match_confidence": result.get("domain_match_confidence"),
             "country_confirmed": result.get("country_confirmed"),
+            "address_verified": result.get("address_verified"),
         }
     except Exception as exc:
         logger.error("identity_resolver FAILED error=%s", exc, exc_info=True)
-        return {}
+        return _system_failure_payload("identity_resolver", f"exception:{type(exc).__name__}")
 
 
 # ---------------------------------------------------------------------------
@@ -241,6 +538,7 @@ def business_intelligence_extractor(state: VerificationAgentState) -> dict:
             "product_categories": [],
             "product_keywords": [],
             "markets_served": [],
+            **_system_failure_payload("business_intelligence_extractor", f"exception:{type(exc).__name__}"),
         }
 
 
@@ -257,8 +555,7 @@ def legitimacy_analyzer(state: VerificationAgentState) -> dict:
         # Infer contact/about HTML presence from state fields rather than raw HTML
         # (raw HTML is not stored in state — we use URL presence as a proxy)
         contact_html = "contact" if state.get("contact_page_url") else ""
-        # About page presence inferred from text keywords in compute_legitimacy
-        about_html = ""
+        about_html = state.get("about_page_html") or ""
 
         phone_found = (state.get("all_phones") or [None])[0] if state.get("all_phones") else None
 
@@ -283,7 +580,11 @@ def legitimacy_analyzer(state: VerificationAgentState) -> dict:
         }
     except Exception as exc:
         logger.error("legitimacy_analyzer FAILED error=%s", exc, exc_info=True)
-        return {"legitimacy_score": 0, "risk_flags": []}
+        return {
+            "legitimacy_score": 0,
+            "risk_flags": [],
+            **_system_failure_payload("legitimacy_analyzer", f"exception:{type(exc).__name__}"),
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -304,7 +605,11 @@ def size_estimator(state: VerificationAgentState) -> dict:
         }
     except Exception as exc:
         logger.error("size_estimator FAILED error=%s", exc, exc_info=True)
-        return {"employee_range": "unknown", "revenue_band": "unknown"}
+        return {
+            "employee_range": "unknown",
+            "revenue_band": "unknown",
+            **_system_failure_payload("size_estimator", f"exception:{type(exc).__name__}"),
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -315,19 +620,22 @@ def email_context_compiler(state: VerificationAgentState) -> dict:
     """
     Pure assembly: compile all verified signals into email_context dict for Email Agent.
     No LLM.  Works even when called on the dead-site shortcut path (all inputs may be None).
+
+    Runs AFTER final_contract_builder so that verification_score, verification_result,
+    contactability_score, and manual_review are all populated in state.
     """
     try:
-        # business_type/primary_niche are direct state fields (Correction 1 applied consistently)
-        artifacts = state.get("relevancy_artifacts") or {}
         email_context: Dict[str, object] = {
             "company_name":          state.get("company_name_confirmed") or state.get("business_name") or "",
             "company_website":       state.get("final_url") or state.get("website") or "",
             "best_email":            state.get("primary_email"),
             "email_type":            state.get("email_type"),
+            "all_emails":            state.get("all_emails") or [],
             "all_phones":            state.get("all_phones") or [],
             "whatsapp":              state.get("whatsapp_number"),
             "linkedin_url":          state.get("linkedin_company_url"),
             "social_links":          state.get("social_links") or {},
+            "contact_form_present":  state.get("contact_form_present") or False,
             "wholesale_available":   state.get("wholesale_page_found") or False,
             "wholesale_page_url":    state.get("wholesale_page_url"),
             "business_type":         state.get("business_type"),
@@ -335,21 +643,38 @@ def email_context_compiler(state: VerificationAgentState) -> dict:
             "product_categories":    state.get("product_categories") or [],
             "product_keywords":      state.get("product_keywords") or [],
             "price_positioning":     state.get("price_positioning"),
+            "target_customer":       state.get("target_customer"),
+            "ecommerce_enabled":     state.get("ecommerce_enabled"),
             "buys_externally":       state.get("buys_externally"),
             "b2b_language_detected": state.get("b2b_language_detected") or False,
             "company_description":   state.get("company_description"),
             "brand_tone":            state.get("brand_tone"),
             "markets_served":        state.get("markets_served") or [],
             "country":               state.get("country_confirmed"),
+            "address":               state.get("address"),
             "employee_range":        state.get("employee_range"),
             "revenue_band":          state.get("revenue_band"),
-            "verification_score":    state.get("verification_score"),
+            # These fields are populated by final_contract_builder which now
+            # runs before this node, so they will always be non-None here.
+            "verification_score":    state.get("verification_score") or 0,
+            "verification_result":   state.get("verification_result"),
+            "contactability_score":  state.get("contactability_score"),
             "risk_flags":            state.get("risk_flags") or [],
+            "custom_prompt":         state.get("custom_prompt"),
+            "email_confidence":          state.get("email_confidence"),
+            "website_alive":             state.get("website_alive"),
+            "domain_match_confidence":   state.get("domain_match_confidence"),
+            "verification_reason":       state.get("verification_reason"),
+            "domain_matches_business":   state.get("domain_matches_business"),
+            "collection_blocked":        state.get("collection_blocked"),
         }
         return {"email_context": email_context}
     except Exception as exc:
         logger.error("email_context_compiler FAILED error=%s", exc, exc_info=True)
-        return {"email_context": {}}
+        return {
+            "email_context": {},
+            **_system_failure_payload("email_context_compiler", f"exception:{type(exc).__name__}"),
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -365,6 +690,10 @@ def _build_verification_reason(
     legitimacy_score: int,
     domain_match_confidence: Optional[float],
     contactability_score: int,
+    collection_blocked: bool = False,
+    identity_weak: bool = False,
+    system_failure: bool = False,
+    system_failure_stage: Optional[str] = None,
 ) -> str:
     if verification_result == "verified":
         parts = ["Verified"]
@@ -387,6 +716,27 @@ def _build_verification_reason(
         return ", ".join(parts)
 
     if verification_result == "manual_review":
+        if system_failure:
+            stage = system_failure_stage or "unknown_stage"
+            return (
+                "Manual review required: verification pipeline had an internal/tool failure "
+                f"at {stage}; classify lead only after retry or human confirmation"
+            )
+        if collection_blocked:
+            return (
+                "Manual review required: site is bot-protected or blocked; "
+                "HTTP access was denied but site may be a real brand"
+            )
+        if identity_weak:
+            conf = (
+                f"{domain_match_confidence:.2f}"
+                if domain_match_confidence is not None
+                else "not determined"
+            )
+            return (
+                f"Manual review required: identity could not be confirmed "
+                f"(domain match confidence {conf}; no company name detected in page content)"
+            )
         conf = f"{domain_match_confidence:.2f}" if domain_match_confidence is not None else "unknown"
         return f"Manual review required: low domain match confidence ({conf})"
 
@@ -415,11 +765,56 @@ def final_contract_builder(state: VerificationAgentState) -> dict:
         has_contact_page = state.get("has_contact_page") or False
         contact_form_present = state.get("contact_form_present") or False
         legitimacy_score = _safe_int(state.get("legitimacy_score"), 0)
-        domain_match_confidence = _safe_float(state.get("domain_match_confidence"), 0.0)
+        # Read raw value first so we can distinguish None (never resolved) from 0.0
+        domain_match_confidence_raw = state.get("domain_match_confidence")
+        domain_match_confidence = _safe_float(domain_match_confidence_raw, 0.0)
         domain_matches_business = state.get("domain_matches_business")
         website_alive = state.get("website_alive")
+        collection_blocked = state.get("collection_blocked") or False
+        system_failure = bool(state.get("system_failure"))
+        system_failure_stage = state.get("system_failure_stage")
+        system_failure_reason = state.get("system_failure_reason")
         ssl_valid = state.get("ssl_valid")
         domain_age_years = state.get("domain_age_years")
+        website = state.get("website") or ""
+        final_url = state.get("final_url") or ""
+        risk_flags = list(state.get("risk_flags") or [])
+
+        if system_failure:
+            if "system_failure" not in risk_flags:
+                risk_flags.append("system_failure")
+            if system_failure_stage:
+                stage_flag = f"system_failure:{system_failure_stage}"
+                if stage_flag not in risk_flags:
+                    risk_flags.append(stage_flag)
+
+        # ---- Identity strength / weakness flags ----
+        # Strong identity: resolver confirmed the domain matches the listed business
+        # with high confidence.  When strong, a missing company_name_confirmed is not
+        # enough on its own to force manual_review (the fuzzy match already confirmed
+        # the business identity without needing a parsed company name string).
+        _identity_strong = (
+            domain_match_confidence >= 0.6
+            and domain_matches_business is True
+        )
+
+        # Weak identity fires on live/unknown-reachability sites only (dead/blocked
+        # sites have their own branches below).  Covers:
+        #   1. Identity resolver never ran              → confidence is None
+        #   2. Resolver ran but match is too weak       → confidence < 0.4
+        #   3. Resolver explicitly denied a match       → domain_matches_business is False
+        #   4. No company name found AND identity not already strong
+        #      (strong identity overrides a missing parsed name string)
+        _identity_weak = (
+            website_alive is not False          # excludes dead sites (website_alive=False)
+            and not collection_blocked          # blocked sites have their own branch
+            and (
+                domain_match_confidence_raw is None
+                or domain_match_confidence < 0.4
+                or domain_matches_business is False
+                or (not state.get("company_name_confirmed") and not _identity_strong)
+            )
+        )
 
         # ---- Contactability score ----
         base = 40 if primary_email else 0
@@ -453,37 +848,66 @@ def final_contract_builder(state: VerificationAgentState) -> dict:
         # and produce None/NaN, never let it reach the DB.
         if verification_score is None:
             logger.warning(
-                "final_contract_builder: verification_score is None for business_id=%s — falling back to failed",
+                "final_contract_builder: verification_score is None for business_id=%s — forcing manual_review",
                 state.get("business_id"),
             )
             return {
                 "verification_score": 0,
-                "verification_result": "failed",
+                "verification_result": "manual_review",
                 "verification_confidence": 0.0,
                 "verification_reason": "Internal error: score computation produced None",
                 "manual_review": True,
                 "contactability_score": contactability_score,
+                "risk_flags": ["system_failure", "system_failure:final_contract_builder"],
+                "system_failure": True,
+                "system_failure_stage": "final_contract_builder",
+                "system_failure_reason": "score_none_guard",
                 "is_finalized": False,
             }
 
+        # ---- Score cap for unsendable leads ----
+        # Prevent the numeric score from implying a lead is safely contactable when
+        # there is no usable email, contact method is form-only, or identity is weak.
+        # Cap at 45 — below any "high confidence" threshold used downstream.
+        if primary_email is None or email_type == "form_only" or _identity_weak:
+            verification_score = min(verification_score, 45)
+        if system_failure:
+            verification_score = min(verification_score, 25)
+
         # ---- Verification result ----
-        if (
+        # Order matters: safety gates (identity_weak, blocked) come before "verified"
+        # so that a high legitimacy score alone cannot produce a false positive.
+        if system_failure:
+            verification_result = "manual_review"
+        elif _identity_weak:
+            # Site was reachable but we could not confirm which business it belongs to.
+            # Never auto-promote to verified or partial; require human review.
+            verification_result = "manual_review"
+        elif (
             legitimacy_score >= 70
             and primary_email
+            and _is_on_domain_email(primary_email, final_url)
             and domain_match_confidence >= 0.6
         ):
+            # Verified requires an on-domain email (excludes free providers implicitly)
             verification_result = "verified"
         elif (
             domain_matches_business is False
             and domain_match_confidence < 0.4
         ):
+            # Explicit domain-mismatch from identity resolver (fallback for dead/blocked paths)
             verification_result = "manual_review"
         elif (
             website_alive is False
+            and not collection_blocked          # truly dead, not bot-blocked
             and primary_email is None
-            and (_safe_int(state.get("legitimacy_score"), 0)) < 30
+            and legitimacy_score < 30
         ):
             verification_result = "failed"
+        elif collection_blocked and primary_email is None:
+            # Bot-protected / Cloudflare-walled: HTTP blocked but site may be a real brand.
+            # Never mark as failed; flag for human review so the lead is not discarded.
+            verification_result = "manual_review"
         else:
             verification_result = "partial"
 
@@ -499,6 +923,10 @@ def final_contract_builder(state: VerificationAgentState) -> dict:
             legitimacy_score=legitimacy_score,
             domain_match_confidence=domain_match_confidence,
             contactability_score=contactability_score,
+            collection_blocked=collection_blocked,
+            identity_weak=_identity_weak,
+            system_failure=system_failure,
+            system_failure_stage=system_failure_stage,
         )
 
         return {
@@ -508,17 +936,25 @@ def final_contract_builder(state: VerificationAgentState) -> dict:
             "verification_confidence": verification_confidence,
             "verification_reason": verification_reason,
             "manual_review": manual_review,
+            "risk_flags": risk_flags,
+            "system_failure": system_failure,
+            "system_failure_stage": system_failure_stage,
+            "system_failure_reason": system_failure_reason,
             "is_finalized": True,
         }
 
     except Exception as exc:
         logger.error("final_contract_builder FAILED error=%s", exc, exc_info=True)
         return {
-            "verification_result": "failed",
+            "verification_result": "manual_review",
             "verification_score": 0,
             "verification_confidence": 0.0,
             "verification_reason": f"Internal error: {exc}",
             "manual_review": True,
             "contactability_score": 0,
+            "risk_flags": ["system_failure", "system_failure:final_contract_builder"],
+            "system_failure": True,
+            "system_failure_stage": "final_contract_builder",
+            "system_failure_reason": f"exception:{type(exc).__name__}",
             "is_finalized": True,
         }

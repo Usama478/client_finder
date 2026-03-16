@@ -229,16 +229,27 @@ def resolve_identity(
     website: str,
     text: str,
     address: Optional[str] = None,
+    homepage_html: Optional[str] = None,
+    about_page_html: Optional[str] = None,
+    contact_page_html: Optional[str] = None,
 ) -> dict:
     """
-    Resolve identity signals from page text.
+    Resolve identity signals from page content.
+
+    Raw HTML sources (homepage_html, about_page_html, contact_page_html) are
+    tried first for structured extraction (<title>, <h1>, schema.org, footer
+    copyright) because they carry tags that are stripped from visible text.
+    Plain text is used as a fallback and for address/country pattern matching.
 
     Parameters
     ----------
-    business_name : The name from the lead record (DB input).
-    website       : The canonical URL.
-    text          : Raw text or HTML of the site.
-    address       : Optional address from the lead record.
+    business_name    : The name from the lead record (DB input).
+    website          : The canonical URL.
+    text             : Cleaned visible text (stripped of HTML tags).
+    address          : Optional address from the lead record.
+    homepage_html    : Raw HTML of the root homepage.
+    about_page_html  : Raw HTML of the about page (if collected).
+    contact_page_html: Raw HTML of the contact page (if collected).
 
     Returns
     -------
@@ -249,8 +260,24 @@ def resolve_identity(
     """
     notes: List[str] = []
 
+    # Build an ordered list of HTML sources richest in identity signals.
+    # homepage_html is the highest priority; about page is next.
+    # contact_page_html is included last as a fallback name source.
+    _html_sources: List[str] = [
+        s for s in (homepage_html, about_page_html, contact_page_html) if s
+    ]
+
     # ---- Company name ----
-    company_name_confirmed = _extract_company_name(text)
+    # Try each raw HTML source in priority order before falling back to
+    # plain text.  HTML retains <title>, schema.org JSON-LD, <h1>, and
+    # footer copyright markers that are erased during tag-stripping.
+    company_name_confirmed: Optional[str] = None
+    for _html in _html_sources:
+        company_name_confirmed = _extract_company_name(_html)
+        if company_name_confirmed:
+            break
+    if not company_name_confirmed:
+        company_name_confirmed = _extract_company_name(text)
 
     # ---- Fuzzy match ----
     compare_name = company_name_confirmed or ""
@@ -273,9 +300,18 @@ def resolve_identity(
         )
 
     # ---- Country ----
-    country_confirmed = _detect_country(text, website)
+    # schema.org addressCountry lives inside JSON-LD in the raw HTML; try HTML
+    # sources first, then fall back to plain text + TLD heuristic.
+    country_confirmed: Optional[str] = None
+    for _html in _html_sources:
+        country_confirmed = _detect_country(_html, website)
+        if country_confirmed:
+            break
+    if not country_confirmed:
+        country_confirmed = _detect_country(text, website)
 
     # ---- Address verification ----
+    # Plain visible text is sufficient here (addresses appear as rendered text).
     address_verified = _address_in_text(address, text)
 
     return {

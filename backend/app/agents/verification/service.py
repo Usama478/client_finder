@@ -1,4 +1,4 @@
-from __future__ import annotations
+rom __future__ import annotations
 
 import concurrent.futures
 import logging
@@ -118,18 +118,27 @@ def _build_initial_state(business_id: int) -> VerificationAgentState:
             "primary_niche": lead.primary_niche,
             # ---- Collection ----
             "website_alive": None,
+            "accessibility_status": None,
             "collection_blocked": None,
             "status_code": None,
             "final_url": None,
             "full_site_text": None,
+            "homepage_html": None,
             "contact_page_url": None,
+            "contact_page_html": None,
+            "about_page_html": None,
+            "homepage_emails": [],
             "wholesale_page_found": None,
             "wholesale_page_url": None,
+            "redirect_detected": None,
+            "collection_method": None,
+            "collection_errors": [],
             # ---- Identity ----
             "company_name_confirmed": None,
             "domain_matches_business": None,
             "domain_match_confidence": None,
             "country_confirmed": None,
+            "address_verified": None,
             # ---- Contact ----
             "all_emails": [],
             "primary_email": None,
@@ -174,6 +183,9 @@ def _build_initial_state(business_id: int) -> VerificationAgentState:
             # ---- Email Context ----
             "email_context": None,
             # ---- Internal ----
+            "system_failure": False,
+            "system_failure_stage": None,
+            "system_failure_reason": None,
             "is_finalized": False,
         }
     finally:
@@ -244,28 +256,76 @@ def _persist_verification_to_db(
         # ---- Email context (for Email Agent) ----
         lead.email_context = final_state.get("email_context")
 
-        # ---- Structured artifact blob: fields without a dedicated column ----
+        # ---- Structured artifact blob ----
         lead.verification_artifacts = {
-            # Identity
-            "domain_matches_business": final_state.get("domain_matches_business"),
-            "final_url": final_state.get("final_url"),
-            "website_alive": final_state.get("website_alive"),
-            "status_code": final_state.get("status_code"),
-            "collection_blocked": final_state.get("collection_blocked"),
-            # Legitimacy extras
-            "has_physical_address": final_state.get("has_physical_address"),
-            "ssl_valid": final_state.get("ssl_valid"),
-            # Business intelligence
-            "product_categories": list(final_state.get("product_categories") or []),
-            "product_keywords": list(final_state.get("product_keywords") or []),
-            "price_positioning": final_state.get("price_positioning"),
-            "target_customer": final_state.get("target_customer"),
-            "buys_externally": final_state.get("buys_externally"),
-            "b2b_language_detected": final_state.get("b2b_language_detected"),
-            "company_description": final_state.get("company_description"),
-            "brand_tone": final_state.get("brand_tone"),
-            "markets_served": list(final_state.get("markets_served") or []),
-            "ecommerce_enabled": final_state.get("ecommerce_enabled"),
+            "accessibility": {
+                "website_live": final_state.get("website_alive"),
+                "accessibility_status": final_state.get("accessibility_status"),
+                "collection_blocked": final_state.get("collection_blocked"),
+                "ssl_valid": final_state.get("ssl_valid"),
+                "redirect_detected": final_state.get("redirect_detected"),
+                "final_url": final_state.get("final_url"),
+                "status_code": final_state.get("status_code"),
+                "domain_age_years": final_state.get("domain_age_years"),
+            },
+            "collection": {
+                "method": final_state.get("collection_method"),
+                "wholesale_page_found": final_state.get("wholesale_page_found"),
+                "wholesale_page_url": final_state.get("wholesale_page_url"),
+                "contact_page_url": final_state.get("contact_page_url"),
+                "errors": final_state.get("collection_errors") or [],
+            },
+            "contact": {
+                "all_emails": final_state.get("all_emails") or [],
+                "primary_email": final_state.get("primary_email"),
+                "email_type": final_state.get("email_type"),
+                "email_confidence": final_state.get("email_confidence"),
+                "all_phones": final_state.get("all_phones") or [],
+                "whatsapp": final_state.get("whatsapp_number"),
+                "linkedin": final_state.get("linkedin_company_url"),
+                "social_links": final_state.get("social_links") or {},
+                "contact_form_present": final_state.get("contact_form_present"),
+            },
+            "identity": {
+                "company_name_confirmed": final_state.get("company_name_confirmed"),
+                "domain_matches": final_state.get("domain_matches_business"),
+                "domain_match_confidence": final_state.get("domain_match_confidence"),
+                "country": final_state.get("country_confirmed"),
+                "address_verified": final_state.get("address_verified"),
+            },
+            "legitimacy": {
+                "score": final_state.get("legitimacy_score"),
+                "has_about": final_state.get("has_about_page"),
+                "has_contact": final_state.get("has_contact_page"),
+                "has_policy": final_state.get("has_policy_pages"),
+                "has_address": final_state.get("has_physical_address"),
+                "domain_age_years": final_state.get("domain_age_years"),
+                "risk_flags": final_state.get("risk_flags") or [],
+            },
+            "business_intelligence": {
+                "product_categories": final_state.get("product_categories") or [],
+                "product_keywords": final_state.get("product_keywords") or [],
+                "price_positioning": final_state.get("price_positioning"),
+                "brand_tone": final_state.get("brand_tone"),
+                "markets_served": final_state.get("markets_served") or [],
+                "company_description": final_state.get("company_description"),
+                "buys_externally": final_state.get("buys_externally"),
+                "b2b_language_detected": final_state.get("b2b_language_detected"),
+                "target_customer": final_state.get("target_customer"),
+                "ecommerce_enabled": final_state.get("ecommerce_enabled"),
+            },
+            "size": {
+                "employee_range": final_state.get("employee_range"),
+                "revenue_band": final_state.get("revenue_band"),
+            },
+            "system": {
+                "failure": bool(final_state.get("system_failure", False)),
+                "system_error": bool(final_state.get("system_failure", False)),
+                "system_risk": bool(final_state.get("system_failure", False)),
+                "stage": final_state.get("system_failure_stage"),
+                "reason": final_state.get("system_failure_reason"),
+            },
+            "email_context": final_state.get("email_context") or {},
         }
 
         db.commit()
@@ -354,6 +414,10 @@ def run_verification_for_business(business_id: int) -> Dict[str, object]:
         lead.linkedin_company_url = None
         lead.social_links = {}
         lead.contact_form_present = None
+        lead.email_type = None
+        lead.has_about_page = False
+        lead.has_contact_page = False
+        lead.has_policy_pages = False
         lead.wholesale_page_found = None
         lead.wholesale_page_url = None
         lead.legitimacy_score = None

@@ -226,8 +226,8 @@ def test_live_site_routes_to_full_pipeline():
         "legitimacy_analyzer",
         "size_estimator",
         "business_intelligence_extractor",
-        "email_context_compiler",
         "final_contract_builder",
+        "email_context_compiler",
     ]
     assert call_order == expected_order, (
         f"Node execution order mismatch.\n  Expected: {expected_order}\n  Got:      {call_order}"

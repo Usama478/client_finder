@@ -13,6 +13,7 @@ Never raises; returns safe defaults on any failure.
 
 import json
 import logging
+import time as _time
 from typing import List, Optional
 
 from pydantic import BaseModel, ValidationError
@@ -146,33 +147,38 @@ def run_business_intelligence(
         f"Website text:\n{truncated_text}"
     )
 
-    try:
-        # Same client pattern as app/agents/relevancy/tools_v2/judge.py
-        from langchain_openai import ChatOpenAI
+    content = None
+    for _attempt in range(1, 3):
+        try:
+            # Same client pattern as app/agents/relevancy/tools_v2/judge.py
+            from langchain_openai import ChatOpenAI
 
-        llm = ChatOpenAI(
-            model=_MODEL,
-            temperature=_TEMPERATURE,
-            max_tokens=_MAX_TOKENS,
-            model_kwargs={"response_format": {"type": "json_object"}},
-        )
+            llm = ChatOpenAI(
+                model=_MODEL,
+                temperature=_TEMPERATURE,
+                max_tokens=_MAX_TOKENS,
+                model_kwargs={"response_format": {"type": "json_object"}},
+            )
 
-        response = llm.invoke(
-            [
-                ("system", _SYSTEM_PROMPT),
-                ("user", user_message),
-            ]
-        )
+            response = llm.invoke(
+                [
+                    ("system", _SYSTEM_PROMPT),
+                    ("user", user_message),
+                ]
+            )
 
-        content = response.content if isinstance(response.content, str) else str(response.content)
+            content = response.content if isinstance(response.content, str) else str(response.content)
+            break
 
-    except Exception as llm_exc:
-        logger.error(
-            "run_business_intelligence LLM_CALL_FAILED business_name=%s error=%s",
-            business_name,
-            llm_exc,
-            exc_info=True,
-        )
+        except Exception as llm_exc:
+            logger.error(
+                "run_business_intelligence LLM_CALL_FAILED attempt=%s/%s business_name=%s error=%s",
+                _attempt, 2, business_name, llm_exc, exc_info=True,
+            )
+            if _attempt < 2:
+                _time.sleep(2)
+
+    if content is None:
         return _safe_defaults()
 
     # ---- Parse JSON ----

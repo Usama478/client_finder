@@ -243,6 +243,38 @@ def _persist_to_db(business_id: int, final_state: RelevancyAgentState, strict_ou
         llm_out = final_state.get("llm_decision_output") or {}
         business_type = final_state.get("business_type") or llm_out.get("business_type")
         primary_niche = final_state.get("primary_niche") or llm_out.get("primary_niche")
+
+        # Fallback: extract business_type from business_model_full if LLM missed it
+        if not business_type:
+            bm = (final_state.get("business_model_intelligence_output") or {})
+            primary_model = bm.get("primary_model")
+            MODEL_TO_TYPE = {
+                "retailer": "Retailer",
+                "brand": "Brand",
+                "wholesaler": "Wholesaler",
+                "manufacturer": "Manufacturer",
+                "distributor": "Distributor",
+                "marketplace": "Marketplace",
+            }
+            if primary_model and primary_model.lower() in MODEL_TO_TYPE:
+                business_type = MODEL_TO_TYPE[primary_model.lower()]
+
+        # Fallback: derive primary_niche from catalog_intelligence product families
+        if not primary_niche:
+            cat_out = (final_state.get("catalog_intelligence_output") or {})
+            product_families = cat_out.get("product_families") or []
+            category_signals = cat_out.get("category_signals") or []
+            # Use first meaningful product family or category signal
+            candidates = [
+                p for p in (product_families + category_signals)
+                if p and len(p) < 40
+                and not any(x in p.lower() for x in
+                    ["opening hours", "information", "locator",
+                     "zara", "store", "shop", "route"])
+            ]
+            if candidates:
+                primary_niche = candidates[0].strip().title()
+
         if business_type and str(business_type).strip() not in ("", "Unknown"):
             lead.business_type = str(business_type).strip()
         if primary_niche and str(primary_niche).strip() not in ("", "Unknown"):

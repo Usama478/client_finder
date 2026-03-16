@@ -8,11 +8,11 @@ Accepts raw text / HTML, returns a structured dict.
 """
 
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 from urllib.parse import urljoin, urlparse
 
 # ---------------------------------------------------------------------------
-# Constants
+# Constants & Regex
 # ---------------------------------------------------------------------------
 
 _EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
@@ -60,9 +60,61 @@ _EMAIL_TYPE_GENERIC = "generic"
 _EMAIL_CONF_GENERIC = 30
 
 
+# Cloudflare email discovery
+_CF_EMAIL_RE = re.compile(r'data-cfemail=["\']([a-f0-9]+)["\']', re.IGNORECASE)
+
+# Textual obfuscation patterns
+_AT_OBFUSCATION_RE = re.compile(r'[\s\[\({]at[\s\]\)}]|\s@\s', re.IGNORECASE)
+_DOT_OBFUSCATION_RE = re.compile(r'[\s\[\({]dot[\s\]\)}]', re.IGNORECASE)
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _decode_cf_email(hex_str: str) -> str:
+    """Decode a Cloudflare-obfuscated email string."""
+    try:
+        if not hex_str or len(hex_str) < 2:
+            return ""
+        # The first two chars are the key
+        k = int(hex_str[:2], 16)
+        email = ""
+        # The rest is the XORed email
+        for i in range(2, len(hex_str), 2):
+            char_code = int(hex_str[i:i+2], 16) ^ k
+            email += chr(char_code)
+        return email
+    except Exception:
+        return ""
+
+
+def _deobfuscate_text(text: str) -> str:
+    """
+    Apply safe, deterministic de-obfuscation to raw text/HTML.
+    Decodes Cloudflare emails and normalizes [at]/[dot] patterns.
+    """
+    if not text:
+        return ""
+
+    # 1. Decode Cloudflare data-cfemail attributes
+    for match in _CF_EMAIL_RE.finditer(text):
+        hex_str = match.group(1)
+        decoded = _decode_cf_email(hex_str)
+        if "@" in decoded:
+            # Inject the decoded email into the text so standard regex finds it
+            text += f" {decoded} "
+
+    # 2. Normalize common textual obfuscations
+    # "info [at] brand [dot] com" -> "info@brand.com"
+    # Note: we only do this if it looks like a real attempt (has both at and dot)
+    if _AT_OBFUSCATION_RE.search(text) and _DOT_OBFUSCATION_RE.search(text):
+        # We don't want to replace "The dots are connected." 
+        # So we only replace near word boundaries.
+        text = _AT_OBFUSCATION_RE.sub("@", text)
+        text = _DOT_OBFUSCATION_RE.sub(".", text)
+
+    return text
 
 def _digits_only(s: str) -> str:
     return re.sub(r'\D', '', s)
@@ -116,6 +168,16 @@ def extract_contacts(text: str, base_url: str = "") -> dict:
         all_phones, whatsapp_number, linkedin_company_url,
         social_links, contact_form_present
     """
+    if not text:
+        return {
+            "all_emails": [], "primary_email": None, "email_type": None, "email_confidence": None,
+            "all_phones": [], "whatsapp_number": None, "linkedin_company_url": None,
+            "social_links": {}, "contact_form_present": False
+        }
+
+    # Pre-process: decode obfuscated strings
+    text = _deobfuscate_text(text)
+
     # ------------------------------------------------------------------ #
     # Emails                                                              #
     # ------------------------------------------------------------------ #
