@@ -13,7 +13,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 EXPORTER_PROFILE = "We are a premium clothing wholesaler looking for B2B fashion retailers, boutiques, and department stores."
-TARGET_IDS = list(range(61, 81)) # Testing 61 to 80
+TARGET_IDS = list(range(61, 65)) # Testing 61 to 80
 
 def run_batch():
     summary = Counter()
