@@ -31,6 +31,9 @@ class VerificationAgentState(TypedDict):
     scraped_text_content: Optional[str]   # reused from Relevancy Agent; avoids re-scrape
     relevancy_artifacts: Optional[Dict[str, Any]]  # full artifact blob from Relevancy Agent
     custom_prompt: Optional[str]          # exporter-specific prompt from SearchSession context
+    # Relevancy Agent classification — direct DB columns, not read from artifact blob
+    business_type: Optional[str]          # e.g. "B2B supplier", "Retailer / DTC"
+    primary_niche: Optional[str]          # e.g. "Leather", "Streetwear"
 
     # ------------------------------------------------------------------ #
     # Collection Fields (written by gatekeeper / collector nodes)         #

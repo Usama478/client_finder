@@ -110,9 +110,11 @@ def check_accessibility(url: str) -> dict:
                     headers=_DEFAULT_HEADERS,
                     stream=True,
                 )
-                # Read only the first 8 KB to detect block pages cheaply
-                body = get_response.raw.read(8192).decode("utf-8", errors="ignore").lower()
-                get_response.close()
+                try:
+                    # Read only the first 8 KB to detect block pages cheaply
+                    body = get_response.raw.read(8192).decode("utf-8", errors="ignore").lower()
+                finally:
+                    get_response.close()
             except Exception:
                 body = ""
 

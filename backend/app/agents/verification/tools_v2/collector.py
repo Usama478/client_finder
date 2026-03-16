@@ -195,6 +195,7 @@ def collect_pages(
     root = _root_url(base_url)
     pages_collected: Dict[str, str] = {}
     contact_page_html: Optional[str] = None
+    contact_page_url_found: Optional[str] = None
     about_page_html: Optional[str] = None
     wholesale_page_found = False
     wholesale_page_url: Optional[str] = None
@@ -266,6 +267,7 @@ def collect_pages(
         # Label-specific storage
         if label == "contact" and contact_page_html is None:
             contact_page_html = html
+            contact_page_url_found = full_url
 
         if label == "about" and about_page_html is None:
             about_page_html = html
@@ -293,6 +295,7 @@ def collect_pages(
     return {
         "pages_collected": pages_collected,
         "contact_page_html": contact_page_html,
+        "contact_page_url": contact_page_url_found,
         "about_page_html": about_page_html,
         "wholesale_page_found": wholesale_page_found,
         "wholesale_page_url": wholesale_page_url,

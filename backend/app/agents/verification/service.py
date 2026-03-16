@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 # hanging indefinitely (e.g. a stalled LLM call or a stuck Playwright session).
 GRAPH_EXEC_TIMEOUT_S = 300  # 5 minutes
 
+from app.agents.verification.graph import verification_graph
 from app.agents.verification.state import VerificationAgentState
 from app.db.session import SessionLocal
 from app.models.search_result import SearchResult
@@ -111,6 +112,9 @@ def _build_initial_state(business_id: int) -> VerificationAgentState:
             "scraped_text_content": lead.scraped_text_content,
             "relevancy_artifacts": lead.relevancy_artifacts or None,
             "custom_prompt": custom_prompt,
+            # Relevancy Agent classification — read from DB columns, not artifact blob
+            "business_type": lead.business_type,
+            "primary_niche": lead.primary_niche,
             # ---- Collection ----
             "website_alive": None,
             "collection_blocked": None,
@@ -380,10 +384,7 @@ def run_verification_for_business(business_id: int) -> Dict[str, object]:
 
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _executor:
-            # Placeholder: graph is not wired yet.
-            # Replace the lambda with `verification_graph.invoke` once the graph
-            # is built and imported at the top of this module.
-            _future = _executor.submit(_run_graph_placeholder, initial_state)
+            _future = _executor.submit(verification_graph.invoke, initial_state)
             try:
                 final_state = _future.result(timeout=GRAPH_EXEC_TIMEOUT_S)
             except concurrent.futures.TimeoutError:
@@ -434,15 +435,3 @@ def run_verification_for_business(business_id: int) -> Dict[str, object]:
     }
 
 
-def _run_graph_placeholder(state: VerificationAgentState) -> VerificationAgentState:
-    """
-    Placeholder for verification_graph.invoke(state).
-
-    Remove this function and replace the executor.submit call above with:
-        _executor.submit(verification_graph.invoke, initial_state)
-    once the graph is wired.
-    """
-    raise NotImplementedError(
-        "Verification graph is not yet wired. "
-        "Import verification_graph and replace _run_graph_placeholder."
-    )
