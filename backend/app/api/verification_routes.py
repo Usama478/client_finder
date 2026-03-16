@@ -6,7 +6,7 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.agents.verification.service import run_verification_for_business
+from app.agents.verification.service import run_verification_batch, run_verification_for_business
 from app.db.session import SessionLocal
 from app.models.search_result import SearchResult
 
@@ -59,19 +59,7 @@ def verify_batch(request: BatchVerifyRequest) -> Dict[str, Any]:
     if not request.business_ids:
         raise HTTPException(status_code=400, detail="No business_ids provided.")
 
-    results: List[Dict[str, Any]] = []
-
-    for business_id in request.business_ids:
-        try:
-            outcome = run_verification_for_business(business_id)
-            results.append({"business_id": business_id, "status": "ok", "result": outcome})
-        except ValueError as exc:
-            results.append({"business_id": business_id, "status": "not_found", "detail": str(exc)})
-        except Exception as exc:
-            logger.error(
-                "verify_batch FAILED business_id=%s error=%s", business_id, exc, exc_info=True
-            )
-            results.append({"business_id": business_id, "status": "error", "detail": str(exc)})
+    results = run_verification_batch(request.business_ids)
 
     total = len(request.business_ids)
     succeeded = sum(1 for r in results if r["status"] == "ok")

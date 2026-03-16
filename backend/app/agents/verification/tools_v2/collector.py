@@ -136,7 +136,7 @@ def _playwright_fetch(url: str) -> Optional[str]:
 # Single-page HTTP fetch
 # ---------------------------------------------------------------------------
 
-def _http_fetch(url: str, timeout: int = 12) -> tuple[Optional[str], int, Optional[str]]:
+def _http_fetch(url: str, timeout: int = 10) -> tuple[Optional[str], int, Optional[str]]:
     """
     Perform a GET request.
 
@@ -223,63 +223,69 @@ def collect_pages(
         if label in satisfied_labels:
             continue
 
-        # ---- HTTP fetch ----
-        html, status_code, err = _http_fetch(full_url)
+        try:
+            # ---- HTTP fetch ----
+            html, status_code, err = _http_fetch(full_url)
 
-        if err:
-            errors.append(f"{path}: {err}")
-            continue
-
-        # ---- Playwright fallback if body is a JS shell ----
-        used_playwright = False
-        if html and _is_js_shell(html):
-            logger.debug("collect_pages JS_SHELL path=%s len=%s → playwright", path, len(html))
-            pw_html = _playwright_fetch(full_url)
-            if pw_html and not _is_js_shell(pw_html):
-                html = pw_html
-                used_playwright = True
-            else:
-                # Even Playwright couldn't extract meaningful text — skip
-                errors.append(f"{path}: js_shell_unresolvable")
+            if err:
+                errors.append(f"{path}: {err}")
                 continue
 
-        if not html:
-            errors.append(f"{path}: empty_response status={status_code}")
+            # ---- Playwright fallback if body is a JS shell ----
+            used_playwright = False
+            if html and _is_js_shell(html):
+                logger.debug("collect_pages JS_SHELL path=%s len=%s → playwright", path, len(html))
+                pw_html = _playwright_fetch(full_url)
+                if pw_html and not _is_js_shell(pw_html):
+                    html = pw_html
+                    used_playwright = True
+                else:
+                    # Even Playwright couldn't extract meaningful text — skip
+                    errors.append(f"{path}: js_shell_unresolvable")
+                    continue
+
+            if not html:
+                errors.append(f"{path}: empty_response status={status_code}")
+                continue
+
+            # ---- Extract visible text ----
+            visible_text = _strip_tags(html)
+            if not visible_text:
+                errors.append(f"{path}: no_visible_text")
+                continue
+
+            # ---- Store results ----
+            pages_collected[path] = visible_text
+            methods_used.add("playwright" if used_playwright else "http")
+            satisfied_labels.add(label)
+
+            # Footer: extract once from the richest page (contact > about > others)
+            if footer_text is None:
+                ft = _extract_footer(html)
+                if ft:
+                    footer_text = ft
+
+            # Label-specific storage
+            if label == "contact" and contact_page_html is None:
+                contact_page_html = html
+                contact_page_url_found = full_url
+
+            if label == "about" and about_page_html is None:
+                about_page_html = html
+
+            if label == "wholesale" and not wholesale_page_found:
+                wholesale_page_found = True
+                wholesale_page_url = full_url
+
+            logger.debug(
+                "collect_pages OK path=%s label=%s chars=%s method=%s",
+                path, label, len(visible_text), "playwright" if used_playwright else "http",
+            )
+
+        except Exception as exc:
+            logger.warning("collect_pages PAGE_ERROR path=%s error=%s", path, exc, exc_info=True)
+            errors.append(f"{path}: page_error:{type(exc).__name__}:{exc}")
             continue
-
-        # ---- Extract visible text ----
-        visible_text = _strip_tags(html)
-        if not visible_text:
-            errors.append(f"{path}: no_visible_text")
-            continue
-
-        # ---- Store results ----
-        pages_collected[path] = visible_text
-        methods_used.add("playwright" if used_playwright else "http")
-        satisfied_labels.add(label)
-
-        # Footer: extract once from the richest page (contact > about > others)
-        if footer_text is None:
-            ft = _extract_footer(html)
-            if ft:
-                footer_text = ft
-
-        # Label-specific storage
-        if label == "contact" and contact_page_html is None:
-            contact_page_html = html
-            contact_page_url_found = full_url
-
-        if label == "about" and about_page_html is None:
-            about_page_html = html
-
-        if label == "wholesale" and not wholesale_page_found:
-            wholesale_page_found = True
-            wholesale_page_url = full_url
-
-        logger.debug(
-            "collect_pages OK path=%s label=%s chars=%s method=%s",
-            path, label, len(visible_text), "playwright" if used_playwright else "http",
-        )
 
     # ---- Merged text ----
     merged_text = "\n\n".join(pages_collected.values())

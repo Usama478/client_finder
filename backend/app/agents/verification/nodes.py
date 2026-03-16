@@ -449,6 +449,23 @@ def final_contract_builder(state: VerificationAgentState) -> dict:
         )
         verification_score = max(0, min(100, int(round(raw_score))))
 
+        # Belt-and-suspenders None-guard: if future refactors break null arithmetic
+        # and produce None/NaN, never let it reach the DB.
+        if verification_score is None:
+            logger.warning(
+                "final_contract_builder: verification_score is None for business_id=%s — falling back to failed",
+                state.get("business_id"),
+            )
+            return {
+                "verification_score": 0,
+                "verification_result": "failed",
+                "verification_confidence": 0.0,
+                "verification_reason": "Internal error: score computation produced None",
+                "manual_review": True,
+                "contactability_score": contactability_score,
+                "is_finalized": False,
+            }
+
         # ---- Verification result ----
         if (
             legitimacy_score >= 70

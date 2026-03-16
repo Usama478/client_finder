@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import concurrent.futures
 import logging
-from typing import Dict, Optional
+import time
+from typing import Dict, List, Optional
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -19,7 +20,7 @@ from app.models.search_result import SearchResult
 from app.models.search_session import SearchSession
 
 
-def _try_mark_failed(business_id: int, reason: str) -> None:
+def _try_mark_verification_failed(business_id: int, reason: str) -> None:
     """
     Best-effort: stamp verification_status='failed' for the given row.
 
@@ -40,7 +41,7 @@ def _try_mark_failed(business_id: int, reason: str) -> None:
                 return  # Written successfully
         except Exception as exc:
             logger.error(
-                "_try_mark_failed attempt=%s FAILED business_id=%s error=%s",
+                "_try_mark_verification_failed attempt=%s FAILED business_id=%s error=%s",
                 attempt,
                 business_id,
                 exc,
@@ -298,6 +299,7 @@ def run_verification_for_business(business_id: int) -> Dict[str, object]:
     # ------------------------------------------------------------------ #
     # Task 1 – Processing lock                                            #
     # ------------------------------------------------------------------ #
+    logger.info("verification_service START business_id=%s", business_id)
     lock_db = SessionLocal()
     try:
         lead = (
@@ -360,6 +362,7 @@ def run_verification_for_business(business_id: int) -> Dict[str, object]:
         lead.revenue_band = None
         lead.email_context = None
         lock_db.commit()
+        logger.info("verification_service LOCK_ACQUIRED business_id=%s", business_id)
     except ValueError:
         # ValueError is raised intentionally (e.g. business_id not found).
         # Rollback and re-raise without wrapping.
@@ -399,11 +402,13 @@ def run_verification_for_business(business_id: int) -> Dict[str, object]:
             graph_exc,
             exc_info=True,
         )
-        _try_mark_failed(
+        _try_mark_verification_failed(
             business_id,
             f"[CRITICAL_FAILURE] Graph execution crashed: {type(graph_exc).__name__}: {graph_exc}",
         )
         raise
+
+    logger.info("verification_service GRAPH_COMPLETE business_id=%s", business_id)
 
     # ------------------------------------------------------------------ #
     # Task 3 – Persistence crash net                                      #
@@ -419,11 +424,18 @@ def run_verification_for_business(business_id: int) -> Dict[str, object]:
             persist_exc,
             exc_info=True,
         )
-        _try_mark_failed(
+        _try_mark_verification_failed(
             business_id,
             f"[CRITICAL_FAILURE] persist_failed: {persist_exc}",
         )
         raise
+
+    logger.info(
+        "verification_service PERSISTED business_id=%s result=%s score=%s",
+        business_id,
+        final_state.get("verification_result"),
+        final_state.get("verification_score"),
+    )
 
     return {
         "verification_result": final_state.get("verification_result"),
@@ -435,3 +447,60 @@ def run_verification_for_business(business_id: int) -> Dict[str, object]:
     }
 
 
+_BATCH_CHUNK_SIZE = 10
+_BATCH_CHUNK_SLEEP_S = 2
+
+
+def run_verification_batch(business_ids: List[int]) -> List[Dict[str, object]]:
+    """
+    Run verification for a list of business IDs with built-in rate limiting.
+
+    If the list exceeds _BATCH_CHUNK_SIZE, IDs are processed in chunks of
+    that size with _BATCH_CHUNK_SLEEP_S seconds sleep between chunks to
+    avoid hammering external services (WHOIS, Playwright, LLM).
+
+    Per-item errors are captured in the result list rather than re-raised.
+    """
+    chunks = [
+        business_ids[i : i + _BATCH_CHUNK_SIZE]
+        for i in range(0, len(business_ids), _BATCH_CHUNK_SIZE)
+    ]
+    total_chunks = len(chunks)
+    results: List[Dict[str, object]] = []
+
+    for chunk_idx, chunk in enumerate(chunks, 1):
+        logger.info(
+            "run_verification_batch CHUNK %s/%s ids=%s",
+            chunk_idx,
+            total_chunks,
+            chunk,
+        )
+        for business_id in chunk:
+            try:
+                result = run_verification_for_business(business_id)
+                results.append({"business_id": business_id, "status": "ok", "result": result})
+            except ValueError as exc:
+                results.append(
+                    {"business_id": business_id, "status": "not_found", "detail": str(exc)}
+                )
+            except Exception as exc:
+                logger.error(
+                    "run_verification_batch ITEM_FAILED business_id=%s error=%s",
+                    business_id,
+                    exc,
+                    exc_info=True,
+                )
+                results.append(
+                    {"business_id": business_id, "status": "error", "detail": str(exc)}
+                )
+
+        if chunk_idx < total_chunks:
+            logger.info(
+                "run_verification_batch SLEEP %ss before chunk %s/%s",
+                _BATCH_CHUNK_SLEEP_S,
+                chunk_idx + 1,
+                total_chunks,
+            )
+            time.sleep(_BATCH_CHUNK_SLEEP_S)
+
+    return results
