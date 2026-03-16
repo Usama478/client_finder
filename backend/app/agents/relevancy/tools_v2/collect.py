@@ -10,6 +10,7 @@ import httpx
 
 from app.agents.relevancy.schemas import ShopifyProbeOutput
 from app.agents.relevancy.state import RelevancyAgentState
+from app.agents.relevancy.utils import BLOCK_MARKERS, normalize_url as _normalize_url
 from app.agents.relevancy.tools_v2.browser_collect import collect_with_playwright
 
 try:
@@ -27,17 +28,6 @@ FetchMethod = Literal["curl_cffi", "httpx", "playwright"]
 MIN_HTML_BYTES = 800
 MIN_HOMEPAGE_TEXT = 140
 MIN_ROUTE_TEXT = 110
-BLOCK_MARKERS: Tuple[Tuple[str, str], ...] = (
-    ("turnstile", "turnstile"),
-    ("cf-challenge", "cloudflare_challenge"),
-    ("challenge-platform", "cloudflare_challenge"),
-    ("cloudflare ray id", "cloudflare_challenge"),
-    ("checking your browser", "checking_your_browser"),
-    ("verify you are human", "bot_challenge"),
-    ("are you human", "bot_challenge"),
-    ("access denied", "access_denied"),
-    ("captcha", "captcha"),
-)
 JS_REQUIRED_MARKERS = (
     "enable javascript",
     "javascript is required",
@@ -48,17 +38,6 @@ JS_REQUIRED_MARKERS = (
 SCRIPT_STYLE_RE = re.compile(r"(?is)<(script|style).*?>.*?</\1>")
 TAG_RE = re.compile(r"(?s)<[^>]+>")
 WS_RE = re.compile(r"\s+")
-
-
-def _normalize_url(url: Optional[str]) -> Optional[str]:
-    if not url:
-        return None
-    value = url.strip()
-    if not value:
-        return None
-    if not value.startswith(("http://", "https://")):
-        return f"https://{value}"
-    return value
 
 
 def _new_result(fetch_method: FetchMethod) -> Dict[str, object]:
@@ -485,9 +464,15 @@ def shopify_probe(
         result = collect_page_sources(probe_url, timeout_s=12)
         status_raw = result.get("status_code")
         status = status_raw if isinstance(status_raw, int) else 0
-        if path == "/products.json" and status in (200, 401, 403):
-            signals.append("products-json-endpoint")
-            confidence = max(confidence, 0.82)
+        if path == "/products.json":
+            # 200 → endpoint returned data (strong signal).
+            # 401 → endpoint exists but requires auth (strong signal).
+            # 403 alone is NOT treated as a signal: any WAF or Cloudflare
+            # firewall returns 403 for arbitrary paths, so it carries no
+            # Shopify-specific information without corroborating evidence.
+            if status in (200, 401):
+                signals.append("products-json-endpoint")
+                confidence = max(confidence, 0.82)
         if path.startswith("/cdn/shop") and status in (200, 301, 302):
             signals.append("cdn-shop-assets")
             confidence = max(confidence, 0.9)

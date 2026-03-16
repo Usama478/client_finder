@@ -1,4 +1,4 @@
-from typing import Any, Dict, Literal, Optional, TypedDict
+from typing import Any, Dict, List, Literal, Optional, TypedDict
 
 class RelevancyAgentState(TypedDict):
     """
@@ -45,22 +45,22 @@ class RelevancyAgentState(TypedDict):
     structured_has_product_catalog: Optional[bool]
     structured_has_organization: Optional[bool]
     structured_signal_strength: Optional[Literal["none", "weak", "strong"]]
-    structured_signals_used: Optional[list[str]]
+    structured_signals_used: Optional[List[str]]
 
     # --- Routing Flags ---
     should_run_shopify_probe: Optional[bool]
     
     # --- Final Output (Analyst Decisions) ---
-    relevance_decision: Optional[str] # 'relevant' | 'irrelevant' | 'unknown'
-    relevance_score: Optional[int]    # 0-100
+    relevance_decision: Optional[Literal["relevant", "irrelevant", "unknown"]]
+    relevance_score: Optional[int]    # 0-100; persisted as float in DB
     relevance_reason: Optional[str]   # Human-readable explanation
     business_type: Optional[str]      # e.g., 'Retailer', 'Wholesaler'
     primary_niche: Optional[str]      # e.g., 'Leather', 'Tech'
     manual_review: Optional[bool]
-    confidence: Optional[float]       # 0-1
-    match_reasons: Optional[list[str]]
-    mismatch_reasons: Optional[list[str]]
-    signals_used: Optional[list[str]]
+    confidence: Optional[float]       # 0.0–1.0
+    match_reasons: Optional[List[str]]
+    mismatch_reasons: Optional[List[str]]
+    signals_used: Optional[List[str]]
     
     # --- Flags ---
     is_finalized: bool

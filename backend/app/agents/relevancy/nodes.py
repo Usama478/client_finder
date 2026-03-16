@@ -7,6 +7,7 @@ from urllib.parse import urljoin
 
 from app.agents.relevancy.schemas import CollectPageSourcesOutput, PageSource
 from app.agents.relevancy.state import RelevancyAgentState
+from app.agents.relevancy.utils import normalize_url as _normalize_url
 from app.agents.relevancy.tools_v2 import (
     catalog_intelligence,
     collect_page_sources,
@@ -52,17 +53,6 @@ PRIORITY_ROUTE_SLUGS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ("category", ("category", "categories", "kategorie")),
 )
 logger = logging.getLogger(__name__)
-
-
-def _normalize_url(url: Optional[str]) -> Optional[str]:
-    if not url:
-        return None
-    value = url.strip()
-    if not value:
-        return None
-    if not value.startswith(("http://", "https://")):
-        return f"https://{value}"
-    return value
 
 
 def _collect_errors(fetch_result: Dict[str, object]) -> List[str]:

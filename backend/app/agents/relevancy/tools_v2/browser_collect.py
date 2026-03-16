@@ -15,21 +15,11 @@ except Exception:
     Page = Any  # type: ignore[assignment]
     sync_playwright = None
 
+from app.agents.relevancy.utils import BLOCK_MARKERS
+
 # Limit to 3 concurrent Chromium instances to prevent memory exhaustion
 # under high API concurrency. Additional callers block and queue here.
 BROWSER_SEMAPHORE = threading.Semaphore(3)
-
-BLOCK_MARKERS: Tuple[Tuple[str, str], ...] = (
-    ("turnstile", "turnstile"),
-    ("cf-challenge", "cloudflare_challenge"),
-    ("challenge-platform", "cloudflare_challenge"),
-    ("cloudflare ray id", "cloudflare_challenge"),
-    ("checking your browser", "checking_your_browser"),
-    ("verify you are human", "bot_challenge"),
-    ("are you human", "bot_challenge"),
-    ("access denied", "access_denied"),
-    ("captcha", "captcha"),
-)
 COOKIE_BUTTON_PATTERNS: Sequence[str] = (
     "accept all",
     "accept",

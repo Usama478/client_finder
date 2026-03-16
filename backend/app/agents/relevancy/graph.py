@@ -28,11 +28,22 @@ def _route_after_collect(state: RelevancyAgentState) -> str:
     if state.get("collect_blocked") is True:
         return "finalize_manual_review"
     if state.get("website_exists") is False:
-        return "end_irrelevant"
+        # 404/410 → site is definitively gone → irrelevant.
+        # All other failures (401, 5xx, network error, unknown) → the site may
+        # exist but be temporarily unreachable → manual review.
+        status = state.get("collect_status_code")
+        if isinstance(status, int) and status in (404, 410):
+            return "end_irrelevant"
+        return "finalize_manual_review"
     return "extract_structured_signals"
 
 
 def _route_after_structured(state: RelevancyAgentState) -> str:
+    # Defensive guard: collect_blocked should already have been caught by
+    # _route_after_collect, but guard here too so extraction is never entered
+    # on a blocked site regardless of how state arrived at this node.
+    if state.get("collect_blocked") is True:
+        return "finalize_manual_review"
     structured = state.get("structured_signals_output") or {}
     signal_strength = structured.get("structured_signal_strength") or state.get("structured_signal_strength")
     has_catalog = structured.get("structured_has_product_catalog")
@@ -92,6 +103,7 @@ workflow.add_conditional_edges(
     "extract_structured_signals",
     _route_after_structured,
     {
+        "finalize_manual_review": "finalize_manual_review",
         "catalog_intelligence": "catalog_intelligence",
         "extract_clean_text_and_sections": "extract_clean_text_and_sections",
     },

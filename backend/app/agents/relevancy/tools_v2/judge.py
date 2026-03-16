@@ -4,7 +4,7 @@ import json
 import logging
 import os
 import re
-from typing import Dict, Iterable, List, Sequence, Set, Tuple
+from typing import Dict, List, Sequence, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +13,9 @@ from langchain_openai import ChatOpenAI
 from app.agents.relevancy.prompts import build_relevancy_prompt
 from app.agents.relevancy.schemas import LLMRelevanceDecision
 from app.agents.relevancy.state import RelevancyAgentState
+from app.agents.relevancy.utils import clamp_float as _clamp_float
+from app.agents.relevancy.utils import dedupe_limited as _dedupe_limited
+from app.agents.relevancy.utils import safe_list as _safe_list
 
 MAX_ENTITIES = 5
 MAX_CLEAN_EXCERPT = 900
@@ -86,37 +89,6 @@ def _one_line(value: str) -> str:
     return " ".join(str(value or "").split()).strip()
 
 
-def _clamp_float(value: object, lower: float = 0.0, upper: float = 1.0) -> float:
-    try:
-        numeric = float(value)
-    except (TypeError, ValueError):
-        numeric = lower
-    return max(lower, min(upper, numeric))
-
-
-def _safe_list(items: object) -> List[str]:
-    if not isinstance(items, list):
-        return []
-    output: List[str] = []
-    for item in items:
-        text = str(item).strip()
-        if text:
-            output.append(text)
-    return output
-
-
-def _dedupe_limited(items: Iterable[str], limit: int = 12) -> List[str]:
-    seen: Set[str] = set()
-    output: List[str] = []
-    for item in items:
-        text = str(item).strip()
-        if not text or text in seen:
-            continue
-        seen.add(text)
-        output.append(text)
-        if len(output) >= limit:
-            break
-    return output
 
 
 def _available_signal_tags(state: RelevancyAgentState) -> List[str]:
@@ -340,7 +312,10 @@ def _b2b_term_hits(text: str) -> List[str]:
     hits: List[str] = []
     for keyword in B2B_KEYWORDS:
         if " " in keyword:
-            pattern = rf"\b{re.escape(keyword)}\b"
+            # Multi-word phrase: allow flexible whitespace (spaces, tabs,
+            # newlines) between words so "private  label" still matches.
+            parts = [re.escape(word) for word in keyword.split()]
+            pattern = r"\b" + r"\s+" .join(parts) + r"\b"
         else:
             pattern = rf"\b{re.escape(keyword)}\b"
         if re.search(pattern, normalized):

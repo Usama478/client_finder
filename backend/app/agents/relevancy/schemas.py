@@ -211,6 +211,10 @@ class CatalogIntelligenceOutput(CompactModel):
     category_signals: List[str] = Field(default_factory=list, max_length=10)
     evidence_summary: str = Field(default="", max_length=1000)
     signals_used: List[str] = Field(default_factory=list, max_length=12)
+    # Set to "failed" when the node catches an unhandled exception.
+    # Checked in judge.py to apply [INTERNAL_ERROR] reason code.
+    node_status: Optional[Literal["ok", "failed"]] = None
+    error_message: Optional[str] = Field(default=None, max_length=300)
 
     @field_validator(
         "product_families",
@@ -263,6 +267,10 @@ class BusinessModelIntelligenceOutput(CompactModel):
     marketplace_signals: List[str] = Field(default_factory=list, max_length=10)
     evidence_summary: str = Field(default="", max_length=600)
     signals_used: List[str] = Field(default_factory=list, max_length=12)
+    # Set to "failed" when the node catches an unhandled exception.
+    # Checked in judge.py to apply [INTERNAL_ERROR] reason code.
+    node_status: Optional[Literal["ok", "failed"]] = None
+    error_message: Optional[str] = Field(default=None, max_length=300)
 
     @field_validator(
         "secondary_models",

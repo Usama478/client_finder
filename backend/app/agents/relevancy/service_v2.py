@@ -1,15 +1,60 @@
 from __future__ import annotations
 
+import concurrent.futures
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Dict, Optional
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
+# Hard ceiling on total graph execution time.  The collection node already
+# enforces a 60 s sub-page budget; this outer timeout guards against any node
+# hanging indefinitely (e.g. a stalled LLM call or a stuck Playwright session).
+GRAPH_EXEC_TIMEOUT_S = 300  # 5 minutes
+
 from app.agents.relevancy.graph import relevancy_graph
 from app.agents.relevancy.state import RelevancyAgentState
+from app.agents.relevancy.utils import safe_list as _safe_list
 from app.db.session import SessionLocal
 from app.models.search_result import SearchResult
+
+
+def _try_mark_failed(business_id: int, reason: str) -> None:
+    """
+    Best-effort: stamp relevance_status='failed' for the given row.
+
+    Tries twice with completely independent sessions so that a transient DB
+    hiccup on the first attempt does not permanently leave the row stuck in
+    'processing'.  If both attempts fail, the error is logged but NOT
+    re-raised — the caller is already in an error path and must not be
+    interrupted by a secondary failure here.
+    """
+    for attempt in range(1, 3):
+        db = SessionLocal()
+        try:
+            lead = db.query(SearchResult).filter(SearchResult.result_id == business_id).first()
+            if lead:
+                lead.relevance_status = "failed"
+                lead.relevance_reason = reason
+                db.commit()
+                return  # Written successfully
+        except Exception as exc:
+            logger.error(
+                "_try_mark_failed attempt=%s FAILED business_id=%s error=%s",
+                attempt,
+                business_id,
+                exc,
+                exc_info=True,
+            )
+            try:
+                db.rollback()
+            except Exception:
+                pass
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
 
 
 def _normalize_url(url: str) -> str:
@@ -98,12 +143,6 @@ def _build_initial_state(
         "signals_used": [],
         "is_finalized": False,
     }
-
-
-def _safe_list(value: Any) -> List[str]:
-    if not isinstance(value, list):
-        return []
-    return [str(item).strip() for item in value if str(item).strip()][:12]
 
 
 def _strict_contract_output(final_state: RelevancyAgentState) -> Dict[str, object]:
@@ -347,7 +386,18 @@ def run_relevancy_v2_for_business(
     )
 
     try:
-        final_state = relevancy_graph.invoke(initial_state)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _executor:
+            _future = _executor.submit(relevancy_graph.invoke, initial_state)
+            try:
+                final_state = _future.result(timeout=GRAPH_EXEC_TIMEOUT_S)
+            except concurrent.futures.TimeoutError:
+                # The underlying thread continues running (Python cannot force-
+                # kill it), but we stop waiting and mark the row as failed so
+                # it is never stuck in "processing" from the caller's view.
+                _future.cancel()
+                raise TimeoutError(
+                    f"Graph execution exceeded {GRAPH_EXEC_TIMEOUT_S}s hard limit"
+                )
     except Exception as graph_exc:
         logger.error(
             "run_relevancy_v2 GRAPH_CRASH business_id=%s error=%s",
@@ -355,26 +405,10 @@ def run_relevancy_v2_for_business(
             graph_exc,
             exc_info=True,
         )
-        # Write the failure status so the lead is never stuck in "processing".
-        crash_db = SessionLocal()
-        try:
-            failed_lead = crash_db.query(SearchResult).filter(SearchResult.result_id == business_id).first()
-            if failed_lead:
-                failed_lead.relevance_status = "failed"
-                failed_lead.relevance_reason = (
-                    f"[CRITICAL_FAILURE] Graph execution crashed: {type(graph_exc).__name__}: {graph_exc}"
-                )
-                crash_db.commit()
-        except Exception as persist_exc:
-            logger.error(
-                "run_relevancy_v2 crash_persist FAILED business_id=%s error=%s",
-                business_id,
-                persist_exc,
-                exc_info=True,
-            )
-            crash_db.rollback()
-        finally:
-            crash_db.close()
+        _try_mark_failed(
+            business_id,
+            f"[CRITICAL_FAILURE] Graph execution crashed: {type(graph_exc).__name__}: {graph_exc}",
+        )
         raise
 
     output = _strict_contract_output(final_state)
@@ -397,27 +431,10 @@ def run_relevancy_v2_for_business(
             persist_exc,
             exc_info=True,
         )
-        persist_fail_db = SessionLocal()
-        try:
-            failed_lead = persist_fail_db.query(SearchResult).filter(
-                SearchResult.result_id == business_id
-            ).first()
-            if failed_lead:
-                failed_lead.relevance_status = "failed"
-                failed_lead.relevance_reason = (
-                    f"[CRITICAL_FAILURE] persist_failed: {persist_exc}"
-                )
-                persist_fail_db.commit()
-        except Exception as fallback_exc:
-            logger.error(
-                "run_relevancy_v2 persist_fail_write FAILED business_id=%s error=%s",
-                business_id,
-                fallback_exc,
-                exc_info=True,
-            )
-            persist_fail_db.rollback()
-        finally:
-            persist_fail_db.close()
+        _try_mark_failed(
+            business_id,
+            f"[CRITICAL_FAILURE] persist_failed: {persist_exc}",
+        )
         raise
 
     return output
