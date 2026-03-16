@@ -20,8 +20,9 @@ SOCIAL_DOMAINS = {
     "yelp.com",
     "yellowpages.com",
     "tripadvisor.com",
-    "etsy.com",
-    "amazon.com",
+    # amazon.com and etsy.com removed: they are e-commerce marketplaces, not
+    # social media profiles. Both are covered by MARKETPLACE_DOMAINS in
+    # platform_detect.py which runs in the same preclassify step.
     "linktr.ee",
 }
 

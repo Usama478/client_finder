@@ -286,6 +286,91 @@ def _judge_node(state):
     }
 
 
+# ---------------------------------------------------------------------------
+# Shopify probe — probe_only flag
+# ---------------------------------------------------------------------------
+
+class TestShopifyProbeOnly:
+    """collect_page_sources called with probe_only=True must not launch browser."""
+
+    def test_probe_only_returns_without_browser_on_404(self):
+        from app.agents.relevancy.tools_v2.collect import collect_page_sources
+
+        fake_result = {
+            "final_url": "https://not-shopify.example.com/products.json",
+            "status_code": 404,
+            "html": "<html><body>Not Found</body></html>",
+            "text_snippet": "Not Found",
+            "blocked": False,
+            "block_reason": None,
+            "fetch_method": "curl_cffi",
+            "needs_browser": False,
+            "fallback_reason": None,
+            "browser_improved": False,
+            "page_diagnostics": [],
+            "internal_links": [],
+            "browser_pages": [],
+            "diagnostics": [],
+            "errors": [],
+            "rendered_title": None,
+            "rendered_text_excerpt": None,
+            "title": None,
+        }
+        with patch(
+            "app.agents.relevancy.tools_v2.collect._fetch_with_curl_cffi",
+            return_value=("https://not-shopify.example.com/products.json", 404, "<html><body>Not Found</body></html>"),
+        ), patch(
+            "app.agents.relevancy.tools_v2.collect.collect_with_playwright",
+        ) as mock_pw:
+            result = collect_page_sources(
+                "https://not-shopify.example.com/products.json",
+                timeout_s=5,
+                probe_only=True,
+            )
+        mock_pw.assert_not_called()
+        assert result.get("needs_browser") is False
+
+    def test_probe_only_returns_without_browser_on_403(self):
+        from app.agents.relevancy.tools_v2.collect import collect_page_sources
+
+        with patch(
+            "app.agents.relevancy.tools_v2.collect._fetch_with_curl_cffi",
+            return_value=("https://example.com/products.json", 403, "<html>Forbidden</html>"),
+        ), patch(
+            "app.agents.relevancy.tools_v2.collect.collect_with_playwright",
+        ) as mock_pw:
+            result = collect_page_sources(
+                "https://example.com/products.json",
+                timeout_s=5,
+                probe_only=True,
+            )
+        mock_pw.assert_not_called()
+        assert result.get("needs_browser") is False
+        # 403 still sets blocked=True via _detect_block — that's correct
+        assert result.get("status_code") == 403
+
+    def test_non_probe_still_escalates_on_weak_content(self):
+        """Without probe_only, the normal escalation path is unchanged."""
+        from app.agents.relevancy.tools_v2.collect import collect_page_sources
+
+        # Return a short HTML page that _weak_content_reason will flag
+        with patch(
+            "app.agents.relevancy.tools_v2.collect._fetch_with_curl_cffi",
+            return_value=("https://js-heavy.example.com", 200, "<html><body>Hi</body></html>"),
+        ), patch(
+            "app.agents.relevancy.tools_v2.collect.collect_with_playwright",
+            side_effect=RuntimeError("pw not needed for assertion"),
+        ):
+            result = collect_page_sources(
+                "https://js-heavy.example.com",
+                timeout_s=5,
+                probe_only=False,
+            )
+        # The result may come from the Playwright exception path; the key check
+        # is that needs_browser was set to True before the attempt was made.
+        assert result.get("needs_browser") is True
+
+
 _NODES_MODULE = "app.agents.relevancy.nodes"
 
 
@@ -302,12 +387,17 @@ class TestGraphSmoke:
         assert "[SOCIAL_PROFILE_REJECTION]" in (result.get("relevance_reason") or "")
 
     def test_marketplace_ends_irrelevant(self):
-        """Amazon URL → preclassify → end_irrelevant → irrelevant decision."""
+        """Marketplace URL → preclassify → end_irrelevant → irrelevant + MARKETPLACE_REJECTION."""
         state = _base_state(website="https://www.amazon.com/seller/xyz")
         with patch(f"{_NODES_MODULE}.preclassify_target_node", side_effect=_make_preclassify_mock(is_marketplace=True)):
             result = relevancy_graph.invoke(state)
         assert result["relevance_decision"] == "irrelevant"
-        assert "[MARKETPLACE_REJECTION]" in (result.get("relevance_reason") or "")
+        # Confirm the mock-driven path produces the marketplace reason code,
+        # not the social-profile code that used to fire when amazon.com was
+        # (incorrectly) listed in SOCIAL_DOMAINS.
+        assert "[MARKETPLACE_REJECTION]" in (result.get("relevance_reason") or ""), (
+            f"Expected MARKETPLACE_REJECTION in reason, got: {result.get('relevance_reason')!r}"
+        )
 
     def test_blocked_site_ends_manual_review(self):
         """Blocked collection → finalize_manual_review → unknown + manual_review."""

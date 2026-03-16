@@ -219,7 +219,18 @@ def collect_page_sources(
     force_browser: bool = False,
     collect_internal_links: bool = False,
     max_internal_pages: int = 4,
+    probe_only: bool = False,
 ) -> Dict[str, object]:
+    """
+    Fetch a URL and return a result dict.
+
+    probe_only=True:
+        Skip all browser-escalation logic.  The function returns the raw HTTP
+        result regardless of status code, HTML length, or weak-content signals.
+        Use this for lightweight Shopify probe paths (/products.json, etc.)
+        where only the status code matters and launching Playwright would be
+        wasteful and incorrect.
+    """
     normalized = _normalize_url(url)
     errors: List[str] = []
 
@@ -283,6 +294,22 @@ def collect_page_sources(
 
     blocked = bool(primary_result.get("blocked"))
     block_reason = primary_result.get("block_reason")
+
+    if probe_only:
+        # Probe calls only care about the status code; skip browser escalation
+        # entirely so /products.json returning 404 never launches Playwright.
+        primary_result["needs_browser"] = False
+        primary_result["diagnostics"] = ["path=http", f"method={method_used}", f"blocked={blocked}", "probe=skip_browser"]
+        primary_result["errors"] = errors
+        logger.info(
+            "collect_v2 probe url=%s method=%s status=%s blocked=%s",
+            normalized,
+            method_used,
+            status_code,
+            blocked,
+        )
+        return primary_result
+
     weak_reason = _weak_content_reason(
         normalized,
         status_code if isinstance(status_code, int) else None,
@@ -461,7 +488,7 @@ def shopify_probe(
 
     for path in probe_paths:
         probe_url = urljoin(base.rstrip("/") + "/", path.lstrip("/"))
-        result = collect_page_sources(probe_url, timeout_s=12)
+        result = collect_page_sources(probe_url, timeout_s=12, probe_only=True)
         status_raw = result.get("status_code")
         status = status_raw if isinstance(status_raw, int) else 0
         if path == "/products.json":

@@ -1,18 +1,18 @@
 from langgraph.graph import END, StateGraph
 
-from app.agents.relevancy.nodes import (
-    catalog_intelligence_node,
-    business_model_intelligence_node,
-    collect_page_sources_node,
-    detect_platform_node,
-    end_irrelevant_node,
-    extract_clean_text_and_sections_node,
-    extract_structured_signals_node,
-    finalize_manual_review_node,
-    llm_relevance_judge_node,
-    shopify_probe_node,
-    preclassify_target_node,
-)
+# Import the module object, not the individual callables.
+#
+# LangGraph's workflow.compile() captures the function *object* passed to
+# add_node().  If we pass `preclassify_target_node` directly, test-time
+# unittest.mock.patch("...nodes.preclassify_target_node", ...) replaces the
+# *module attribute* but cannot reach the already-captured reference.
+#
+# Wrapping each call inside a lambda that performs an attribute lookup on the
+# *module object* at invocation time means the lambda will always find whatever
+# is currently bound to that name — including a mock installed by patch().
+# The wrapper adds one function-call frame per node; behaviour is identical.
+import app.agents.relevancy.nodes as _nodes
+
 from app.agents.relevancy.state import RelevancyAgentState
 
 
@@ -67,17 +67,17 @@ def _route_after_platform(state: RelevancyAgentState) -> str:
 
 workflow = StateGraph(RelevancyAgentState)
 
-workflow.add_node("preclassify_target", preclassify_target_node)
-workflow.add_node("collect_page_sources", collect_page_sources_node)
-workflow.add_node("extract_structured_signals", extract_structured_signals_node)
-workflow.add_node("extract_clean_text_and_sections", extract_clean_text_and_sections_node)
-workflow.add_node("detect_platform", detect_platform_node)
-workflow.add_node("shopify_probe", shopify_probe_node)
-workflow.add_node("catalog_intelligence", catalog_intelligence_node)
-workflow.add_node("business_model_intelligence", business_model_intelligence_node)
-workflow.add_node("llm_relevance_judge", llm_relevance_judge_node)
-workflow.add_node("end_irrelevant", end_irrelevant_node)
-workflow.add_node("finalize_manual_review", finalize_manual_review_node)
+workflow.add_node("preclassify_target",            lambda s: _nodes.preclassify_target_node(s))
+workflow.add_node("collect_page_sources",          lambda s: _nodes.collect_page_sources_node(s))
+workflow.add_node("extract_structured_signals",    lambda s: _nodes.extract_structured_signals_node(s))
+workflow.add_node("extract_clean_text_and_sections", lambda s: _nodes.extract_clean_text_and_sections_node(s))
+workflow.add_node("detect_platform",               lambda s: _nodes.detect_platform_node(s))
+workflow.add_node("shopify_probe",                 lambda s: _nodes.shopify_probe_node(s))
+workflow.add_node("catalog_intelligence",          lambda s: _nodes.catalog_intelligence_node(s))
+workflow.add_node("business_model_intelligence",   lambda s: _nodes.business_model_intelligence_node(s))
+workflow.add_node("llm_relevance_judge",           lambda s: _nodes.llm_relevance_judge_node(s))
+workflow.add_node("end_irrelevant",                lambda s: _nodes.end_irrelevant_node(s))
+workflow.add_node("finalize_manual_review",        lambda s: _nodes.finalize_manual_review_node(s))
 
 workflow.set_entry_point("preclassify_target")
 
