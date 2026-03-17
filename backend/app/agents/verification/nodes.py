@@ -161,6 +161,67 @@ def _is_on_domain_email(email: str, website: str) -> bool:
         return False
 
 
+def _site_domain(url: str) -> str:
+    """Return normalized site host (without www) from URL string, or empty."""
+    try:
+        parsed = urlparse(url or "")
+        host = (parsed.netloc or "").lower().split(":")[0].strip()
+        if host.startswith("www."):
+            host = host[4:]
+        return host
+    except Exception:
+        return ""
+
+
+def _email_domain(email: str) -> str:
+    """Return normalized email domain (without www), or empty."""
+    try:
+        domain = (email.split("@", 1)[1] or "").strip().lower()
+        if domain.startswith("www."):
+            domain = domain[4:]
+        return domain
+    except Exception:
+        return ""
+
+
+def _compute_email_safety(
+    primary_email: Optional[str],
+    final_url: str,
+    website: str,
+) -> tuple[Optional[bool], Optional[bool], bool]:
+    """
+    Deterministically derive machine-readable email safety semantics.
+
+    Returns:
+      email_on_domain      bool|None
+      free_provider_email  bool|None
+      outreach_safe_email  bool
+    """
+    if not primary_email or "@" not in primary_email:
+        return None, None, False
+
+    free_provider_email = _is_free_email_provider(primary_email)
+    site_host = _site_domain(final_url or website)
+    mail_host = _email_domain(primary_email)
+
+    if not site_host:
+        email_on_domain = None
+    else:
+        email_on_domain = bool(
+            mail_host
+            and (
+                mail_host == site_host
+                or site_host.endswith("." + mail_host)
+            )
+        )
+
+    outreach_safe_email = bool(
+        free_provider_email is False
+        and email_on_domain is True
+    )
+    return email_on_domain, free_provider_email, outreach_safe_email
+
+
 # ---------------------------------------------------------------------------
 # Node 1 — input_preparation
 # ---------------------------------------------------------------------------
@@ -662,6 +723,9 @@ def email_context_compiler(state: VerificationAgentState) -> dict:
             "risk_flags":            state.get("risk_flags") or [],
             "custom_prompt":         state.get("custom_prompt"),
             "email_confidence":          state.get("email_confidence"),
+            "email_on_domain":           state.get("email_on_domain"),
+            "free_provider_email":       state.get("free_provider_email"),
+            "outreach_safe_email":       bool(state.get("outreach_safe_email", False)),
             "website_alive":             state.get("website_alive"),
             "domain_match_confidence":   state.get("domain_match_confidence"),
             "verification_reason":       state.get("verification_reason"),
@@ -779,6 +843,11 @@ def final_contract_builder(state: VerificationAgentState) -> dict:
         website = state.get("website") or ""
         final_url = state.get("final_url") or ""
         risk_flags = list(state.get("risk_flags") or [])
+        email_on_domain, free_provider_email, outreach_safe_email = _compute_email_safety(
+            primary_email=primary_email,
+            final_url=final_url,
+            website=website,
+        )
 
         if system_failure:
             if "system_failure" not in risk_flags:
@@ -858,6 +927,9 @@ def final_contract_builder(state: VerificationAgentState) -> dict:
                 "verification_reason": "Internal error: score computation produced None",
                 "manual_review": True,
                 "contactability_score": contactability_score,
+                "email_on_domain": email_on_domain,
+                "free_provider_email": free_provider_email,
+                "outreach_safe_email": outreach_safe_email,
                 "risk_flags": ["system_failure", "system_failure:final_contract_builder"],
                 "system_failure": True,
                 "system_failure_stage": "final_contract_builder",
@@ -886,7 +958,7 @@ def final_contract_builder(state: VerificationAgentState) -> dict:
         elif (
             legitimacy_score >= 70
             and primary_email
-            and _is_on_domain_email(primary_email, final_url)
+            and outreach_safe_email
             and domain_match_confidence >= 0.6
         ):
             # Verified requires an on-domain email (excludes free providers implicitly)
@@ -936,6 +1008,9 @@ def final_contract_builder(state: VerificationAgentState) -> dict:
             "verification_confidence": verification_confidence,
             "verification_reason": verification_reason,
             "manual_review": manual_review,
+            "email_on_domain": email_on_domain,
+            "free_provider_email": free_provider_email,
+            "outreach_safe_email": outreach_safe_email,
             "risk_flags": risk_flags,
             "system_failure": system_failure,
             "system_failure_stage": system_failure_stage,
@@ -952,6 +1027,9 @@ def final_contract_builder(state: VerificationAgentState) -> dict:
             "verification_reason": f"Internal error: {exc}",
             "manual_review": True,
             "contactability_score": 0,
+            "email_on_domain": None,
+            "free_provider_email": None,
+            "outreach_safe_email": False,
             "risk_flags": ["system_failure", "system_failure:final_contract_builder"],
             "system_failure": True,
             "system_failure_stage": "final_contract_builder",

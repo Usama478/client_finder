@@ -158,6 +158,7 @@ def run_business_intelligence(
                 temperature=_TEMPERATURE,
                 max_tokens=_MAX_TOKENS,
                 model_kwargs={"response_format": {"type": "json_object"}},
+                request_timeout=30,
             )
 
             response = llm.invoke(

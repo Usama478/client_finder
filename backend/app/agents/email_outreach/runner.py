@@ -12,6 +12,12 @@ def _derive_verification_safety_flags(lead: SearchResult) -> dict:
     if not isinstance(artifacts, dict):
         artifacts = {}
     accessibility = artifacts.get("accessibility") or {}
+    contact = artifacts.get("contact") or {}
+    if not isinstance(contact, dict):
+        contact = {}
+    email_safety = contact.get("email_safety") or {}
+    if not isinstance(email_safety, dict):
+        email_safety = {}
     system_info = artifacts.get("system") or {}
     risk_flags = set(lead.risk_flags or [])
 
@@ -31,6 +37,15 @@ def _derive_verification_safety_flags(lead: SearchResult) -> dict:
         or system_failure
         or accessibility.get("status_code") in _BLOCKED_STATUS_CODES
     )
+    email_on_domain_raw = email_safety.get("email_on_domain")
+    free_provider_email_raw = email_safety.get("free_provider_email")
+    email_on_domain = email_on_domain_raw if isinstance(email_on_domain_raw, bool) else None
+    free_provider_email = (
+        free_provider_email_raw
+        if isinstance(free_provider_email_raw, bool)
+        else None
+    )
+    outreach_safe_email = bool(email_safety.get("outreach_safe_email") is True)
     return {
         "system_failure": system_failure,
         "system_error": system_error,
@@ -38,6 +53,9 @@ def _derive_verification_safety_flags(lead: SearchResult) -> dict:
         "accessibility_status": accessibility_status,
         "collection_blocked": collection_blocked,
         "blocked_or_ambiguous": blocked_or_ambiguous,
+        "email_on_domain": email_on_domain,
+        "free_provider_email": free_provider_email,
+        "outreach_safe_email": outreach_safe_email,
     }
 
 
@@ -101,6 +119,9 @@ def run_outreach_agent(db: Session, business_id: int, min_verification_score: in
         "system_risk": safety["system_risk"],
         "email_confidence": lead.email_score,
         "email_type": lead.email_type,
+        "email_on_domain": safety["email_on_domain"],
+        "free_provider_email": safety["free_provider_email"],
+        "outreach_safe_email": safety["outreach_safe_email"],
         "domain_match_confidence": lead.domain_match_confidence,
         "risk_flags": list(lead.risk_flags or []),
         "system_failure": safety["system_failure"],

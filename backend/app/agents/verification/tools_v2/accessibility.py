@@ -7,6 +7,7 @@ No LLM.  All I/O is wrapped in try/except; functions never raise.
 """
 
 import logging
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import datetime, timezone
 from typing import Optional
 from urllib.parse import urlparse
@@ -272,7 +273,14 @@ def get_domain_age(url: str) -> Optional[int]:
         if not domain:
             return None
 
-        result = whois.whois(domain)
+        _pool = ThreadPoolExecutor(max_workers=1)
+        try:
+            result = _pool.submit(whois.whois, domain).result(timeout=12)
+        except FuturesTimeoutError:
+            logger.debug("get_domain_age WHOIS_TIMEOUT domain=%s (12s exceeded)", domain)
+            return None
+        finally:
+            _pool.shutdown(wait=False)
         if result is None:
             return None
 

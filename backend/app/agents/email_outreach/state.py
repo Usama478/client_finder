@@ -19,6 +19,9 @@ class EmailOutreachState(TypedDict):
     system_risk: bool
     email_confidence: Optional[int]
     email_type: Optional[str]
+    email_on_domain: Optional[bool]
+    free_provider_email: Optional[bool]
+    outreach_safe_email: bool
     domain_match_confidence: Optional[float]
     risk_flags: List[str]
     system_failure: bool

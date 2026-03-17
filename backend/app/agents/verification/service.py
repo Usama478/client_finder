@@ -1,10 +1,14 @@
-rom __future__ import annotations
+from __future__ import annotations
 
-import concurrent.futures
 import logging
+import multiprocessing
+import queue as _queue_module
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 from urllib.parse import urlparse
+
+from pydantic import ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +17,7 @@ logger = logging.getLogger(__name__)
 # hanging indefinitely (e.g. a stalled LLM call or a stuck Playwright session).
 GRAPH_EXEC_TIMEOUT_S = 300  # 5 minutes
 
+from app.agents.verification.contracts import VerificationFinalContract
 from app.agents.verification.graph import verification_graph
 from app.agents.verification.state import VerificationAgentState
 from app.db.session import SessionLocal
@@ -144,6 +149,9 @@ def _build_initial_state(business_id: int) -> VerificationAgentState:
             "primary_email": None,
             "email_type": None,
             "email_confidence": None,
+            "email_on_domain": None,
+            "free_provider_email": None,
+            "outreach_safe_email": False,
             "all_phones": [],
             "whatsapp_number": None,
             "linkedin_company_url": None,
@@ -198,9 +206,71 @@ def _persist_verification_to_db(
     """
     Writes all verification output fields from final_state into the SearchResult row.
 
+    Validates final_state against VerificationFinalContract before opening a DB
+    session.  On ValidationError the row is marked "failed" and the error is
+    re-raised so the caller's persistence crash net can handle it cleanly.
+
     Fields without a dedicated column are serialised into the verification_artifacts
     JSONB blob so that downstream agents and analysts can still inspect them.
     """
+    try:
+        VerificationFinalContract(
+            verification_result=final_state.get("verification_result"),
+            verification_score=final_state.get("verification_score") or 0,
+            verification_confidence=final_state.get("verification_confidence") or 0.0,
+            verification_reason=final_state.get("verification_reason"),
+            manual_review=bool(final_state.get("manual_review", False)),
+            contactability_score=final_state.get("contactability_score") or 0,
+            company_name_confirmed=final_state.get("company_name_confirmed"),
+            domain_matches_business=final_state.get("domain_matches_business"),
+            domain_match_confidence=final_state.get("domain_match_confidence"),
+            country_confirmed=final_state.get("country_confirmed"),
+            address_verified=final_state.get("address_verified"),
+            primary_email=final_state.get("primary_email"),
+            all_emails=list(final_state.get("all_emails") or []),
+            email_type=final_state.get("email_type"),
+            email_confidence=final_state.get("email_confidence"),
+            email_on_domain=final_state.get("email_on_domain"),
+            free_provider_email=final_state.get("free_provider_email"),
+            outreach_safe_email=bool(final_state.get("outreach_safe_email", False)),
+            all_phones=list(final_state.get("all_phones") or []),
+            whatsapp_number=final_state.get("whatsapp_number"),
+            linkedin_company_url=final_state.get("linkedin_company_url"),
+            social_links=dict(final_state.get("social_links") or {}),
+            contact_form_present=final_state.get("contact_form_present"),
+            contact_page_url=final_state.get("contact_page_url"),
+            wholesale_page_found=final_state.get("wholesale_page_found"),
+            wholesale_page_url=final_state.get("wholesale_page_url"),
+            employee_range=final_state.get("employee_range"),
+            revenue_band=final_state.get("revenue_band"),
+            legitimacy_score=final_state.get("legitimacy_score"),
+            has_about_page=final_state.get("has_about_page"),
+            has_contact_page=final_state.get("has_contact_page"),
+            has_policy_pages=final_state.get("has_policy_pages"),
+            domain_age_years=final_state.get("domain_age_years"),
+            ssl_valid=final_state.get("ssl_valid"),
+            website_alive=final_state.get("website_alive"),
+            accessibility_status=final_state.get("accessibility_status"),
+            collection_blocked=final_state.get("collection_blocked"),
+            risk_flags=list(final_state.get("risk_flags") or []),
+            system_failure=bool(final_state.get("system_failure", False)),
+            system_failure_stage=final_state.get("system_failure_stage"),
+            system_failure_reason=final_state.get("system_failure_reason"),
+            email_context=final_state.get("email_context"),
+        )
+    except ValidationError as validation_exc:
+        logger.error(
+            "persist_verification CONTRACT_VIOLATION business_id=%s error=%s",
+            business_id,
+            validation_exc,
+            exc_info=True,
+        )
+        _try_mark_verification_failed(
+            business_id,
+            f"[CONTRACT_VIOLATION] Final state failed contract validation: {validation_exc}",
+        )
+        raise
+
     db = SessionLocal()
     try:
         lead = (
@@ -280,6 +350,11 @@ def _persist_verification_to_db(
                 "primary_email": final_state.get("primary_email"),
                 "email_type": final_state.get("email_type"),
                 "email_confidence": final_state.get("email_confidence"),
+                "email_safety": {
+                    "email_on_domain": final_state.get("email_on_domain"),
+                    "free_provider_email": final_state.get("free_provider_email"),
+                    "outreach_safe_email": bool(final_state.get("outreach_safe_email", False)),
+                },
                 "all_phones": final_state.get("all_phones") or [],
                 "whatsapp": final_state.get("whatsapp_number"),
                 "linkedin": final_state.get("linkedin_company_url"),
@@ -342,6 +417,50 @@ def _persist_verification_to_db(
         raise
     finally:
         db.close()
+
+
+def _run_graph_subprocess(
+    initial_state: dict,
+    result_queue: "multiprocessing.Queue[tuple]",
+) -> None:
+    """
+    Subprocess worker: invokes the verification graph and puts a
+    ``("ok", final_state)`` or ``("error", exc)`` tuple into *result_queue*.
+
+    Running the graph in a dedicated subprocess means that
+    ``Process.terminate()`` (SIGTERM) physically kills every blocking I/O
+    operation — Playwright sessions, WHOIS sockets, LLM HTTP connections —
+    when the outer timeout fires.  ``ThreadPoolExecutor`` + ``Future.cancel()``
+    cannot do this because ``cancel()`` is a no-op once the thread has started.
+
+    Note: all DB sessions in the parent must be closed *before* the process is
+    started so that the fork'd child does not inherit live connection file
+    descriptors.  The lock and initial-state queries both close their sessions
+    in ``finally`` blocks before this function is called.
+    """
+    try:
+        # Import inside the worker so the module is re-initialised cleanly in
+        # the child process (important for non-fork start methods).
+        from app.agents.verification.graph import verification_graph  # noqa: PLC0415
+
+        final_state = verification_graph.invoke(initial_state)
+        for _heavy_key in (
+            "homepage_html",
+            "contact_page_html",
+            "about_page_html",
+            "full_site_text",
+            "scraped_text_content",
+            "relevancy_artifacts",
+        ):
+            final_state[_heavy_key] = None
+        result_queue.put(("ok", final_state))
+    except Exception as exc:  # noqa: BLE001
+        try:
+            result_queue.put(("error", exc))
+        except Exception:
+            # Some exceptions are not picklable; wrap them so the queue put
+            # never itself raises.
+            result_queue.put(("error", RuntimeError(f"{type(exc).__name__}: {exc}")))
 
 
 def run_verification_for_business(business_id: int) -> Dict[str, object]:
@@ -450,15 +569,41 @@ def run_verification_for_business(business_id: int) -> Dict[str, object]:
     initial_state = _build_initial_state(business_id)
 
     try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _executor:
-            _future = _executor.submit(verification_graph.invoke, initial_state)
-            try:
-                final_state = _future.result(timeout=GRAPH_EXEC_TIMEOUT_S)
-            except concurrent.futures.TimeoutError:
-                _future.cancel()
-                raise TimeoutError(
-                    f"Graph execution exceeded {GRAPH_EXEC_TIMEOUT_S}s hard limit"
-                )
+        _result_queue: multiprocessing.Queue = multiprocessing.Queue()
+        _process = multiprocessing.Process(
+            target=_run_graph_subprocess,
+            args=(initial_state, _result_queue),
+            daemon=True,
+        )
+        _process.start()
+        _process.join(timeout=GRAPH_EXEC_TIMEOUT_S)
+
+        if _process.is_alive():
+            # Hard timeout: SIGTERM terminates the subprocess and all blocking
+            # I/O it owns (Playwright, WHOIS, LLM sockets).  Unlike
+            # Future.cancel(), this actually stops the work.
+            _process.terminate()
+            _process.join(timeout=5)
+            if _process.is_alive():
+                # SIGTERM was ignored (e.g. a C-extension signal mask); escalate.
+                _process.kill()
+                _process.join(timeout=2)
+            raise TimeoutError(
+                f"Graph execution exceeded {GRAPH_EXEC_TIMEOUT_S}s hard limit"
+            )
+
+        # Subprocess exited normally — retrieve the result.
+        try:
+            _status, _payload = _result_queue.get(timeout=5)
+        except _queue_module.Empty:
+            raise RuntimeError(
+                f"Graph subprocess exited (code={_process.exitcode}) without returning a result"
+            )
+
+        if _status == "error":
+            raise _payload  # re-raise the original graph exception
+
+        final_state = _payload
     except Exception as graph_exc:
         logger.error(
             "run_verification GRAPH_CRASH business_id=%s error=%s",
@@ -568,3 +713,83 @@ def run_verification_batch(business_ids: List[int]) -> List[Dict[str, object]]:
             time.sleep(_BATCH_CHUNK_SLEEP_S)
 
     return results
+
+
+def reset_stale_processing_leads(max_age_minutes: int = 15) -> int:
+    """
+    Rescue leads permanently stuck in ``verification_status="processing"``.
+
+    A row can be orphaned in ``"processing"`` when both retry attempts of
+    ``_try_mark_verification_failed`` fail (e.g. a DB blip during a graph
+    crash).  The processing-lock check in ``run_verification_for_business``
+    skips such rows on every subsequent call, leaving them unresolvable.
+
+    This function queries for rows whose ``verification_status`` is still
+    ``"processing"`` AND whose ``created_at`` timestamp is older than
+    ``max_age_minutes`` minutes, then stamps them as ``"failed"`` so they
+    are visible and re-queueable.
+
+    It is intentionally idempotent and safe to call repeatedly (e.g. from
+    a cron job, an APScheduler beat task, or a management HTTP endpoint).
+
+    Args:
+        max_age_minutes: Minimum age in minutes before a "processing" row is
+            considered stale and eligible for reset.  Defaults to 15.
+
+    Returns:
+        The number of rows that were reset.
+
+    Raises:
+        Exception: Any DB-level exception is logged and re-raised so the
+            caller (scheduler or management endpoint) can record the failure
+            and retry later.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=max_age_minutes)
+    reason = f"[STUCK] processing lock expired after {max_age_minutes}m"
+
+    db = SessionLocal()
+    try:
+        stale_leads = (
+            db.query(SearchResult)
+            .filter(
+                SearchResult.verification_status == "processing",
+                SearchResult.created_at < cutoff,
+            )
+            .all()
+        )
+
+        count = len(stale_leads)
+        if count == 0:
+            logger.info("reset_stale_processing_leads: no stale rows found (cutoff=%s)", cutoff)
+            return 0
+
+        for lead in stale_leads:
+            lead.verification_status = "failed"
+            lead.verification_reason = reason
+
+        db.commit()
+        logger.warning(
+            "reset_stale_processing_leads: reset %d stale row(s) older than %dm (cutoff=%s)",
+            count,
+            max_age_minutes,
+            cutoff,
+        )
+        return count
+
+    except Exception as exc:
+        logger.error(
+            "reset_stale_processing_leads FAILED max_age_minutes=%s error=%s",
+            max_age_minutes,
+            exc,
+            exc_info=True,
+        )
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        raise
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass

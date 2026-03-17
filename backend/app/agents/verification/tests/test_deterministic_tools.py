@@ -18,6 +18,9 @@ from app.agents.verification.tools_v2.contact_extract import extract_contacts
 from app.agents.verification.tools_v2.identity import resolve_identity
 from app.agents.verification.tools_v2.legitimacy import compute_legitimacy
 from app.agents.verification.tools_v2.size_estimate import estimate_size
+from app.agents.verification.nodes import _compute_email_safety
+from app.agents.email_outreach.tools.pre_checks import verify_verification_eligibility
+from app.agents.verification.nodes import _compute_email_safety
 
 
 # ---------------------------------------------------------------------------
@@ -136,8 +139,8 @@ def test_identity_country_detected():
         text=IDENTITY_HTML,
         address="Brisbane, Australia",
     )
-    assert result["country_confirmed"] == "Australia", (
-        f"Expected country_confirmed='Australia', got: {result['country_confirmed']}"
+    assert result["country_confirmed"] == "AU", (
+        f"Expected country_confirmed='AU', got: {result['country_confirmed']}"
     )
 
 
@@ -237,3 +240,172 @@ def test_size_estimate_unknown():
     result = estimate_size("Welcome to our store.", platform="")
     assert result["employee_range"] == "unknown"
     assert result["revenue_band"] == "unknown"
+
+
+# ---------------------------------------------------------------------------
+# _compute_email_safety — subdomain matching
+# ---------------------------------------------------------------------------
+
+def test_outreach_safe_email_subdomain_match():
+    """
+    An email on the apex domain (brand.com) must be considered on-domain
+    when the site's final_url resolves to a subdomain (shop.brand.com).
+
+    The check site_host.endswith("." + mail_host) must fire:
+      "shop.brand.com".endswith(".brand.com") → True
+
+    This ensures info@brand.com is treated as safe for a lead whose storefront
+    lives at shop.brand.com, preventing false outreach blocks on subdomain setups.
+    """
+    email_on_domain, free_provider_email, outreach_safe_email = _compute_email_safety(
+        "info@brand.com",
+        "https://shop.brand.com",   # final_url — subdomain of email domain
+        "https://brand.com",        # original website
+    )
+
+    assert email_on_domain is True, (
+        f"Expected email_on_domain=True for apex-domain email vs subdomain site, "
+        f"got {email_on_domain!r}"
+    )
+    assert free_provider_email is False, (
+        f"Expected free_provider_email=False for an on-domain address, "
+        f"got {free_provider_email!r}"
+    )
+    assert outreach_safe_email is True, (
+        f"Expected outreach_safe_email=True (non-free + on-domain), "
+        f"got {outreach_safe_email!r}"
+    )
+
+
+def test_outreach_safe_email_free_provider_rejected():
+    """
+    A gmail.com address must produce outreach_safe_email=False regardless of
+    the site domain, because free/consumer providers indicate a personal inbox
+    rather than a business contact.
+    """
+    email_on_domain, free_provider_email, outreach_safe_email = _compute_email_safety(
+        "contact@gmail.com",
+        "https://brand.com",
+        "https://brand.com",
+    )
+
+    assert free_provider_email is True, (
+        f"Expected free_provider_email=True for gmail.com, got {free_provider_email!r}"
+    )
+    assert outreach_safe_email is False, (
+        f"Expected outreach_safe_email=False for a free provider, got {outreach_safe_email!r}"
+    )
+
+
+def test_outreach_safe_email_no_email_returns_false():
+    """
+    When primary_email is None, all three outputs must be None/False
+    because there is no email to evaluate.
+    """
+    email_on_domain, free_provider_email, outreach_safe_email = _compute_email_safety(
+        None,
+        "https://brand.com",
+        "https://brand.com",
+    )
+
+    assert email_on_domain is None
+    assert free_provider_email is None
+    assert outreach_safe_email is False
+
+
+# ---------------------------------------------------------------------------
+# Email gate — verify_verification_eligibility (pre_checks)
+# ---------------------------------------------------------------------------
+
+def _base_outreach_state(**overrides):
+    """Return a minimal *passing* EmailOutreachState dict for gate tests."""
+    state = {
+        "verification_status": "completed",
+        "verification_result": "partial",
+        "manual_review": False,
+        "accessibility_status": "",
+        "collection_blocked": False,
+        "system_error": False,
+        "system_risk": False,
+        "system_failure": False,
+        "blocked_or_ambiguous": False,
+        "contact_email": "info@brand.com",
+        "email_type": "info",
+        "outreach_safe_email": True,
+        "email_on_domain": True,
+        "free_provider_email": False,
+        "email_confidence": 50,
+        "domain_match_confidence": 0.7,
+        "risk_flags": [],
+    }
+    state.update(overrides)
+    return state
+
+
+def test_free_provider_email_blocked_by_gate():
+    """
+    When outreach_safe_email=False because the email belongs to a free provider
+    (gmail, hotmail, etc.), the Email gate must skip outreach with code
+    'unsafe_email_semantics' before reaching any other check.
+    """
+    state = _base_outreach_state(
+        contact_email="user@gmail.com",
+        outreach_safe_email=False,
+        free_provider_email=True,
+        email_on_domain=False,
+    )
+    gate = verify_verification_eligibility(state)
+
+    assert gate.get("outreach_status") == "skipped", (
+        "Free-provider email must be blocked by the Email gate"
+    )
+    assert gate.get("eligibility_block_code") == "unsafe_email_semantics", (
+        f"Expected block code 'unsafe_email_semantics', got {gate.get('eligibility_block_code')!r}"
+    )
+
+
+def test_outreach_safe_email_subdomain_match():
+    """
+    info@brand.com must be considered on-domain when the resolved site URL is a
+    subdomain of brand.com (e.g. https://shop.brand.com).  outreach_safe_email
+    must be True for this case.
+    """
+    email_on_domain, free_provider_email, outreach_safe_email = _compute_email_safety(
+        primary_email="info@brand.com",
+        final_url="https://shop.brand.com",
+        website="https://brand.com",
+    )
+
+    assert email_on_domain is True, (
+        "info@brand.com must be on-domain when the site is shop.brand.com (subdomain)"
+    )
+    assert free_provider_email is False, (
+        "brand.com is not a free email provider"
+    )
+    assert outreach_safe_email is True, (
+        "outreach_safe_email must be True for an on-domain non-free-provider email"
+    )
+
+
+def test_generic_email_confidence_blocked_by_gate():
+    """
+    An email classified as 'generic' carries confidence=30, which is below the
+    _MIN_EMAIL_CONFIDENCE floor of 50.  The Email gate must block it with code
+    'low_email_confidence' even when outreach_safe_email=True.
+    """
+    state = _base_outreach_state(
+        contact_email="admin@brand.com",
+        email_type="generic",
+        email_confidence=30,
+        outreach_safe_email=True,
+        email_on_domain=True,
+        free_provider_email=False,
+    )
+    gate = verify_verification_eligibility(state)
+
+    assert gate.get("outreach_status") == "skipped", (
+        "Generic email (confidence=30) must be blocked by the confidence floor (50)"
+    )
+    assert gate.get("eligibility_block_code") == "low_email_confidence", (
+        f"Expected block code 'low_email_confidence', got {gate.get('eligibility_block_code')!r}"
+    )

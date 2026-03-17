@@ -20,44 +20,37 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column("search_results", sa.Column("verification_confidence", sa.Float(), nullable=True))
-    op.add_column("search_results", sa.Column("contactability_score", sa.Integer(), nullable=True))
-    op.add_column(
-        "search_results",
-        sa.Column("verification_artifacts", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    )
-    op.add_column("search_results", sa.Column("company_name_confirmed", sa.String(length=255), nullable=True))
-    op.add_column("search_results", sa.Column("domain_match_confidence", sa.Float(), nullable=True))
-    op.add_column("search_results", sa.Column("country_confirmed", sa.String(length=100), nullable=True))
-    op.add_column("search_results", sa.Column("email_type", sa.String(length=50), nullable=True))
-    op.add_column(
-        "search_results",
-        sa.Column("all_emails_found", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    )
-    op.add_column(
-        "search_results",
-        sa.Column("all_phones_found", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    )
-    op.add_column("search_results", sa.Column("whatsapp_number", sa.String(length=50), nullable=True))
-    op.add_column("search_results", sa.Column("linkedin_company_url", sa.String(length=500), nullable=True))
-    op.add_column(
-        "search_results",
-        sa.Column("social_links", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    )
-    op.add_column("search_results", sa.Column("contact_form_present", sa.Boolean(), nullable=True))
-    op.add_column("search_results", sa.Column("wholesale_page_found", sa.Boolean(), nullable=True))
-    op.add_column("search_results", sa.Column("wholesale_page_url", sa.String(length=500), nullable=True))
-    op.add_column("search_results", sa.Column("has_about_page", sa.Boolean(), nullable=True))
-    op.add_column("search_results", sa.Column("has_contact_page", sa.Boolean(), nullable=True))
-    op.add_column("search_results", sa.Column("has_policy_pages", sa.Boolean(), nullable=True))
-    op.add_column("search_results", sa.Column("legitimacy_score", sa.Integer(), nullable=True))
-    op.add_column("search_results", sa.Column("domain_age_years", sa.Integer(), nullable=True))
-    op.add_column("search_results", sa.Column("employee_range", sa.String(length=20), nullable=True))
-    op.add_column("search_results", sa.Column("revenue_band", sa.String(length=20), nullable=True))
-    op.add_column(
-        "search_results",
-        sa.Column("email_context", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    )
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    existing_columns = {col["name"] for col in inspector.get_columns("search_results")}
+
+    def add_if_missing(column: sa.Column) -> None:
+        if column.name not in existing_columns:
+            op.add_column("search_results", column)
+
+    add_if_missing(sa.Column("verification_confidence", sa.Float(), nullable=True))
+    add_if_missing(sa.Column("contactability_score", sa.Integer(), nullable=True))
+    add_if_missing(sa.Column("verification_artifacts", postgresql.JSONB(astext_type=sa.Text()), nullable=True))
+    add_if_missing(sa.Column("company_name_confirmed", sa.String(length=255), nullable=True))
+    add_if_missing(sa.Column("domain_match_confidence", sa.Float(), nullable=True))
+    add_if_missing(sa.Column("country_confirmed", sa.String(length=100), nullable=True))
+    add_if_missing(sa.Column("email_type", sa.String(length=50), nullable=True))
+    add_if_missing(sa.Column("all_emails_found", postgresql.JSONB(astext_type=sa.Text()), nullable=True))
+    add_if_missing(sa.Column("all_phones_found", postgresql.JSONB(astext_type=sa.Text()), nullable=True))
+    add_if_missing(sa.Column("whatsapp_number", sa.String(length=50), nullable=True))
+    add_if_missing(sa.Column("linkedin_company_url", sa.String(length=500), nullable=True))
+    add_if_missing(sa.Column("social_links", postgresql.JSONB(astext_type=sa.Text()), nullable=True))
+    add_if_missing(sa.Column("contact_form_present", sa.Boolean(), nullable=True))
+    add_if_missing(sa.Column("wholesale_page_found", sa.Boolean(), nullable=True))
+    add_if_missing(sa.Column("wholesale_page_url", sa.String(length=500), nullable=True))
+    add_if_missing(sa.Column("has_about_page", sa.Boolean(), nullable=True))
+    add_if_missing(sa.Column("has_contact_page", sa.Boolean(), nullable=True))
+    add_if_missing(sa.Column("has_policy_pages", sa.Boolean(), nullable=True))
+    add_if_missing(sa.Column("legitimacy_score", sa.Integer(), nullable=True))
+    add_if_missing(sa.Column("domain_age_years", sa.Integer(), nullable=True))
+    add_if_missing(sa.Column("employee_range", sa.String(length=20), nullable=True))
+    add_if_missing(sa.Column("revenue_band", sa.String(length=20), nullable=True))
+    add_if_missing(sa.Column("email_context", postgresql.JSONB(astext_type=sa.Text()), nullable=True))
 
 
 def downgrade() -> None:

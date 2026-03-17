@@ -6,7 +6,11 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.agents.verification.service import run_verification_batch, run_verification_for_business
+from app.agents.verification.service import (
+    reset_stale_processing_leads,
+    run_verification_batch,
+    run_verification_for_business,
+)
 from app.db.session import SessionLocal
 from app.models.search_result import SearchResult
 
@@ -72,6 +76,34 @@ def verify_batch(request: BatchVerifyRequest) -> Dict[str, Any]:
         "failed": total - succeeded - skipped,
         "results": results,
     }
+
+
+@router.post("/admin/reset-stale")
+def reset_stale(max_age_minutes: int = 15) -> Dict[str, Any]:
+    """
+    Reset leads permanently stuck in ``verification_status="processing"``.
+
+    Finds rows whose ``created_at`` is older than ``max_age_minutes`` minutes
+    and whose status is still ``"processing"``, then stamps them ``"failed"``
+    so they are visible and re-queueable.
+
+    Query parameter:
+    - ``max_age_minutes`` (int, default 15): minimum age before a row is
+      considered stale.
+
+    This endpoint is intended for use by operators, cron jobs, or an
+    APScheduler beat task.  It is idempotent and safe to call repeatedly.
+    """
+    try:
+        reset_count = reset_stale_processing_leads(max_age_minutes=max_age_minutes)
+        return {
+            "reset_count": reset_count,
+            "max_age_minutes": max_age_minutes,
+            "status": "ok",
+        }
+    except Exception as exc:
+        logger.error("reset_stale FAILED error=%s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Reset failed: {exc}")
 
 
 @router.get("/{business_id}/status")

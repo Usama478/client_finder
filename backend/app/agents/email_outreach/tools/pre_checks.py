@@ -1,6 +1,6 @@
 from app.agents.email_outreach.state import EmailOutreachState
 
-_MIN_EMAIL_CONFIDENCE = 30
+_MIN_EMAIL_CONFIDENCE = 50
 _MIN_DOMAIN_MATCH_CONFIDENCE = 0.4
 
 
@@ -61,6 +61,16 @@ def verify_verification_eligibility(state: EmailOutreachState) -> dict:
 
     if (state.get("email_type") or "").lower() == "form_only":
         return _skip("form_only_contact", "email_type=form_only is not directly emailable")
+
+    if state.get("outreach_safe_email") is not True:
+        return _skip(
+            "unsafe_email_semantics",
+            (
+                "outreach_safe_email is not true "
+                f"(email_on_domain={state.get('email_on_domain')}, "
+                f"free_provider_email={state.get('free_provider_email')})"
+            ),
+        )
 
     email_conf = state.get("email_confidence")
     if email_conf is not None:

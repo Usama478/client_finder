@@ -6,106 +6,177 @@ identity.py — deterministic business identity resolver.
 Pure logic only.  No HTTP, no Playwright, no LLM.
 """
 
+import json
 import re
 from difflib import SequenceMatcher
-from typing import List, Optional
+from typing import Any, List, Optional
 from urllib.parse import urlparse
 
 # ---------------------------------------------------------------------------
-# TLD → country mapping
+# Country name → ISO-3166-1 alpha-2 normalization
+# ---------------------------------------------------------------------------
+
+_COUNTRY_TO_ISO2: dict[str, str] = {
+    "germany":              "DE",
+    "france":               "FR",
+    "italy":                "IT",
+    "spain":                "ES",
+    "netherlands":          "NL",
+    "canada":               "CA",
+    "australia":            "AU",
+    "united kingdom":       "GB",
+    "ireland":              "IE",
+    "new zealand":          "NZ",
+    "south africa":         "ZA",
+    "india":                "IN",
+    "pakistan":             "PK",
+    "united arab emirates": "AE",
+    "singapore":            "SG",
+    "malaysia":             "MY",
+    "hong kong":            "HK",
+    "japan":                "JP",
+    "china":                "CN",
+    "brazil":               "BR",
+    "mexico":               "MX",
+    "portugal":             "PT",
+    "belgium":              "BE",
+    "switzerland":          "CH",
+    "austria":              "AT",
+    "sweden":               "SE",
+    "norway":               "NO",
+    "denmark":              "DK",
+    "finland":              "FI",
+    "poland":               "PL",
+    "czech republic":       "CZ",
+    "czechia":              "CZ",
+    "hungary":              "HU",
+    "romania":              "RO",
+    "turkey":               "TR",
+    "united states":        "US",
+    "usa":                  "US",
+}
+
+
+def _to_iso2(value: str) -> str:
+    """
+    Normalize a country string to ISO-3166-1 alpha-2.
+
+    If *value* is already a 2-character string it is returned uppercased
+    (assumed to be an ISO code already, e.g. from schema.org addressCountry).
+    Otherwise the full-name lookup in ``_COUNTRY_TO_ISO2`` is attempted.
+    If neither succeeds the original value is returned unchanged so callers
+    never lose information.
+    """
+    stripped = value.strip()
+    if len(stripped) == 2:
+        return stripped.upper()
+    return _COUNTRY_TO_ISO2.get(stripped.lower(), stripped)
+
+
+# ---------------------------------------------------------------------------
+# TLD → country mapping (ISO-3166-1 alpha-2)
 # ---------------------------------------------------------------------------
 
 _TLD_COUNTRY: dict[str, str] = {
-    ".de":     "Germany",
-    ".fr":     "France",
-    ".it":     "Italy",
-    ".es":     "Spain",
-    ".nl":     "Netherlands",
-    ".ca":     "Canada",
-    ".com.au": "Australia",
-    ".co.uk":  "United Kingdom",
-    ".uk":     "United Kingdom",
-    ".ie":     "Ireland",
-    ".nz":     "New Zealand",
-    ".co.nz":  "New Zealand",
-    ".za":     "South Africa",
-    ".co.za":  "South Africa",
-    ".in":     "India",
-    ".co.in":  "India",
-    ".pk":     "Pakistan",
-    ".ae":     "United Arab Emirates",
-    ".sg":     "Singapore",
-    ".com.sg": "Singapore",
-    ".my":     "Malaysia",
-    ".com.my": "Malaysia",
-    ".hk":     "Hong Kong",
-    ".com.hk": "Hong Kong",
-    ".jp":     "Japan",
-    ".co.jp":  "Japan",
-    ".cn":     "China",
-    ".br":     "Brazil",
-    ".com.br": "Brazil",
-    ".mx":     "Mexico",
-    ".com.mx": "Mexico",
-    ".pt":     "Portugal",
-    ".be":     "Belgium",
-    ".ch":     "Switzerland",
-    ".at":     "Austria",
-    ".se":     "Sweden",
-    ".no":     "Norway",
-    ".dk":     "Denmark",
-    ".fi":     "Finland",
-    ".pl":     "Poland",
-    ".cz":     "Czech Republic",
-    ".hu":     "Hungary",
-    ".ro":     "Romania",
-    ".tr":     "Turkey",
-    ".com.tr": "Turkey",
+    ".de":     "DE",
+    ".fr":     "FR",
+    ".it":     "IT",
+    ".es":     "ES",
+    ".nl":     "NL",
+    ".ca":     "CA",
+    ".com.au": "AU",
+    ".co.uk":  "GB",
+    ".uk":     "GB",
+    ".ie":     "IE",
+    ".nz":     "NZ",
+    ".co.nz":  "NZ",
+    ".za":     "ZA",
+    ".co.za":  "ZA",
+    ".in":     "IN",
+    ".co.in":  "IN",
+    ".pk":     "PK",
+    ".ae":     "AE",
+    ".sg":     "SG",
+    ".com.sg": "SG",
+    ".my":     "MY",
+    ".com.my": "MY",
+    ".hk":     "HK",
+    ".com.hk": "HK",
+    ".jp":     "JP",
+    ".co.jp":  "JP",
+    ".cn":     "CN",
+    ".br":     "BR",
+    ".com.br": "BR",
+    ".mx":     "MX",
+    ".com.mx": "MX",
+    ".pt":     "PT",
+    ".be":     "BE",
+    ".ch":     "CH",
+    ".at":     "AT",
+    ".se":     "SE",
+    ".no":     "NO",
+    ".dk":     "DK",
+    ".fi":     "FI",
+    ".pl":     "PL",
+    ".cz":     "CZ",
+    ".hu":     "HU",
+    ".ro":     "RO",
+    ".tr":     "TR",
+    ".com.tr": "TR",
 }
 
-# Full country name patterns for text scanning (order matters — more specific first)
+# Country name patterns for text scanning — values are ISO-3166-1 alpha-2.
+# Order matters: more specific multi-word names must come before shorter ones.
 _COUNTRY_TEXT_PATTERNS: list[tuple[re.Pattern, str]] = [
-    (re.compile(r'\bUnited Arab Emirates\b', re.IGNORECASE), "United Arab Emirates"),
-    (re.compile(r'\bUnited Kingdom\b',       re.IGNORECASE), "United Kingdom"),
-    (re.compile(r'\bNew Zealand\b',          re.IGNORECASE), "New Zealand"),
-    (re.compile(r'\bSouth Africa\b',         re.IGNORECASE), "South Africa"),
-    (re.compile(r'\bAustralia\b',            re.IGNORECASE), "Australia"),
-    (re.compile(r'\bCanada\b',               re.IGNORECASE), "Canada"),
-    (re.compile(r'\bGermany\b',              re.IGNORECASE), "Germany"),
-    (re.compile(r'\bFrance\b',               re.IGNORECASE), "France"),
-    (re.compile(r'\bItaly\b',                re.IGNORECASE), "Italy"),
-    (re.compile(r'\bSpain\b',                re.IGNORECASE), "Spain"),
-    (re.compile(r'\bNetherlands\b',          re.IGNORECASE), "Netherlands"),
-    (re.compile(r'\bIreland\b',              re.IGNORECASE), "Ireland"),
-    (re.compile(r'\bIndia\b',                re.IGNORECASE), "India"),
-    (re.compile(r'\bPakistan\b',             re.IGNORECASE), "Pakistan"),
-    (re.compile(r'\bSingapore\b',            re.IGNORECASE), "Singapore"),
-    (re.compile(r'\bMalaysia\b',             re.IGNORECASE), "Malaysia"),
-    (re.compile(r'\bHong Kong\b',            re.IGNORECASE), "Hong Kong"),
-    (re.compile(r'\bJapan\b',               re.IGNORECASE), "Japan"),
-    (re.compile(r'\bChina\b',               re.IGNORECASE), "China"),
-    (re.compile(r'\bBrazil\b',              re.IGNORECASE), "Brazil"),
-    (re.compile(r'\bMexico\b',              re.IGNORECASE), "Mexico"),
-    (re.compile(r'\bPortugal\b',            re.IGNORECASE), "Portugal"),
-    (re.compile(r'\bBelgium\b',             re.IGNORECASE), "Belgium"),
-    (re.compile(r'\bSwitzerland\b',         re.IGNORECASE), "Switzerland"),
-    (re.compile(r'\bAustria\b',             re.IGNORECASE), "Austria"),
-    (re.compile(r'\bSweden\b',              re.IGNORECASE), "Sweden"),
-    (re.compile(r'\bNorway\b',              re.IGNORECASE), "Norway"),
-    (re.compile(r'\bDenmark\b',             re.IGNORECASE), "Denmark"),
-    (re.compile(r'\bFinland\b',             re.IGNORECASE), "Finland"),
-    (re.compile(r'\bPoland\b',              re.IGNORECASE), "Poland"),
-    (re.compile(r'\bTurkey\b',              re.IGNORECASE), "Turkey"),
-    (re.compile(r'\bUSA\b|\bUnited States\b', re.IGNORECASE), "United States"),
+    (re.compile(r'\bUnited Arab Emirates\b', re.IGNORECASE), "AE"),
+    (re.compile(r'\bUnited Kingdom\b',       re.IGNORECASE), "GB"),
+    (re.compile(r'\bNew Zealand\b',          re.IGNORECASE), "NZ"),
+    (re.compile(r'\bSouth Africa\b',         re.IGNORECASE), "ZA"),
+    (re.compile(r'\bAustralia\b',            re.IGNORECASE), "AU"),
+    (re.compile(r'\bCanada\b',               re.IGNORECASE), "CA"),
+    (re.compile(r'\bGermany\b',              re.IGNORECASE), "DE"),
+    (re.compile(r'\bFrance\b',               re.IGNORECASE), "FR"),
+    (re.compile(r'\bItaly\b',                re.IGNORECASE), "IT"),
+    (re.compile(r'\bSpain\b',                re.IGNORECASE), "ES"),
+    (re.compile(r'\bNetherlands\b',          re.IGNORECASE), "NL"),
+    (re.compile(r'\bIreland\b',              re.IGNORECASE), "IE"),
+    (re.compile(r'\bIndia\b',                re.IGNORECASE), "IN"),
+    (re.compile(r'\bPakistan\b',             re.IGNORECASE), "PK"),
+    (re.compile(r'\bSingapore\b',            re.IGNORECASE), "SG"),
+    (re.compile(r'\bMalaysia\b',             re.IGNORECASE), "MY"),
+    (re.compile(r'\bHong Kong\b',            re.IGNORECASE), "HK"),
+    (re.compile(r'\bJapan\b',                re.IGNORECASE), "JP"),
+    (re.compile(r'\bChina\b',                re.IGNORECASE), "CN"),
+    (re.compile(r'\bBrazil\b',               re.IGNORECASE), "BR"),
+    (re.compile(r'\bMexico\b',               re.IGNORECASE), "MX"),
+    (re.compile(r'\bPortugal\b',             re.IGNORECASE), "PT"),
+    (re.compile(r'\bBelgium\b',              re.IGNORECASE), "BE"),
+    (re.compile(r'\bSwitzerland\b',          re.IGNORECASE), "CH"),
+    (re.compile(r'\bAustria\b',              re.IGNORECASE), "AT"),
+    (re.compile(r'\bSweden\b',               re.IGNORECASE), "SE"),
+    (re.compile(r'\bNorway\b',               re.IGNORECASE), "NO"),
+    (re.compile(r'\bDenmark\b',              re.IGNORECASE), "DK"),
+    (re.compile(r'\bFinland\b',              re.IGNORECASE), "FI"),
+    (re.compile(r'\bPoland\b',               re.IGNORECASE), "PL"),
+    (re.compile(r'\bTurkey\b',               re.IGNORECASE), "TR"),
+    (re.compile(r'\bUSA\b|\bUnited States\b', re.IGNORECASE), "US"),
 ]
 
 # schema.org address country
 _SCHEMA_COUNTRY_RE = re.compile(
     r'"addressCountry"\s*:\s*"([^"]{2,})"', re.IGNORECASE
 )
-_SCHEMA_ORG_NAME_RE = re.compile(
-    r'"@type"\s*:\s*"Organization"[^}]*?"name"\s*:\s*"([^"]+)"', re.IGNORECASE | re.DOTALL
+
+# Extracts every <script type="application/ld+json"> block from raw HTML so
+# we can parse it with json.loads instead of relying on a fragile regex.
+# Real-world schema.org blocks nest sub-objects (address, contactPoint, etc.)
+# before the "name" field, each containing "}" characters that a [^}] regex
+# class cannot cross.
+_JSONLD_SCRIPT_RE = re.compile(
+    r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+    re.IGNORECASE | re.DOTALL,
 )
+
 _TITLE_RE = re.compile(r'<title[^>]*>([^<]+)</title>', re.IGNORECASE)
 _H1_RE = re.compile(r'<h1[^>]*>([^<]+)</h1>', re.IGNORECASE)
 _COPYRIGHT_RE = re.compile(
@@ -116,6 +187,55 @@ _COPYRIGHT_RE = re.compile(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _find_org_name_in_jsonld(data: Any) -> Optional[str]:
+    """
+    Recursively walk a parsed JSON-LD structure and return the ``name`` of the
+    first node whose ``@type`` is ``"Organization"`` (case-insensitive).
+
+    Handles both plain dicts and lists (e.g. ``@graph`` arrays).
+    """
+    if isinstance(data, dict):
+        type_val = data.get("@type", "")
+        types = (
+            [type_val] if isinstance(type_val, str) else type_val
+            if isinstance(type_val, list) else []
+        )
+        if any(isinstance(t, str) and t.lower() == "organization" for t in types):
+            name = data.get("name")
+            if isinstance(name, str) and name.strip():
+                return name.strip()
+        for v in data.values():
+            result = _find_org_name_in_jsonld(v)
+            if result:
+                return result
+    elif isinstance(data, list):
+        for item in data:
+            result = _find_org_name_in_jsonld(item)
+            if result:
+                return result
+    return None
+
+
+def _extract_jsonld_org_name(html: str) -> Optional[str]:
+    """
+    Parse every ``<script type="application/ld+json">`` block in *html* and
+    return the Organization name from the first block that contains one.
+
+    Falls back to ``None`` if no valid block is found or none declares an
+    Organization with a non-empty name.
+    """
+    for m in _JSONLD_SCRIPT_RE.finditer(html):
+        raw = m.group(1).strip()
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        name = _find_org_name_in_jsonld(data)
+        if name:
+            return name
+    return None
+
 
 def _strip_tags(html: str) -> str:
     """Remove HTML tags and decode common entities."""
@@ -131,15 +251,16 @@ def _fuzzy_ratio(a: str, b: str) -> float:
 def _extract_company_name(text: str) -> Optional[str]:
     """
     Try to extract the company name from the page content in priority order:
-    1. schema.org Organization name
+    1. schema.org Organization name (parsed from JSON-LD <script> blocks)
     2. <title> tag
     3. <h1> tag
     4. copyright footer
     """
-    # 1. schema.org
-    m = _SCHEMA_ORG_NAME_RE.search(text)
-    if m:
-        return m.group(1).strip()
+    # 1. schema.org — parse JSON-LD properly so nested sub-objects (address,
+    #    contactPoint, etc.) do not break extraction.
+    name = _extract_jsonld_org_name(text)
+    if name:
+        return name
 
     # 2. <title>
     m = _TITLE_RE.search(text)
@@ -177,13 +298,13 @@ def _detect_country(text: str, website: str) -> Optional[str]:
     2. Country name in text
     3. Domain TLD
     """
-    # 1. schema.org
+    # 1. schema.org — addressCountry may be an ISO code ("US") or a full name
+    #    ("United States"). Normalise both paths to ISO-3166-1 alpha-2.
     m = _SCHEMA_COUNTRY_RE.search(text)
     if m:
         val = m.group(1).strip()
-        # ISO-3166-1 alpha-2 or full name — return as-is
         if val:
-            return val
+            return _to_iso2(val)
 
     # 2. Country names in text
     for pattern, country in _COUNTRY_TEXT_PATTERNS:
@@ -283,10 +404,10 @@ def resolve_identity(
     compare_name = company_name_confirmed or ""
     ratio = _fuzzy_ratio(business_name, compare_name) if compare_name else 0.0
 
-    if ratio > 0.8:
+    if ratio > 0.7:
         domain_matches_business = True
         domain_match_confidence = 0.9
-    elif ratio >= 0.5:
+    elif ratio >= 0.4:
         domain_matches_business = True
         domain_match_confidence = 0.6
     else:
