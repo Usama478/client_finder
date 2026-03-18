@@ -19,4 +19,10 @@ class SearchSession(Base):
     google_api_request_hash = Column(String, index=True)
     next_page_token = Column(String, nullable=True)
 
+    exporter_profile_id = Column(
+        Integer,
+        ForeignKey("exporter_profiles.id"),
+        nullable=True
+    )
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -1,0 +1,7 @@
+**/__pycache__/
+**/*.pyc
+**/.git/
+**/node_modules/
+**/migrations/versions/
+backend/app/agents/relevancy/tools_v2/
+backend/app/agents/verification/tools_v2/

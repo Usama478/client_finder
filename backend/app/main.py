@@ -7,6 +7,9 @@ from app.api import (
     context_routes,
     dashboard_routes,
     export_routes,
+    sendgrid_webhook_routes,
+    email_routes,
+    auth_routes,
 )
 
 app = FastAPI(title="Client Finder MVP")
@@ -31,6 +34,9 @@ app.include_router(verification_routes.router)
 app.include_router(context_routes.router)
 app.include_router(dashboard_routes.router)
 app.include_router(export_routes.router)
+app.include_router(sendgrid_webhook_routes.router)
+app.include_router(email_routes.router)
+app.include_router(auth_routes.router)
 
 
 @app.get("/")

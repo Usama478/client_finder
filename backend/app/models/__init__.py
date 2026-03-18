@@ -7,3 +7,5 @@ from app.models.search_result import SearchResult
 from app.models.agent_run import AgentRun
 from app.models.agent_output_log import AgentOutputLog
 from app.models.dashboard_client import DashboardClient
+from app.models.exporter_profile import ExporterProfile
+from app.models.email_draft import EmailDraft
