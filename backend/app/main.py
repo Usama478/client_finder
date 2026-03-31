@@ -10,6 +10,8 @@ from app.api import (
     sendgrid_webhook_routes,
     email_routes,
     auth_routes,
+    exporter_profile_routes,
+    contacts_routes,
 )
 
 app = FastAPI(title="Client Finder MVP")
@@ -37,6 +39,8 @@ app.include_router(export_routes.router)
 app.include_router(sendgrid_webhook_routes.router)
 app.include_router(email_routes.router)
 app.include_router(auth_routes.router)
+app.include_router(exporter_profile_routes.router)
+app.include_router(contacts_routes.router)
 
 
 @app.get("/")

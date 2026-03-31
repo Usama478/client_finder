@@ -1,6 +1,9 @@
+import { useEffect, useState } from "react"
 import { Link, useNavigate } from "react-router";
 import { Search, Target, ShieldCheck, Users, Mail, Activity, ArrowRight, Clock } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
+import { useAuth } from "../../../lib/auth-context"
+import { api } from "../../../lib/api"
 
 const S = {
   card: { background: "#0f1218", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10 } as React.CSSProperties,
@@ -29,14 +32,31 @@ const Badge = ({ children, color }: { children: React.ReactNode; color: "green" 
 
 export default function DashboardPage() {
   const navigate = useNavigate();
+  const { user } = useAuth()
+  const [stats, setStats] = useState<any>(null)
+  const [sessions, setSessions] = useState<any[]>([])
+  const [activityEvents, setActivityEvents] = useState<any[]>([])
+
+  useEffect(() => {
+    if (!user) return
+    Promise.all([
+      api.dashboardStats().catch(() => null),
+      api.sessions(user.user_id).catch(() => []),
+      api.activityLog(5).catch(() => []),
+    ]).then(([s, sess, acts]) => {
+      setStats(s)
+      setSessions(sess || [])
+      setActivityEvents(acts || [])
+    })
+  }, [user])
 
   const kpis = [
-    { label: "Total Searches", value: "142",  delta: "↑ 12 this week", icon: Search,      color: "#3b82f6" },
-    { label: "Leads Found",    value: "3.8k",  delta: "↑ 340 today",   icon: Activity,     color: "#8b5cf6" },
-    { label: "Relevant Leads", value: "1.2k",  delta: "↑ 89 this week",icon: Target,       color: "#10b981" },
-    { label: "Verified",       value: "847",   delta: "↑ 34 today",    icon: ShieldCheck,  color: "#f59e0b" },
-    { label: "Saved Clients",  value: "47",    delta: "↑ 6 this week", icon: Users,        color: "#10b981" },
-    { label: "Emails Sent",    value: "312",   delta: "28% open rate",  icon: Mail,         color: "#3b82f6" },
+    { label: "Total Searches", value: stats ? String(stats.total_searches || 0) : "—", delta: "", icon: Search, color: "#3b82f6" },
+    { label: "Saved Clients", value: stats ? String(stats.total_clients || 0) : "—", delta: "", icon: Users, color: "#10b981" },
+    { label: "Verified", value: stats ? String(stats.verified_clients || 0) : "—", delta: "", icon: ShieldCheck, color: "#f59e0b" },
+    { label: "Leads Found", value: "—", delta: "", icon: Activity, color: "#8b5cf6" },
+    { label: "Relevant Leads", value: "—", delta: "", icon: Target, color: "#10b981" },
+    { label: "Emails Sent", value: "—", delta: "", icon: Mail, color: "#3b82f6" },
   ];
 
   const pipeline = [
@@ -126,7 +146,13 @@ export default function DashboardPage() {
             <Link to="/app/search" className="text-[11px] text-blue-400 hover:text-blue-300">View all →</Link>
           </div>
           <div className="space-y-2">
-            {recentSearches.map((s, i) => (
+            {(sessions.length > 0 ? sessions : recentSearches).slice(0, 3).map((s: any, i: number) => ({
+              query: s.search_query || s.query || "Search",
+              context: s.context_name || s.context || "Default",
+              time: s.created_at ? new Date(s.created_at).toLocaleDateString() : s.time || "",
+              results: s.result_count || s.results || 0,
+              status: "done" as const
+            })).map((s, i) => (
               <div key={i} onClick={() => navigate("/app/search")}
                 className="flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors hover:bg-[#151a22]"
                 style={{ border: "1px solid rgba(255,255,255,0.04)" }}>
@@ -192,11 +218,16 @@ export default function DashboardPage() {
           <Link to="/app/activity" className="text-[11px] text-blue-400 hover:text-blue-300">View all →</Link>
         </div>
         <div className="space-y-0 divide-y" style={{ borderColor: "rgba(255,255,255,0.05)" }}>
-          {activity.map((a, i) => (
+          {(activityEvents.length > 0 ? activityEvents : activity).map((a: any, i: number) => (
             <div key={i} className="flex items-start gap-3 py-3">
-              <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ background: a.dot }}></div>
-              <div className="flex-1 text-[13px] text-[#8a95a8]">{a.text}</div>
-              <div className="text-[11px] text-[#5a6478] whitespace-nowrap">{a.time}</div>
+              <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
+                style={{ background: a.color || a.dot }}></div>
+              <div className="flex-1 text-[13px] text-[#8a95a8]">
+                {a.text || a.message || a.description}
+              </div>
+              <div className="text-[11px] text-[#5a6478] whitespace-nowrap">
+                {a.time ? new Date(a.time).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : ""}
+              </div>
             </div>
           ))}
         </div>

@@ -6,9 +6,11 @@ import { Label } from "../../components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Alert, AlertDescription } from "../../components/ui/alert";
 import { AlertCircle } from "lucide-react";
+import { useAuth } from "../../../lib/auth-context";
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -18,16 +20,13 @@ export default function LoginPage() {
     e.preventDefault();
     setError("");
     setLoading(true);
-
-    // Simulate login - in production, this would call an API
-    setTimeout(() => {
-      if (email && password) {
-        navigate("/app");
-      } else {
-        setError("Please enter both email and password");
-        setLoading(false);
-      }
-    }, 1000);
+    try {
+      await login(email, password);
+      navigate("/app");
+    } catch (err: any) {
+      setError(err.message || "Invalid email or password");
+      setLoading(false);
+    }
   };
 
   return (

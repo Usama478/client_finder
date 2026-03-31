@@ -11,12 +11,18 @@ import {
 } from "../components/ui/dropdown-menu";
 import { Badge } from "../components/ui/badge";
 import { useState } from "react";
+import { useAuth } from "../../lib/auth-context";
 
 export default function AppLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { user, logout } = useAuth();
+  const userInitials = user?.name
+    ? user.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)
+    : "?";
+  const userName = user?.name || "User";
 
   const isActive = (path: string) =>
     path === "/app" ? location.pathname === "/app" : location.pathname.startsWith(path);
@@ -34,7 +40,6 @@ export default function AppLayout() {
   const accountItems = [
     { icon: CreditCard, label: "Billing", path: "/app/billing" },
     { icon: Settings, label: "Settings", path: "/app/settings" },
-    { icon: Shield, label: "Admin", path: "/app/admin" },
   ];
 
   const pageTitles: Record<string, { title: string; sub: string }> = {
@@ -112,10 +117,10 @@ export default function AppLayout() {
         <div className="p-2 border-t" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
           <div className={`flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer hover:bg-[#151a22] transition-colors ${!sidebarOpen ? "justify-center" : ""}`}>
             <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
-              style={{ background: "linear-gradient(135deg, #7c3aed, #3b82f6)" }}>AK</div>
+              style={{ background: "linear-gradient(135deg, #7c3aed, #3b82f6)" }}>{userInitials}</div>
             {sidebarOpen && (
               <div className="flex-1 min-w-0">
-                <div className="text-xs font-semibold text-[#e8edf5] truncate">Ahmed K.</div>
+                <div className="text-xs font-semibold text-[#e8edf5] truncate">{userName}</div>
                 <div className="text-[10px] text-[#5a6478]">Pro Plan</div>
               </div>
             )}
@@ -175,12 +180,12 @@ export default function AppLayout() {
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="gap-2 h-8 px-2 hover:bg-[#151a22]">
                   <Avatar className="h-7 w-7">
-                    <AvatarFallback className="text-xs font-bold" style={{ background: "linear-gradient(135deg,#7c3aed,#3b82f6)", color: "white" }}>AK</AvatarFallback>
+                    <AvatarFallback className="text-xs font-bold" style={{ background: "linear-gradient(135deg,#7c3aed,#3b82f6)", color: "white" }}>{userInitials}</AvatarFallback>
                   </Avatar>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48" style={{ background: "#151a22", border: "1px solid rgba(255,255,255,0.1)" }}>
-                <DropdownMenuLabel className="text-[#e8edf5]">Ahmed K.</DropdownMenuLabel>
+                <DropdownMenuLabel className="text-[#e8edf5]">{userName}</DropdownMenuLabel>
                 <DropdownMenuSeparator style={{ background: "rgba(255,255,255,0.07)" }} />
                 <DropdownMenuItem onClick={() => navigate("/app/settings")} className="text-[#8a95a8] hover:text-[#e8edf5] cursor-pointer">
                   <Settings className="mr-2 h-4 w-4" /> Settings
@@ -189,7 +194,11 @@ export default function AppLayout() {
                   <CreditCard className="mr-2 h-4 w-4" /> Billing
                 </DropdownMenuItem>
                 <DropdownMenuSeparator style={{ background: "rgba(255,255,255,0.07)" }} />
-                <DropdownMenuItem onClick={() => navigate("/auth/login")} className="text-red-400 cursor-pointer">Sign Out</DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => logout()}
+                  className="text-red-400 cursor-pointer">
+                  Sign Out
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>

@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
 import { Mail, Send, RefreshCw, Eye, CheckCircle, XCircle, MousePointerClick, MessageSquare, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import { useAuth } from "../../../lib/auth-context";
+import { api } from "../../../lib/api";
 
 const card: React.CSSProperties = { background: "#0f1218", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10 };
 const btnPrimary: React.CSSProperties = { background: "#3b82f6", color: "white", border: "none", borderRadius: 6, padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "DM Sans, sans-serif", display: "flex", alignItems: "center", gap: 6 };
@@ -43,25 +45,64 @@ Client Finder Platform`;
 
 export default function EmailWorkspacePage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const [apiRecipients, setApiRecipients] = useState<any[]>([]);
+  const [draftsLoading, setDraftsLoading] = useState(true);
   const [selectedRecipient, setSelectedRecipient] = useState(recipients[0]);
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [generating, setGenerating] = useState(false);
 
-  const handleGenerate = () => {
+  useEffect(() => {
+    if (!user) return;
+    api.sessions(user.user_id)
+      .then(async sessions => {
+        const allResults: any[] = [];
+        for (const session of (sessions || []).slice(0, 5)) {
+          const res = await api.results(session.search_id).catch(() => []);
+          allResults.push(...(res || []));
+        }
+        const withEmail = allResults.filter(r => r.email_found);
+        const recipientList = withEmail.slice(0, 20).map(r => ({
+          id: String(r.result_id),
+          name: r.business_name || "Unknown",
+          email: r.email_found,
+          verify: r.verification_score || 0,
+          relevance: Math.round(r.relevance_score || 0),
+          status: "draft",
+          statusLabel: "Draft",
+          businessId: r.result_id,
+        }));
+        setApiRecipients(recipientList);
+        if (recipientList.length > 0) setSelectedRecipient(recipientList[0]);
+      })
+      .catch(console.error)
+      .finally(() => setDraftsLoading(false));
+  }, [user]);
+
+  const handleGenerate = async () => {
+    if (!user) return;
     setGenerating(true);
     toast.loading("Generating personalised email…");
-    setTimeout(() => {
-      setSubject(GENERATED_SUBJECT);
-      setBody(GENERATED_BODY);
+    try {
+      const result = await api.generateEmail(
+        Number(selectedRecipient.id), user.user_id);
+      if (result.draft_id) {
+        const draft = await api.emailDraftDetail(result.draft_id);
+        setSubject(draft.subject || "");
+        setBody(draft.body || "");
+        toast.success("Email draft generated!");
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Generation failed");
+    } finally {
       setGenerating(false);
-      toast.success("Email draft generated!");
-    }, 2000);
+    }
   };
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!subject || !body) { toast.error("Generate or write an email first"); return; }
-    toast.success(`Email sent to ${selectedRecipient.name}!`);
+    toast.success(`Email approved for ${selectedRecipient.name}`);
     setSubject(""); setBody("");
   };
 
@@ -72,6 +113,8 @@ export default function EmailWorkspacePage() {
     if (s==="bounced") return <Badge color="red">✗ Bounced</Badge>;
     return <Badge color="gray">Draft</Badge>;
   };
+
+  const displayRecipients = apiRecipients.length > 0 ? apiRecipients : recipients;
 
   return (
     <div className="p-6 space-y-5 page-enter">
@@ -108,11 +151,11 @@ export default function EmailWorkspacePage() {
             <button style={{...btnGhost,padding:"4px 8px",fontSize:11}} onClick={()=>navigate("/app/clients")}>+ Add</button>
           </div>
           <div>
-            {recipients.map((r,i) => (
+            {displayRecipients.map((r,i) => (
               <div key={r.id}
                 className="px-3 py-3 cursor-pointer transition-colors"
                 style={{
-                  borderBottom: i<recipients.length-1?"1px solid rgba(255,255,255,0.05)":"none",
+                  borderBottom: i<displayRecipients.length-1?"1px solid rgba(255,255,255,0.05)":"none",
                   background: selectedRecipient.id===r.id ? "rgba(59,130,246,0.06)" : "transparent",
                 }}
                 onClick={()=>setSelectedRecipient(r)}>

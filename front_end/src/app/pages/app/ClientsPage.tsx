@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
 import { Search, Download, Mail, RefreshCw, Trash2, ShieldCheck, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
+import { api } from "../../../lib/api";
 
 const card: React.CSSProperties = { background: "#0f1218", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10 };
 const btnPrimary: React.CSSProperties = { background: "#3b82f6", color: "white", border: "none", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "DM Sans, sans-serif", display: "flex", alignItems: "center", gap: 5 };
@@ -61,18 +62,55 @@ export default function ClientsPage() {
   const [filter, setFilter]           = useState("all");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [activeClient, setActiveClient] = useState<Client>(clients[0]);
+  const [apiClients, setApiClients] = useState<any[]>([]);
+  const [clientsLoading, setClientsLoading] = useState(true);
+
+  useEffect(() => {
+    api.clients()
+      .then(c => {
+        setApiClients(c || []);
+        if (c && c.length > 0) setActiveClient(c[0]);
+      })
+      .catch(console.error)
+      .finally(() => setClientsLoading(false));
+  }, []);
+
+  const displayClients = apiClients.length > 0 ? apiClients.map((c: any) => ({
+    id: String(c.result_id),
+    name: c.business_name || "Unknown",
+    category: c.business_type || "—",
+    location: c.address || "—",
+    website: c.website || "",
+    email: c.email_found || null,
+    relevanceScore: Math.round(c.relevance_score || 0),
+    verificationStatus: c.verification_result || "pending",
+    verificationScore: c.verification_score || 0,
+    stage: c.email_found ? "Email Ready" : "Saved",
+    savedDate: c.created_at || new Date().toISOString(),
+    signals: {
+      websiteLive: c.verification_artifacts?.accessibility?.website_live ?? true,
+      ssl: c.verification_artifacts?.accessibility?.ssl_valid ?? false,
+      domainAge: c.domain_age_years ? `${c.domain_age_years} years` : "Unknown",
+      privacyPolicy: c.has_policy_pages || false,
+      terms: c.has_policy_pages || false,
+      socialProfiles: Object.keys(c.social_links || {}).length,
+      emailValid: !!c.email_found,
+      legalReg: (c.verification_score || 0) > 60,
+      riskFlags: (c.risk_flags || []).length === 0 ? "None" : (c.risk_flags || []).join(", ")
+    }
+  })) : clients;
 
   const toggle = (id: string) => setSelectedIds(p => p.includes(id) ? p.filter(i=>i!==id) : [...p,id]);
   const toggleAll = () => setSelectedIds(p => p.length===filtered.length ? [] : filtered.map(c=>c.id));
 
-  const filtered = clients.filter(c => {
-    const matchSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) || c.location.toLowerCase().includes(searchQuery.toLowerCase());
+  const filtered = displayClients.filter(c => {
+    const matchSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) || (c.location || "").toLowerCase().includes(searchQuery.toLowerCase());
     const matchFilter = filter==="all" || c.verificationStatus===filter;
     return matchSearch && matchFilter;
   });
 
   const filterTabs = [
-    { key:"all",      label:`All (${clients.length})` },
+    { key:"all",      label:`All (${displayClients.length})` },
     { key:"verified", label:"✓ Verified" },
     { key:"partial",  label:"⚠ Partial" },
     { key:"pending",  label:"⏳ Pending" },

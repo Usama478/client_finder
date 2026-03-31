@@ -9,10 +9,15 @@ from app.core.security import (
     verify_password, hash_password,
     create_access_token, decode_access_token
 )
+import secrets
+from datetime import datetime, timedelta, timezone
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+
+_reset_tokens: dict[str, tuple[str, datetime]] = {}
+# {token: (email, expires_at)}
 
 class SignupRequest(BaseModel):
     name: str
@@ -132,3 +137,86 @@ def get_me(current_user: User = Depends(get_current_user)):
 @router.post("/logout")
 def logout():
     return {"message": "Logged out successfully"}
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+@router.post("/forgot-password")
+def forgot_password(request: ForgotPasswordRequest,
+                    db: Session = Depends(get_db)):
+    user = db.query(User).filter(
+        User.email == request.email.lower().strip()).first()
+    if user:
+        token = secrets.token_urlsafe(32)
+        expires = datetime.now(timezone.utc) + timedelta(hours=1)
+        _reset_tokens[token] = (user.email, expires)
+        return {
+            "message": "If this email exists, a reset link has been sent.",
+            "reset_token": token,
+            "expires_in_minutes": 60
+        }
+    return {
+        "message": "If this email exists, a reset link has been sent."
+    }
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    password: str
+
+@router.post("/reset-password")
+def reset_password(request: ResetPasswordRequest,
+                   db: Session = Depends(get_db)):
+    entry = _reset_tokens.get(request.token)
+    if not entry:
+        raise HTTPException(status_code=400,
+                            detail="Invalid or expired reset token")
+    email, expires = entry
+    if datetime.now(timezone.utc) > expires:
+        del _reset_tokens[request.token]
+        raise HTTPException(status_code=400,
+                            detail="Reset token has expired")
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.password_hash = hash_password(request.password)
+    db.commit()
+    del _reset_tokens[request.token]
+    return {"message": "Password reset successfully"}
+
+class UpdateProfileRequest(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    current_password: Optional[str] = None
+    new_password: Optional[str] = None
+
+@router.put("/update-profile")
+def update_profile(
+    request: UpdateProfileRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if request.new_password:
+        if not request.current_password:
+            raise HTTPException(status_code=400,
+                detail="Current password required to set new password")
+        if not verify_password(request.current_password,
+                               current_user.password_hash):
+            raise HTTPException(status_code=400,
+                detail="Current password is incorrect")
+        current_user.password_hash = hash_password(request.new_password)
+    if request.name:
+        current_user.name = request.name.strip()
+    if request.email:
+        existing = db.query(User).filter(
+            User.email == request.email.lower().strip(),
+            User.user_id != current_user.user_id
+        ).first()
+        if existing:
+            raise HTTPException(status_code=400,
+                detail="Email already in use")
+        current_user.email = request.email.lower().strip()
+    db.commit()
+    db.refresh(current_user)
+    return {"user_id": current_user.user_id,
+            "name": current_user.name,
+            "email": current_user.email}

@@ -1,121 +1,115 @@
-import { useState } from "react";
-import { Link } from "react-router";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { Card, CardContent } from "../../components/ui/card";
-import { Badge } from "../../components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "../../components/ui/table";
-import { Search, Mail, Phone, Building, ExternalLink, Download } from "lucide-react";
+import { useEffect, useState } from "react"
+import { Link } from "react-router"
+import { api } from "../../../lib/api"
+import { Search, Mail, Phone, Building, ExternalLink, Download } from "lucide-react"
+
+const Badge = ({ children, color }: { children: React.ReactNode; color: "green"|"blue"|"gray" }) => {
+  const m = { green: ["rgba(16,185,129,0.1)","#10b981"], blue: ["rgba(59,130,246,0.15)","#60a5fa"], gray: ["rgba(255,255,255,0.05)","#8a95a8"] }
+  const [bg,text] = m[color]
+  return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{background:bg,color:text}}>{children}</span>
+}
 
 export default function ContactsPage() {
-  const [searchQuery, setSearchQuery] = useState("");
+  const [contacts, setContacts] = useState<any[]>([])
+  const [searchQuery, setSearchQuery] = useState("")
+  const [loading, setLoading] = useState(true)
 
-  const contacts = [
-    {
-      id: "1",
-      name: "Ahmed Al-Mansouri",
-      business: "TechCorp Industries",
-      businessId: "1",
-      email: "ahmed@techcorp.ae",
-      phone: "+971 4 123 4567",
-      role: "Sales Director",
-      status: "verified"
-    },
-    {
-      id: "2",
-      name: "Contact - General",
-      business: "Global Exports Ltd",
-      businessId: "2",
-      email: "contact@globalexports.com",
-      phone: "+971 2 987 6543",
-      role: "General Inquiry",
-      status: "verified"
-    }
-  ];
+  useEffect(() => {
+    api.contacts()
+      .then(c => setContacts(c || []))
+      .catch(console.error)
+      .finally(() => setLoading(false))
+  }, [])
+
+  const filtered = contacts.filter(c =>
+    (c.business_name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (c.email || "").toLowerCase().includes(searchQuery.toLowerCase())
+  )
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex justify-between items-start">
+    <div className="p-6 space-y-4 page-enter">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Contacts</h1>
-          <p className="text-gray-600 mt-1">Centralized contact database across all businesses</p>
+          <div className="text-xl font-bold text-[#e8edf5]" style={{fontFamily:"Syne,sans-serif"}}>
+            Contacts
+          </div>
+          <div className="text-[12px] text-[#5a6478] mt-0.5">
+            Verified contact emails from all discovered leads
+          </div>
         </div>
-        <Button>
-          <Download className="mr-2 h-4 w-4" />
-          Export Contacts
-        </Button>
       </div>
 
-      <Card>
-        <CardContent className="p-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <Input
-              placeholder="Search contacts..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-        </CardContent>
-      </Card>
+      <div className="rounded-xl p-4" style={{background:"#0f1218",border:"1px solid rgba(255,255,255,0.07)"}}>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#5a6478]" />
+          <input
+            placeholder="Search contacts…"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            className="pl-9 pr-3 py-2 rounded-lg text-[13px] text-[#e8edf5] outline-none w-full"
+            style={{background:"#151a22",border:"1px solid rgba(255,255,255,0.09)"}}
+          />
+        </div>
+      </div>
 
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Business</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Phone</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {contacts.map((contact) => (
-                <TableRow key={contact.id}>
-                  <TableCell className="font-medium">{contact.name}</TableCell>
-                  <TableCell>
-                    <Link to={`/app/business/${contact.businessId}`} className="flex items-center gap-1 text-blue-600 hover:text-blue-700">
-                      <Building className="h-3 w-3" />
-                      {contact.business}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <a href={`mailto:${contact.email}`} className="flex items-center gap-1 text-sm">
-                      <Mail className="h-3 w-3" />
-                      {contact.email}
-                    </a>
-                  </TableCell>
-                  <TableCell>
-                    <span className="flex items-center gap-1 text-sm">
-                      <Phone className="h-3 w-3" />
-                      {contact.phone}
-                    </span>
-                  </TableCell>
-                  <TableCell><Badge variant="outline">{contact.role}</Badge></TableCell>
-                  <TableCell><Badge className="bg-green-600">Verified</Badge></TableCell>
-                  <TableCell className="text-right">
-                    <Button variant="ghost" size="sm">
-                      <Mail className="h-4 w-4" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+      <div className="overflow-hidden rounded-xl" style={{border:"1px solid rgba(255,255,255,0.07)"}}>
+        <div className="grid text-[10px] font-semibold text-[#5a6478] uppercase tracking-widest px-4 py-3"
+          style={{gridTemplateColumns:"1fr 1fr 140px 120px 100px",background:"#151a22",borderBottom:"1px solid rgba(255,255,255,0.07)"}}>
+          <div>Business</div>
+          <div>Email</div>
+          <div>Phone</div>
+          <div>Type</div>
+          <div>Verified</div>
+        </div>
+
+        {loading && (
+          <div className="flex items-center justify-center py-12">
+            <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
+
+        {!loading && filtered.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-14 text-center">
+            <div className="text-3xl mb-3 opacity-30">📧</div>
+            <div className="text-sm font-bold text-[#e8edf5]">No contacts yet</div>
+            <div className="text-[12px] text-[#5a6478] mt-1">
+              Verify leads to extract contact emails
+            </div>
+          </div>
+        )}
+
+        {!loading && filtered.map((c, i) => (
+          <div key={c.result_id} className="grid items-center px-4 py-3 hover:bg-[#151a22] transition-colors"
+            style={{gridTemplateColumns:"1fr 1fr 140px 120px 100px",
+              borderBottom:i<filtered.length-1?"1px solid rgba(255,255,255,0.05)":"none",
+              background:"#0f1218"}}>
+            <div>
+              <Link to={`/app/business/${c.result_id}`} className="text-[13px] font-semibold text-[#e8edf5] hover:text-blue-400">
+                {c.business_name}
+              </Link>
+              <div className="text-[11px] text-[#5a6478] mt-0.5">{c.location}</div>
+            </div>
+            <div>
+              <a href={`mailto:${c.email}`} className="text-[12px] text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                <Mail className="h-3 w-3" />{c.email}
+              </a>
+            </div>
+            <div className="text-[12px] text-[#8a95a8]">
+              {c.phone ? <span className="flex items-center gap-1"><Phone className="h-3 w-3"/>{c.phone}</span> : "—"}
+            </div>
+            <div>
+              {c.email_type === "buying" || c.email_type === "sales"
+                ? <Badge color="green">{c.email_type}</Badge>
+                : <Badge color="gray">{c.email_type || "generic"}</Badge>}
+            </div>
+            <div>
+              {c.verification_result === "verified"
+                ? <Badge color="green">✓ Yes</Badge>
+                : <Badge color="blue">Partial</Badge>}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
-  );
+  )
 }

@@ -6,6 +6,7 @@ import { Label } from "../../components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Alert, AlertDescription } from "../../components/ui/alert";
 import { CheckCircle, ArrowLeft } from "lucide-react";
+import { api } from "../../../lib/api";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -15,12 +16,14 @@ export default function ForgotPasswordPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-
-    // Simulate API call
-    setTimeout(() => {
+    try {
+      const result = await api.forgotPassword(email);
       setSubmitted(true);
+    } catch (err: any) {
+      setSubmitted(true);
+    } finally {
       setLoading(false);
-    }, 1000);
+    }
   };
 
   if (submitted) {

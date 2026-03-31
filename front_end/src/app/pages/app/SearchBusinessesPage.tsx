@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router";
 import { Search, MapPin, Sparkles, ShieldCheck, Save, ExternalLink, Clock, RefreshCw, Play, Eye, X, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "../../../lib/auth-context";
+import { api } from "../../../lib/api";
 
 /* ── Shared dark style tokens ── */
 const card: React.CSSProperties = { background: "#0f1218", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10 };
@@ -31,6 +33,7 @@ const recentSearches = [
 ];
 
 export default function SearchBusinessesPage() {
+  const { user } = useAuth();
   const [searchQuery, setSearchQuery]       = useState("");
   const [location, setLocation]             = useState("");
   const [selectedContext, setSelectedContext] = useState("b2b-exporters");
@@ -41,6 +44,30 @@ export default function SearchBusinessesPage() {
   const [selectedIds, setSelectedIds]       = useState<string[]>([]);
   const [activeFilter, setActiveFilter]     = useState("all");
   const [showHistory, setShowHistory]       = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    api.sessions(user.user_id)
+      .then(s => {
+        setSessions(s || []);
+        if (s && s.length > 0) {
+          setSelectedSessionId(s[0].search_id);
+        }
+      })
+      .catch(console.error);
+    api.contexts()
+      .then(c => setApiContexts(c || []))
+      .catch(console.error);
+  }, [user]);
+
+  useEffect(() => {
+    if (!selectedSessionId) return;
+    setDataLoading(true);
+    api.results(selectedSessionId)
+      .then(r => setResults(r || []))
+      .catch(console.error)
+      .finally(() => setDataLoading(false));
+  }, [selectedSessionId]);
 
   const contexts = [
     { id: "b2b-exporters", name: "B2B Export Outreach", desc: "Companies focused on international B2B export" },
@@ -55,31 +82,84 @@ export default function SearchBusinessesPage() {
     setTimeout(() => { setSearching(false); toast.success("Found 156 businesses"); }, 2200);
   };
 
-  const handleRunAI = () => {
+  const handleRunAI = async () => {
     if (!selectedIds.length) { toast.error("Select at least one business"); return; }
     setProcessingAI(true);
     setAiProgress(0);
     toast.info(`Running AI relevance on ${selectedIds.length} leads…`);
-    const iv = setInterval(() => setAiProgress(p => { if (p >= 95) { clearInterval(iv); setProcessingAI(false); setSelectedIds([]); toast.success("AI scoring complete!"); return 100; } return p + Math.random() * 12; }), 300);
+    try {
+      for (const id of selectedIds) {
+        await api.runRelevancy(Number(id), selectedSessionId || 0).catch(console.error);
+        setAiProgress(p => Math.min(p + (100 / selectedIds.length), 95));
+      }
+      if (selectedSessionId) {
+        const r = await api.results(selectedSessionId);
+        setResults(r || []);
+      }
+      toast.success("AI scoring complete!");
+    } catch (err: any) {
+      toast.error(err.message || "AI scoring failed");
+    } finally {
+      setProcessingAI(false);
+      setAiProgress(100);
+      setSelectedIds([]);
+    }
   };
 
-  const handleVerify = () => {
+  const handleVerify = async () => {
     if (!selectedIds.length) { toast.error("Select at least one business"); return; }
     setProcessingVerify(true);
     toast.info(`Verifying ${selectedIds.length} leads…`);
-    setTimeout(() => { setProcessingVerify(false); setSelectedIds([]); toast.success("Verification complete!"); }, 3500);
+    try {
+      await api.verifyBatch(selectedIds.map(Number));
+      if (selectedSessionId) {
+        const r = await api.results(selectedSessionId);
+        setResults(r || []);
+      }
+      toast.success("Verification complete!");
+    } catch (err: any) {
+      toast.error(err.message || "Verification failed");
+    } finally {
+      setProcessingVerify(false);
+      setSelectedIds([]);
+    }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!selectedIds.length) { toast.error("Select at least one business"); return; }
-    toast.success(`${selectedIds.length} businesses saved to Clients`);
-    setSelectedIds([]);
+    try {
+      await Promise.all(
+        selectedIds.map(id => api.updateClientStatus(Number(id), true).catch(console.error))
+      );
+      toast.success(`${selectedIds.length} businesses saved to Clients`);
+      setSelectedIds([]);
+    } catch {
+      toast.error("Failed to save some businesses");
+    }
   };
 
   const toggle = (id: string) => setSelectedIds(p => p.includes(id) ? p.filter(i => i !== id) : [...p, id]);
   const toggleAll = () => setSelectedIds(p => p.length === filtered.length ? [] : filtered.map(r => r.id));
 
-  const filtered = mockResults.filter(r => {
+  const tableData = results.length > 0 ? results.map((r: any) => ({
+    id: String(r.result_id),
+    name: r.business_name || "Unknown",
+    category: r.business_type || "—",
+    location: r.address || "—",
+    website: r.website || "",
+    email: r.email_found || null,
+    phone: (r.all_phones_found || [])[0] || null,
+    relevanceScore: Math.round(r.relevance_score || 0),
+    relevanceStatus: r.relevance_decision === "relevant" ? "passed"
+      : r.relevance_decision === "irrelevant" ? "failed"
+      : r.relevance_decision === "unknown" ? "low-confidence"
+      : "pending",
+    verificationScore: r.verification_score || null,
+    verificationStatus: r.verification_result || "pending",
+    reasoning: r.relevance_reason || r.verification_reason || "",
+  })) : mockResults;
+
+  const filtered = tableData.filter(r => {
     if (activeFilter === "passed")   return r.relevanceStatus === "passed";
     if (activeFilter === "failed")   return r.relevanceStatus === "failed";
     if (activeFilter === "lowconf")  return r.relevanceStatus === "low-confidence";
@@ -105,7 +185,7 @@ export default function SearchBusinessesPage() {
   const scoreColor = (n: number) => n >= 75 ? "#10b981" : n >= 50 ? "#f59e0b" : "#ef4444";
 
   const filterTabs = [
-    { key: "all",     label: `All (${mockResults.length})` },
+    { key: "all",     label: `All (${tableData.length})` },
     { key: "passed",  label: "✓ Relevant" },
     { key: "lowconf", label: "⚠ Low Conf." },
     { key: "failed",  label: "✗ Not Relevant" },
@@ -242,12 +322,22 @@ export default function SearchBusinessesPage() {
         {showHistory && (
           <div className="mt-2 p-4 rounded-xl space-y-2" style={{ background: "#0f1218", border: "1px solid rgba(255,255,255,0.07)" }}>
             <div className="text-[10px] font-semibold text-[#5a6478] uppercase tracking-widest mb-2">Recent Searches</div>
-            {recentSearches.map((s, i) => (
+            {sessions.slice(0, 5).map((s: any, i: number) => (
               <div key={i} className="flex items-center gap-3 p-2.5 rounded-lg cursor-pointer hover:bg-[#151a22] transition-colors"
-                onClick={() => { setSearchQuery(s.query); setShowHistory(false); toast.info("Search reloaded"); }}>
+                onClick={() => {
+                  setSelectedSessionId(s.search_id);
+                  setShowHistory(false);
+                  toast.info("Session loaded");
+                }}>
                 <div className="flex-1">
-                  <div className="text-[13px] font-medium text-[#e8edf5]">{s.query}</div>
-                  <div className="text-[11px] text-[#5a6478]">{s.context} · {s.results} results · {s.time}</div>
+                  <div className="text-[13px] font-medium text-[#e8edf5]">
+                    {s.search_query || "Search"}
+                  </div>
+                  <div className="text-[11px] text-[#5a6478]">
+                    {s.result_count || 0} results · {
+                      s.created_at ? new Date(s.created_at).toLocaleDateString() : ""
+                    }
+                  </div>
                 </div>
                 <button style={btnGhost} className="text-[11px]"><Play className="h-3 w-3" />Reload</button>
               </div>

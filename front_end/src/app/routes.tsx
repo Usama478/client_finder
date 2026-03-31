@@ -1,6 +1,7 @@
 import { createBrowserRouter } from "react-router";
 import PublicLayout from "./layouts/PublicLayout";
 import AppLayout from "./layouts/AppLayout";
+import ProtectedRoute from "./components/ProtectedRoute";
 import HomePage from "./pages/public/HomePage";
 import FeaturesPage from "./pages/public/FeaturesPage";
 import PricingPage from "./pages/public/PricingPage";
@@ -42,7 +43,11 @@ export const router = createBrowserRouter([
   },
   {
     path: "/app",
-    Component: AppLayout,
+    element: (
+      <ProtectedRoute>
+        <AppLayout />
+      </ProtectedRoute>
+    ),
     children: [
       { index: true, Component: DashboardPage },
       { path: "search", Component: SearchBusinessesPage },

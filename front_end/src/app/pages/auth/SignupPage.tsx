@@ -7,9 +7,11 @@ import { Checkbox } from "../../components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Alert, AlertDescription } from "../../components/ui/alert";
 import { AlertCircle } from "lucide-react";
+import { useAuth } from "../../../lib/auth-context";
 
 export default function SignupPage() {
   const navigate = useNavigate();
+  const { signup } = useAuth();
   const [formData, setFormData] = useState({
     fullName: "",
     email: "",
@@ -24,23 +26,22 @@ export default function SignupPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-
     if (formData.password !== formData.confirmPassword) {
       setError("Passwords do not match");
       return;
     }
-
     if (!formData.termsAccepted) {
       setError("Please accept the terms and conditions");
       return;
     }
-
     setLoading(true);
-
-    // Simulate signup - in production, this would call an API
-    setTimeout(() => {
+    try {
+      await signup(formData.fullName, formData.email, formData.password);
       navigate("/app");
-    }, 1000);
+    } catch (err: any) {
+      setError(err.message || "Signup failed. Please try again.");
+      setLoading(false);
+    }
   };
 
   const handleChange = (field: string, value: string | boolean) => {
