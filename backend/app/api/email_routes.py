@@ -185,7 +185,7 @@ def approve_draft(draft_id: int) -> Dict[str, Any]:
                 detail=f"Draft ID {draft_id} not found.",
             )
         
-        if draft.status != "pending_review":
+        if draft.status not in ("pending_review", "failed"):
             raise HTTPException(
                 status_code=400,
                 detail=f"Cannot approve draft with status '{draft.status}'. "

@@ -39,6 +39,7 @@ def _try_mark_failed(business_id: int, reason: str) -> None:
                 db.commit()
                 return  # Written successfully
         except Exception as exc:
+            logger.error(f"[RELEVANCY] ERROR for business_id={business_id}: {str(exc)}")
             logger.error(
                 "_try_mark_failed attempt=%s FAILED business_id=%s error=%s",
                 attempt,
@@ -48,12 +49,14 @@ def _try_mark_failed(business_id: int, reason: str) -> None:
             )
             try:
                 db.rollback()
-            except Exception:
+            except Exception as exc:
+                logger.error(f"[RELEVANCY] ERROR for business_id={business_id}: {str(exc)}")
                 pass
         finally:
             try:
                 db.close()
-            except Exception:
+            except Exception as exc:
+                logger.error(f"[RELEVANCY] ERROR for business_id={business_id}: {str(exc)}")
                 pass
 
 
@@ -158,7 +161,9 @@ def _strict_contract_output(final_state: RelevancyAgentState) -> Dict[str, objec
     raw_confidence = llm_output.get("confidence", final_state.get("confidence"))
     try:
         confidence = float(raw_confidence)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError) as exc:
+        business_id = final_state.get("business_id", "unknown")
+        logger.error(f"[RELEVANCY] ERROR for business_id={business_id}: {str(exc)}")
         confidence = 0.0
     confidence = max(0.0, min(1.0, confidence))
 
@@ -310,12 +315,14 @@ def _persist_to_db(business_id: int, final_state: RelevancyAgentState, strict_ou
         }
 
         db.commit()
+        logger.info(f"[RELEVANCY] Saved to DB: business_id={business_id} decision={lead.relevance_decision} score={lead.relevance_score}")
         logger.info(
             "persist_relevancy business_id=%s decision=%s artifacts_saved=True",
             business_id,
             strict_output.get("relevance_decision"),
         )
     except Exception as exc:
+        logger.error(f"[RELEVANCY] ERROR for business_id={business_id}: {str(exc)}")
         logger.error("persist_relevancy FAILED business_id=%s error=%s", business_id, exc, exc_info=True)
         db.rollback()
         raise
@@ -342,6 +349,7 @@ def run_relevancy_v2_for_business(
     - Outer crash net: catches any graph-level exception and marks the lead as
       "failed" in the DB so callers never receive a silent 500.
     """
+    logger.info(f"[RELEVANCY] Starting for business_id={business_id} website={website}")
     normalized_website = _normalize_url(website)
     if not normalized_website:
         raise ValueError("website is required")
@@ -386,12 +394,15 @@ def run_relevancy_v2_for_business(
         lead.mismatch_reasons = []
         lead.signals_used = []
         lock_db.commit()
-    except ValueError:
+    except ValueError as exc:
+        logger.error(f"[RELEVANCY] ERROR for business_id={business_id}: {str(exc)}")
         # ValueError is raised intentionally (e.g. business_id not found).
         # Rollback any partial work and re-raise without logging an error.
         lock_db.rollback()
         raise
     except Exception as lock_exc:
+        exc = lock_exc
+        logger.error(f"[RELEVANCY] ERROR for business_id={business_id}: {str(exc)}")
         logger.error(
             "run_relevancy_v2 lock_write FAILED business_id=%s error=%s",
             business_id,
@@ -418,11 +429,13 @@ def run_relevancy_v2_for_business(
     )
 
     try:
+        logger.info(f"[RELEVANCY] Invoking LLM graph for business_id={business_id}")
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _executor:
             _future = _executor.submit(relevancy_graph.invoke, initial_state)
             try:
                 final_state = _future.result(timeout=GRAPH_EXEC_TIMEOUT_S)
-            except concurrent.futures.TimeoutError:
+            except concurrent.futures.TimeoutError as exc:
+                logger.error(f"[RELEVANCY] ERROR for business_id={business_id}: {str(exc)}")
                 # The underlying thread continues running (Python cannot force-
                 # kill it), but we stop waiting and mark the row as failed so
                 # it is never stuck in "processing" from the caller's view.
@@ -431,6 +444,8 @@ def run_relevancy_v2_for_business(
                     f"Graph execution exceeded {GRAPH_EXEC_TIMEOUT_S}s hard limit"
                 )
     except Exception as graph_exc:
+        exc = graph_exc
+        logger.error(f"[RELEVANCY] ERROR for business_id={business_id}: {str(exc)}")
         logger.error(
             "run_relevancy_v2 GRAPH_CRASH business_id=%s error=%s",
             business_id,
@@ -449,6 +464,11 @@ def run_relevancy_v2_for_business(
     if not output.get("relevance_decision"):
         output = _fallback_from_final_state(final_state)
 
+    decision = output.get("relevance_decision", "unknown")
+    score = final_state.get("relevance_score", 0.0)
+    reason = str(output.get("relevance_reason", ""))
+    logger.info(f"[RELEVANCY] Decision for business_id={business_id}: decision={decision} score={score} reason={reason[:80]}")
+
     # ------------------------------------------------------------------ #
     # Persistence crash net                                               #
     # If _persist_to_db throws (DB down, constraint, serialization error),#
@@ -457,6 +477,8 @@ def run_relevancy_v2_for_business(
     try:
         _persist_to_db(business_id=business_id, final_state=final_state, strict_output=output)
     except Exception as persist_exc:
+        exc = persist_exc
+        logger.error(f"[RELEVANCY] ERROR for business_id={business_id}: {str(exc)}")
         logger.error(
             "run_relevancy_v2 PERSIST_FAILED business_id=%s error=%s",
             business_id,

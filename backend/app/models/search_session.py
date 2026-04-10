@@ -18,6 +18,7 @@ class SearchSession(Base):
 
     google_api_request_hash = Column(String, index=True)
     next_page_token = Column(String, nullable=True)
+    result_count = Column(Integer, default=0)
 
     exporter_profile_id = Column(
         Integer,

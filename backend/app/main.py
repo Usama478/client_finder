@@ -14,6 +14,17 @@ from app.api import (
     contacts_routes,
 )
 
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+import logging
+
+logger = logging.getLogger(__name__)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s"
+)
+
 app = FastAPI(title="Client Finder MVP")
 
 app.add_middleware(
@@ -29,6 +40,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    body_bytes = await request.body()
+    body_str = body_bytes.decode('utf-8')
+    
+    logger.error(f"[VALIDATION_ERROR] Path: {request.url.path}")
+    logger.error(f"[VALIDATION_ERROR] Raw body: {body_str}")
+    logger.error(f"[VALIDATION_ERROR] Error details: {exc.errors()}")
+    
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "body_received": body_str}
+    )
 
 app.include_router(search_routes.router)
 app.include_router(relevancy_v2_routes.router)

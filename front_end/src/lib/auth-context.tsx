@@ -1,6 +1,8 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react"
 import { api, setToken, clearToken } from "./api"
 
+const THEME_KEY = "cf_theme"
+
 interface User {
   user_id: number
   name: string
@@ -14,6 +16,8 @@ interface AuthContextType {
   signup: (name: string, email: string, password: string) => Promise<void>
   logout: () => void
   refreshUser: () => Promise<void>
+  theme: "dark" | "light"
+  toggleTheme: () => void
 }
 
 const AuthContext = createContext<AuthContextType | null>(null)
@@ -21,6 +25,33 @@ const AuthContext = createContext<AuthContextType | null>(null)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+
+  const [theme, setTheme] = useState<"dark" | "light">(() => {
+    return (localStorage.getItem(THEME_KEY) as "dark" | "light") || "dark";
+  });
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === "light") {
+      root.classList.add("light");
+    } else {
+      root.classList.remove("light");
+    }
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((t: "dark" | "light") => {
+      const next = t === "dark" ? "light" : "dark";
+      localStorage.setItem(THEME_KEY, next);
+      const root = document.documentElement;
+      if (next === "light") {
+        root.classList.add("light");
+      } else {
+        root.classList.remove("light");
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     const stored = localStorage.getItem("cf_user")
@@ -61,7 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, signup, logout, refreshUser }}>
+    <AuthContext.Provider value={{ user, loading, login, signup, logout, refreshUser, theme, toggleTheme }}>
       {children}
     </AuthContext.Provider>
   )

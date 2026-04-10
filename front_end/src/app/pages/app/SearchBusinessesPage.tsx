@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 import { Search, MapPin, Sparkles, ShieldCheck, Save, ExternalLink, Clock, RefreshCw, Play, Eye, X, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../../../lib/auth-context";
@@ -17,23 +17,10 @@ const Badge = ({ children, color }: { children: React.ReactNode; color: "green" 
   return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{ background: bg, color: text }}>{children}</span>;
 };
 
-const mockResults = [
-  { id: "1", name: "TechCorp Industries",   category: "Technology",   location: "Dubai, UAE",      website: "techcorp.ae",           email: "info@techcorp.ae",           phone: "+971 4 123 4567", relevanceScore: 94, relevanceStatus: "passed",         verificationScore: 92, verificationStatus: "verified", reasoning: "Strong B2B export focus, active in MENA markets, verified online presence." },
-  { id: "2", name: "Global Exports Ltd",    category: "Trading",      location: "Abu Dhabi, UAE",  website: "globalexports.com",     email: "contact@globalexports.com",  phone: "+971 2 987 6543", relevanceScore: 88, relevanceStatus: "passed",         verificationScore: 85, verificationStatus: "verified", reasoning: "Established export company with verified credentials and strong track record." },
-  { id: "3", name: "Innovation Partners",   category: "Consulting",   location: "Sharjah, UAE",    website: "innovationpartners.ae", email: "hello@innovationpartners.ae",phone: null,              relevanceScore: 76, relevanceStatus: "low-confidence", verificationScore: null, verificationStatus: "pending",  reasoning: "Moderate match — service-based, export focus unclear from available data." },
-  { id: "4", name: "Emirates Trading Co",   category: "Import/Export",location: "Dubai, UAE",      website: "emiratestrading.ae",    email: "sales@emiratestrading.ae",   phone: "+971 4 555 1234", relevanceScore: 91, relevanceStatus: "passed",         verificationScore: 78, verificationStatus: "partial",  reasoning: "Strong B2B trading match. Some verification data incomplete — re-run recommended." },
-  { id: "5", name: "Meridian Supply GmbH",  category: "Wholesale",    location: "Hamburg, DE",     website: "meridian-supply.de",    email: "info@meridian-supply.de",    phone: "+49 40 7890 12",  relevanceScore: 82, relevanceStatus: "passed",         verificationScore: 89, verificationStatus: "verified", reasoning: "German wholesale supplier with verified legal registration and strong domain." },
-  { id: "6", name: "Sunrise Distributors", category: "Distribution", location: "Istanbul, TR",     website: "sunrisedist.tr",        email: "sales@sunrisedist.tr",       phone: null,              relevanceScore: 41, relevanceStatus: "failed",         verificationScore: 32, verificationStatus: "failed",   reasoning: "Low relevance — primarily retail focused, does not align with B2B export context." },
-];
-
-const recentSearches = [
-  { query: "Textile exporters Lahore Pakistan", context: "B2B Outreach", time: "2h ago",  results: 284 },
-  { query: "Wholesale distributors UAE",        context: "Export",       time: "5h ago",  results: 156 },
-  { query: "Construction suppliers Germany",    context: "Default",      time: "1d ago",  results: 412 },
-];
 
 export default function SearchBusinessesPage() {
   const { user } = useAuth();
+  const routerLocation = useLocation();
   const [searchQuery, setSearchQuery]       = useState("");
   const [location, setLocation]             = useState("");
   const [selectedContext, setSelectedContext] = useState("b2b-exporters");
@@ -44,6 +31,16 @@ export default function SearchBusinessesPage() {
   const [selectedIds, setSelectedIds]       = useState<string[]>([]);
   const [activeFilter, setActiveFilter]     = useState("all");
   const [showHistory, setShowHistory]       = useState(false);
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [results, setResults] = useState<any[]>([]);
+  const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
+  const [dataLoading, setDataLoading] = useState(false);
+  const [apiContexts, setApiContexts] = useState<any[]>([]);
+  const [nextPageToken, setNextPageToken] = useState<string | null>(null);
+
+  const hasScoredLeads = results.some(
+    (r: any) => r.relevance_decision !== null && r.relevance_decision !== undefined
+  );
 
   useEffect(() => {
     if (!user) return;
@@ -61,6 +58,12 @@ export default function SearchBusinessesPage() {
   }, [user]);
 
   useEffect(() => {
+    if (routerLocation.state?.sessionId) {
+      setSelectedSessionId(routerLocation.state.sessionId);
+    }
+  }, [location.state]);
+
+  useEffect(() => {
     if (!selectedSessionId) return;
     setDataLoading(true);
     api.results(selectedSessionId)
@@ -75,11 +78,53 @@ export default function SearchBusinessesPage() {
     { id: "manufacturing",  name: "Manufacturing Buyer", desc: "Industrial manufacturers and suppliers" },
   ];
 
-  const handleSearch = () => {
+  const handleSearch = async () => {
     if (!searchQuery && !location) { toast.error("Enter a keyword or location to search"); return; }
+    if (!user) { toast.error("Not logged in"); return; }
+    setNextPageToken(null);
     setSearching(true);
     toast.loading("Searching businesses…");
-    setTimeout(() => { setSearching(false); toast.success("Found 156 businesses"); }, 2200);
+    try {
+      const searchResponse = await api.createSession({
+        user_id: user.user_id,
+        query: searchQuery,
+        search_location: location || "",
+      });
+      setNextPageToken(searchResponse?.next_page_token || null);
+      toast.success("Search complete!");
+      const newSessions = await api.sessions(user.user_id);
+      setSessions(newSessions || []);
+      if (newSessions && newSessions.length > 0) {
+        setSelectedSessionId(newSessions[0].search_id);
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Search failed");
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleLoadMore = async () => {
+    if (!nextPageToken || !user || !selectedSessionId) return;
+    setSearching(true);
+    toast.loading("Loading more businesses…");
+    try {
+      const moreResponse = await api.createSession({
+        user_id: user.user_id,
+        query: searchQuery,
+        search_location: location || "",
+        page_token: nextPageToken,
+        session_id: selectedSessionId,
+      });
+      setNextPageToken(moreResponse?.next_page_token || null);
+      const r = await api.results(selectedSessionId);
+      setResults(r || []);
+      toast.success("More businesses loaded!");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to load more");
+    } finally {
+      setSearching(false);
+    }
   };
 
   const handleRunAI = async () => {
@@ -87,16 +132,49 @@ export default function SearchBusinessesPage() {
     setProcessingAI(true);
     setAiProgress(0);
     toast.info(`Running AI relevance on ${selectedIds.length} leads…`);
+    let passed = 0;
+    let failed = 0;
     try {
       for (const id of selectedIds) {
-        await api.runRelevancy(Number(id), selectedSessionId || 0).catch(console.error);
+        const businessObject = results.find((r: any) => String(r.result_id) === id);
+        if (businessObject) {
+          if (!businessObject.website) {
+            setResults(prev => prev.map(r =>
+              r.result_id === Number(id)
+                ? { ...r, relevance_decision: "skipped", relevance_reason: "No website — skipped" }
+                : r
+            ));
+            failed++;
+            setAiProgress(p => Math.min(p + (100 / selectedIds.length), 95));
+            continue;
+          }
+          try {
+            const response = await api.runRelevancy(businessObject, selectedSessionId || 0, "My Company");
+            setResults(prev => prev.map(r =>
+              r.result_id === Number(id)
+                ? { ...r,
+                    relevance_decision: response.relevance_decision,
+                    relevance_score: response.relevance_score || response.confidence,
+                    relevance_reason: response.relevance_reason }
+                : r
+            ));
+            passed++;
+          } catch (err: any) {
+            setResults(prev => prev.map(r =>
+              r.result_id === Number(id)
+                ? { ...r, relevance_decision: "error", relevance_reason: err.message }
+                : r
+            ));
+            failed++;
+          }
+        }
         setAiProgress(p => Math.min(p + (100 / selectedIds.length), 95));
       }
       if (selectedSessionId) {
         const r = await api.results(selectedSessionId);
         setResults(r || []);
       }
-      toast.success("AI scoring complete!");
+      toast.success(`AI complete: ${passed} scored, ${failed} skipped/failed`);
     } catch (err: any) {
       toast.error(err.message || "AI scoring failed");
     } finally {
@@ -111,7 +189,17 @@ export default function SearchBusinessesPage() {
     setProcessingVerify(true);
     toast.info(`Verifying ${selectedIds.length} leads…`);
     try {
-      await api.verifyBatch(selectedIds.map(Number));
+      const validIds = selectedIds
+        .map(id => Number(id))
+        .filter(id => !isNaN(id) && id > 0);
+
+      if (validIds.length === 0) {
+        toast.error("No valid business IDs selected");
+        setProcessingVerify(false);
+        return;
+      }
+
+      await api.verifyBatch(validIds);
       if (selectedSessionId) {
         const r = await api.results(selectedSessionId);
         setResults(r || []);
@@ -157,7 +245,7 @@ export default function SearchBusinessesPage() {
     verificationScore: r.verification_score || null,
     verificationStatus: r.verification_result || "pending",
     reasoning: r.relevance_reason || r.verification_reason || "",
-  })) : mockResults;
+  })) : [];
 
   const filtered = tableData.filter(r => {
     if (activeFilter === "passed")   return r.relevanceStatus === "passed";
@@ -287,7 +375,9 @@ export default function SearchBusinessesPage() {
           <span className="text-sm font-semibold text-blue-400">{selectedIds.length} selected</span>
           <div className="flex gap-2 flex-wrap">
             <button style={btnPrimary} onClick={handleRunAI}><Sparkles className="h-3.5 w-3.5" />Run AI Relevance</button>
-            <button style={btnGhost} onClick={handleVerify}><ShieldCheck className="h-3.5 w-3.5" />Verify Selected</button>
+            {hasScoredLeads && (
+              <button style={btnGhost} onClick={handleVerify}><ShieldCheck className="h-3.5 w-3.5" />Verify Selected</button>
+            )}
             <button style={btnGhost} onClick={handleSave}><Save className="h-3.5 w-3.5" />Save to Clients</button>
           </div>
           <button style={{ ...btnGhost, marginLeft: "auto" }} onClick={() => setSelectedIds([])}><X className="h-3.5 w-3.5" />Clear</button>
@@ -326,6 +416,8 @@ export default function SearchBusinessesPage() {
               <div key={i} className="flex items-center gap-3 p-2.5 rounded-lg cursor-pointer hover:bg-[#151a22] transition-colors"
                 onClick={() => {
                   setSelectedSessionId(s.search_id);
+                  setNextPageToken(s.next_page_token || null);
+                  setSearchQuery(s.search_query || "");
                   setShowHistory(false);
                   toast.info("Session loaded");
                 }}>
@@ -349,7 +441,7 @@ export default function SearchBusinessesPage() {
         <div className="mt-2 overflow-hidden rounded-xl" style={{ border: "1px solid rgba(255,255,255,0.07)" }}>
           {/* Header */}
           <div className="grid text-[10px] font-semibold text-[#5a6478] uppercase tracking-widest px-4 py-3"
-            style={{ gridTemplateColumns: "28px 1fr 110px 120px 130px 110px 100px 110px", background: "#151a22", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+            style={{ gridTemplateColumns: "28px minmax(0, 1fr) 90px 130px 140px 100px 110px 90px", background: "#151a22", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
             <div><input type="checkbox" checked={selectedIds.length === filtered.length && filtered.length > 0} onChange={toggleAll} className="accent-blue-500" /></div>
             <div>Business</div>
             <div>Industry</div>
@@ -364,31 +456,44 @@ export default function SearchBusinessesPage() {
             <div key={r.id}
               className="grid items-center px-4 py-3 transition-colors hover:bg-[#151a22]"
               style={{
-                gridTemplateColumns: "28px 1fr 110px 120px 130px 110px 100px 110px",
+                gridTemplateColumns: "28px minmax(0, 1fr) 90px 130px 140px 100px 110px 90px",
                 borderBottom: i < filtered.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none",
                 background: selectedIds.includes(r.id) ? "rgba(59,130,246,0.04)" : "#0f1218",
               }}>
               <div><input type="checkbox" checked={selectedIds.includes(r.id)} onChange={() => toggle(r.id)} className="accent-blue-500" /></div>
 
-              <div>
-                <div className="text-[13px] font-semibold text-[#e8edf5]">{r.name}</div>
-                <a href={`https://${r.website}`} target="_blank" rel="noreferrer"
-                  className="text-[11px] text-blue-400 hover:text-blue-300 flex items-center gap-1 mt-0.5 w-fit"
+              <div style={{ minWidth: 0, overflow: "hidden" }}>
+                <div className="text-[13px] font-semibold text-[#e8edf5]" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</div>
+                <a 
+                  href={`https://${r.website}`} 
+                  target="_blank" 
+                  rel="noreferrer"
+                  className="text-[11px] text-blue-400 hover:text-blue-300 flex items-center gap-1 mt-0.5"
+                  style={{ maxWidth: "100%" }}
+                  title={r.website}
                   onClick={e => e.stopPropagation()}>
-                  <ExternalLink className="h-2.5 w-2.5" />{r.website}
+                  <ExternalLink className="h-2.5 w-2.5 flex-shrink-0" />
+                  <span style={{ 
+                    overflow: "hidden", 
+                    textOverflow: "ellipsis", 
+                    whiteSpace: "nowrap",
+                    minWidth: 0,
+                    flex: 1
+                  }}>{r.website}</span>
                 </a>
               </div>
 
-              <div>
+              <div style={{ minWidth: 0 }}>
                 <span className="inline-flex px-2 py-0.5 rounded text-[11px] font-medium"
                   style={{ background: "rgba(255,255,255,0.05)", color: "#8a95a8" }}>{r.category}</span>
               </div>
 
-              <div className="text-[12px] text-[#8a95a8] flex items-center gap-1">
-                <MapPin className="h-3 w-3 flex-shrink-0" />{r.location}
+              <div className="text-[12px] text-[#8a95a8] flex items-center gap-1" style={{ minWidth: 0, overflow: "hidden" }}>
+                <MapPin className="h-3 w-3 flex-shrink-0" />
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.location}</span>
               </div>
 
-              <div>
+              <div style={{ minWidth: 0 }}>
                 <div className="flex items-center gap-2">
                   <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "#1c2230" }}>
                     <div className="h-full rounded-full" style={{ width: `${r.relevanceScore}%`, background: scoreColor(r.relevanceScore) }} />
@@ -398,8 +503,8 @@ export default function SearchBusinessesPage() {
                 <div className="text-[10px] text-[#5a6478] mt-1 line-clamp-1">{r.reasoning}</div>
               </div>
 
-              <div>{verifyBadge(r.verificationStatus)}</div>
-              <div>{relevanceBadge(r.relevanceStatus)}</div>
+              <div style={{ minWidth: 0 }}>{verifyBadge(r.verificationStatus)}</div>
+              <div style={{ minWidth: 0 }}>{relevanceBadge(r.relevanceStatus)}</div>
 
               <div className="flex gap-1.5">
                 <Link to={`/app/business/${r.id}`}>
@@ -419,7 +524,17 @@ export default function SearchBusinessesPage() {
             </div>
           ))}
 
-          {filtered.length === 0 && (
+          {filtered.length === 0 && results.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-14 text-center">
+              <div className="text-3xl mb-3 opacity-40">🔍</div>
+              <div className="text-sm font-bold text-[#e8edf5] mb-1">No results yet</div>
+              <div className="text-[12px] text-[#5a6478]">
+                Run a search above to discover businesses
+              </div>
+            </div>
+          )}
+
+          {filtered.length === 0 && results.length > 0 && (
             <div className="flex flex-col items-center justify-center py-14 text-center">
               <div className="text-3xl mb-3 opacity-40">🔍</div>
               <div className="text-sm font-bold text-[#e8edf5] mb-1">No results match this filter</div>
@@ -427,6 +542,16 @@ export default function SearchBusinessesPage() {
             </div>
           )}
         </div>
+
+        {nextPageToken && (
+          <div className="flex justify-center mt-4">
+            <button style={btnGhost} onClick={handleLoadMore} disabled={searching}>
+              {searching
+                ? <><RefreshCw className="h-3.5 w-3.5 animate-spin" /> Loading…</>
+                : <>↓ Load More Results</>}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

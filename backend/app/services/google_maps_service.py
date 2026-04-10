@@ -40,7 +40,7 @@ def get_place_details(place_id: str):
     
     return {"website": None, "phone": None, "url": None}
 
-def search_google_maps(db: Session, user_id: int, query: str, page_token: str = None, context_id: int = None):
+def search_google_maps(db: Session, user_id: int, query: str, page_token: str = None, context_id: int = None, session_id: int = None):
     """
     1. Search Text API (Get List)
     2. For EACH result -> Call Details API (Get Website/Phone)
@@ -51,29 +51,28 @@ def search_google_maps(db: Session, user_id: int, query: str, page_token: str = 
     if not GOOGLE_MAPS_API_KEY:
         return {"error": "Server configuration error (Missing API Key)"}
 
-    # 2. Create/Update Session
-    # Note: If page_token is provided, we use the EXISTING session, usually passed from frontend.
-    # For this specific function, we just update the 'next_page_token' of the current session.
-    # But to keep it simple for the MVP 'Search' call, we create a new one if it's a fresh search.
-    
-    # Logic: If page_token exists, we assume we are continuing a session. 
-    # But here we will simpler: Always create a session log for the 'batch'.
-    search_session = SearchSession(
-        user_id=user_id,
-        search_query=query,
-        created_at=datetime.utcnow(),
-        next_page_token=page_token,
-        context_id=context_id
-    )
-    
-    try:
-        db.add(search_session)
-        db.commit()
-        db.refresh(search_session)
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Database error while saving search session: {e}")
-        return {"error": f"Database transaction failed: {e}"}
+    if session_id:
+        search_session = db.query(SearchSession).filter(
+            SearchSession.search_id == session_id
+        ).first()
+        if not search_session:
+            return {"error": f"Session {session_id} not found"}
+    else:
+        search_session = SearchSession(
+            user_id=user_id,
+            search_query=query,
+            created_at=datetime.utcnow(),
+            next_page_token=page_token,
+            context_id=context_id
+        )
+        try:
+            db.add(search_session)
+            db.commit()
+            db.refresh(search_session)
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Database error while saving search session: {e}")
+            return {"error": f"Database transaction failed: {e}"}
 
     # 3. Prepare API request
     params = {
@@ -150,6 +149,10 @@ def search_google_maps(db: Session, user_id: int, query: str, page_token: str = 
             db.add(search_result)
             results_added += 1
 
+        db.commit()
+        search_session.result_count = db.query(SearchResult).filter(
+            SearchResult.search_id == search_session.search_id
+        ).count()
         db.commit()
     except Exception as e:
         db.rollback()

@@ -17,6 +17,9 @@ class DashboardStatsResponse(BaseModel):
     total_searches: int
     risk_distribution: List[Dict[str, Any]]
     verification_data: List[Dict[str, Any]]
+    leads_found: int
+    relevant_leads: int
+    emails_sent: int
 
 @router.get("/stats", response_model=DashboardStatsResponse)
 def get_dashboard_stats(db: Session = Depends(get_db)):
@@ -67,13 +70,25 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
         { "name": 'Not Verified', "value": max(0, unverified_clients), "color": '#ef4444' }
     ]
 
+    # New KPI fields
+    leads_found = db.query(func.count(SearchResult.result_id)).scalar() or 0
+    relevant_leads = db.query(SearchResult).filter(
+        SearchResult.relevance_decision == 'relevant'
+    ).count()
+    emails_sent = db.query(EmailDraft).filter(
+        EmailDraft.status == 'sent'
+    ).count()
+
     return DashboardStatsResponse(
         total_clients=total_clients,
         verified_clients=verified_clients,
         unverified_clients=max(0, unverified_clients),
         total_searches=total_searches,
         risk_distribution=risk_distribution,
-        verification_data=verification_data
+        verification_data=verification_data,
+        leads_found=leads_found,
+        relevant_leads=relevant_leads,
+        emails_sent=emails_sent
     )
 
 @router.get("/activity")

@@ -43,6 +43,68 @@
   --sidebar-ring: #3b82f6;
 }
 
+.force-dark {
+  --background: #0a0c10;
+  --foreground: #e8edf5;
+  --card: #0f1218;
+  --card-foreground: #e8edf5;
+  --popover: #151a22;
+  --popover-foreground: #e8edf5;
+  --primary: #3b82f6;
+  --primary-foreground: #ffffff;
+  --secondary: #1c2230;
+  --secondary-foreground: #e8edf5;
+  --muted: #151a22;
+  --muted-foreground: #8a95a8;
+  --accent: #1c2230;
+  --accent-foreground: #e8edf5;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --border: rgba(255,255,255,0.07);
+  --input: #151a22;
+  --input-background: #151a22;
+  --switch-background: #1c2230;
+  --sidebar: #0f1218;
+  --sidebar-foreground: #e8edf5;
+  --sidebar-primary: #3b82f6;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #151a22;
+  --sidebar-accent-foreground: #e8edf5;
+  --sidebar-border: rgba(255,255,255,0.07);
+  --sidebar-ring: #3b82f6;
+}
+
+.light {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+  --primary: #3b82f6;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #0f172a;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --accent: #f1f5f9;
+  --accent-foreground: #0f172a;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --border: rgba(0,0,0,0.08);
+  --input: #f1f5f9;
+  --input-background: #f1f5f9;
+  --switch-background: #e2e8f0;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0f172a;
+  --sidebar-primary: #3b82f6;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f1f5f9;
+  --sidebar-accent-foreground: #0f172a;
+  --sidebar-border: rgba(0,0,0,0.08);
+  --sidebar-ring: #3b82f6;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -114,4 +176,11 @@
   background-size: 200% 100%;
   animation: shimmer 1.4s ease infinite;
   border-radius: 6px;
+}
+
+html:not(.light) {
+  color-scheme: dark;
+}
+html.light {
+  color-scheme: light;
 }

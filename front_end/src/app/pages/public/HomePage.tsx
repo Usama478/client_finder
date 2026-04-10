@@ -94,9 +94,9 @@ export default function HomePage() {
   ];
 
   return (
-    <div className="bg-white">
+    <div className="bg-background text-foreground">
       {/* Hero Section */}
-      <section className="relative overflow-hidden bg-gradient-to-b from-blue-50 to-white">
+      <section className="relative overflow-hidden bg-gradient-to-b from-primary/5 to-background">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 lg:py-32">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             <div>
@@ -104,7 +104,7 @@ export default function HomePage() {
               <h1 className="text-4xl lg:text-6xl font-bold mb-6 leading-tight">
                 Find, Verify, and Contact Your Ideal Clients
               </h1>
-              <p className="text-lg text-gray-600 mb-8">
+              <p className="text-lg text-muted-foreground mb-8">
                 Stop wasting time on manual prospecting. Client Finder combines real-time business search, 
                 AI relevance scoring, and trust verification into one powerful workflow.
               </p>
@@ -120,13 +120,13 @@ export default function HomePage() {
                   </Button>
                 </Link>
               </div>
-              <div className="mt-8 flex items-center gap-6 text-sm text-gray-600">
+              <div className="mt-8 flex items-center gap-6 text-sm text-muted-foreground">
                 <div className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
                   No credit card required
                 </div>
                 <div className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
                   14-day free trial
                 </div>
               </div>
@@ -140,15 +140,15 @@ export default function HomePage() {
                       <Badge variant="secondary">Live</Badge>
                     </div>
                     {[
-                      { name: "TechCorp Industries", score: 94, status: "Verified", color: "text-green-600" },
-                      { name: "Global Exports Ltd", score: 88, status: "Verified", color: "text-green-600" },
-                      { name: "Innovation Partners", score: 76, status: "Pending", color: "text-yellow-600" }
+                      { name: "TechCorp Industries", score: 94, status: "Verified", color: "text-emerald-500" },
+                      { name: "Global Exports Ltd", score: 88, status: "Verified", color: "text-emerald-500" },
+                      { name: "Innovation Partners", score: 76, status: "Pending", color: "text-amber-500" }
                     ].map((item, i) => (
-                      <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div key={i} className="flex items-center justify-between p-3 bg-muted rounded-lg">
                         <div>
-                          <div className="font-medium text-sm">{item.name}</div>
+                          <div className="font-medium text-sm text-foreground">{item.name}</div>
                           <div className="flex items-center gap-2 mt-1">
-                            <div className="text-xs text-gray-500">Match Score: {item.score}%</div>
+                            <div className="text-xs text-muted-foreground">Match Score: {item.score}%</div>
                             <Badge variant="outline" className={`text-xs ${item.color} border-current`}>
                               {item.status}
                             </Badge>
@@ -166,23 +166,23 @@ export default function HomePage() {
       </section>
 
       {/* Trust Strip */}
-      <section className="border-y bg-gray-50 py-8">
+      <section className="border-y border-border bg-muted py-8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-6 text-sm text-gray-500">Trusted by exporters and B2B teams worldwide</div>
+          <div className="text-center mb-6 text-sm text-muted-foreground">Trusted by exporters and B2B teams worldwide</div>
           <div className="flex justify-center items-center gap-12 opacity-60">
             {["Company A", "Company B", "Company C", "Company D"].map((company, i) => (
-              <div key={i} className="font-semibold text-gray-600">{company}</div>
+              <div key={i} className="font-semibold text-muted-foreground">{company}</div>
             ))}
           </div>
         </div>
       </section>
 
       {/* Features Grid */}
-      <section className="py-24 bg-white">
+      <section className="py-24 bg-background">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
             <h2 className="text-3xl lg:text-4xl font-bold mb-4">Everything you need in one platform</h2>
-            <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
               Replace fragmented tools with a single, integrated workflow that takes you from search to signed client.
             </p>
           </div>
@@ -190,13 +190,13 @@ export default function HomePage() {
             {features.map((feature, i) => {
               const Icon = feature.icon;
               return (
-                <Card key={i} className="border-2 hover:border-blue-200 transition-colors">
+                <Card key={i} className="border bg-card hover:border-primary/50 transition-colors">
                   <CardContent className="p-6">
-                    <div className="h-12 w-12 bg-blue-100 rounded-lg flex items-center justify-center mb-4">
-                      <Icon className="h-6 w-6 text-blue-700" />
+                    <div className="h-12 w-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
+                      <Icon className="h-6 w-6 text-primary" />
                     </div>
-                    <h3 className="font-semibold text-lg mb-2">{feature.title}</h3>
-                    <p className="text-gray-600 text-sm">{feature.description}</p>
+                    <h3 className="font-semibold text-lg mb-2 text-foreground">{feature.title}</h3>
+                    <p className="text-muted-foreground text-sm">{feature.description}</p>
                   </CardContent>
                 </Card>
               );
@@ -206,11 +206,11 @@ export default function HomePage() {
       </section>
 
       {/* How It Works */}
-      <section className="py-24 bg-gray-50">
+      <section className="py-24 bg-muted border-y border-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
-            <h2 className="text-3xl lg:text-4xl font-bold mb-4">Your complete client discovery pipeline</h2>
-            <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+            <h2 className="text-3xl lg:text-4xl font-bold mb-4 text-foreground">Your complete client discovery pipeline</h2>
+            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
               A guided, step-by-step workflow that ensures you only contact qualified, verified prospects.
             </p>
           </div>
@@ -225,11 +225,11 @@ export default function HomePage() {
                       </div>
                     </div>
                     <div className="flex-1">
-                      <h3 className="font-semibold text-xl mb-2">{step.title}</h3>
-                      <p className="text-gray-600">{step.description}</p>
+                      <h3 className="font-semibold text-xl mb-2 text-foreground">{step.title}</h3>
+                      <p className="text-muted-foreground">{step.description}</p>
                     </div>
                     {i < steps.length - 1 && (
-                      <ArrowRight className="h-6 w-6 text-gray-400 hidden lg:block" />
+                      <ArrowRight className="h-6 w-6 text-muted-foreground hidden lg:block" />
                     )}
                   </div>
                 </CardContent>
@@ -240,11 +240,11 @@ export default function HomePage() {
       </section>
 
       {/* Pricing Preview */}
-      <section className="py-24 bg-white">
+      <section className="py-24 bg-background">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
             <h2 className="text-3xl lg:text-4xl font-bold mb-4">Simple, transparent pricing</h2>
-            <p className="text-lg text-gray-600">Choose the plan that fits your business needs</p>
+            <p className="text-lg text-muted-foreground">Choose the plan that fits your business needs</p>
           </div>
           <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
             {pricingPlans.map((plan, i) => (
@@ -255,16 +255,16 @@ export default function HomePage() {
                   </div>
                 )}
                 <CardContent className="p-6">
-                  <h3 className="font-semibold text-xl mb-2">{plan.name}</h3>
-                  <p className="text-sm text-gray-600 mb-4">{plan.description}</p>
+                  <h3 className="font-semibold text-xl mb-2 text-foreground">{plan.name}</h3>
+                  <p className="text-sm text-muted-foreground mb-4">{plan.description}</p>
                   <div className="mb-6">
-                    <span className="text-4xl font-bold">{plan.price}</span>
-                    <span className="text-gray-600">{plan.period}</span>
+                    <span className="text-4xl font-bold text-foreground">{plan.price}</span>
+                    <span className="text-muted-foreground">{plan.period}</span>
                   </div>
                   <ul className="space-y-3 mb-6">
                     {plan.features.map((feature, j) => (
-                      <li key={j} className="flex items-start gap-2 text-sm">
-                        <CheckCircle2 className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
+                      <li key={j} className="flex items-start gap-2 text-sm text-muted-foreground">
+                        <CheckCircle2 className="h-5 w-5 text-emerald-500 flex-shrink-0 mt-0.5" />
                         <span>{feature}</span>
                       </li>
                     ))}
@@ -282,12 +282,12 @@ export default function HomePage() {
       </section>
 
       {/* Final CTA */}
-      <section className="py-24 bg-gradient-to-br from-blue-600 to-blue-700 text-white">
+      <section className="py-24 bg-gradient-to-br from-primary to-blue-700 text-primary-foreground">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-3xl lg:text-5xl font-bold mb-6">
             Ready to transform your client discovery?
           </h2>
-          <p className="text-xl mb-8 text-blue-100">
+          <p className="text-xl mb-8 opacity-90">
             Join hundreds of exporters and B2B teams who've replaced manual prospecting with intelligent automation.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">

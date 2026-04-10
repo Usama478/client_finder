@@ -97,6 +97,8 @@ def send_approved_draft(draft_id: int) -> dict:
             draft.sendgrid_message_id_normalized = normalized_id
             draft.status = "sent"
             draft.sent_at = datetime.now(timezone.utc)
+            if lead:
+                lead.outreach_status = "sent"
             db.commit()
             
             return {"status": "sent", "message_id": raw_message_id}
@@ -161,6 +163,11 @@ def handle_sendgrid_webhook(events: list) -> dict:
             # Handle open event
             if event_type == "open" and draft.opened_at is None:
                 draft.opened_at = event_dt
+                
+                # Sync to lead
+                lead = db.query(SearchResult).filter(SearchResult.result_id == draft.business_id).first()
+                if lead and lead.outreach_status in ("sent", "pending"):
+                    lead.outreach_status = "opened"
             
             # Handle click event
             if event_type == "click" and draft.clicked_at is None:
@@ -178,6 +185,7 @@ def handle_sendgrid_webhook(events: list) -> dict:
                 ).first()
                 if lead:
                     lead.email_status = "bounced"
+                    lead.outreach_status = "bounced"
             
             db.commit()
             db.close()

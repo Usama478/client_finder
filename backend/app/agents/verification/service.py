@@ -45,6 +45,7 @@ def _try_mark_verification_failed(business_id: int, reason: str) -> None:
                 db.commit()
                 return  # Written successfully
         except Exception as exc:
+            logger.error(f"[VERIFICATION] ERROR for business_id={business_id}: {str(exc)}")
             logger.error(
                 "_try_mark_verification_failed attempt=%s FAILED business_id=%s error=%s",
                 attempt,
@@ -259,6 +260,7 @@ def _persist_verification_to_db(
             email_context=final_state.get("email_context"),
         )
     except ValidationError as validation_exc:
+        logger.error(f"[VERIFICATION] ERROR for business_id={business_id}: {str(validation_exc)}")
         logger.error(
             "persist_verification CONTRACT_VIOLATION business_id=%s error=%s",
             business_id,
@@ -410,6 +412,7 @@ def _persist_verification_to_db(
             final_state.get("verification_result"),
         )
     except Exception as exc:
+        logger.error(f"[VERIFICATION] ERROR for business_id={business_id}: {str(exc)}")
         logger.error(
             "persist_verification FAILED business_id=%s error=%s", business_id, exc, exc_info=True
         )
@@ -492,6 +495,8 @@ def run_verification_for_business(business_id: int) -> Dict[str, object]:
         if not lead:
             raise ValueError(f"Business ID {business_id} not found in database.")
 
+        logger.info(f"[VERIFICATION] Starting for business_id={business_id} website={lead.website}")
+
         if lead.verification_status == "processing":
             logger.info(
                 "run_verification SKIP business_id=%s reason=already_processing",
@@ -546,12 +551,14 @@ def run_verification_for_business(business_id: int) -> Dict[str, object]:
         lead.email_context = None
         lock_db.commit()
         logger.info("verification_service LOCK_ACQUIRED business_id=%s", business_id)
-    except ValueError:
+    except ValueError as exc:
+        logger.error(f"[VERIFICATION] ERROR for business_id={business_id}: {str(exc)}")
         # ValueError is raised intentionally (e.g. business_id not found).
         # Rollback and re-raise without wrapping.
         lock_db.rollback()
         raise
     except Exception as lock_exc:
+        logger.error(f"[VERIFICATION] ERROR for business_id={business_id}: {str(lock_exc)}")
         logger.error(
             "run_verification lock_write FAILED business_id=%s error=%s",
             business_id,
@@ -567,6 +574,8 @@ def run_verification_for_business(business_id: int) -> Dict[str, object]:
     # Task 2 – Outer crash net around graph execution                     #
     # ------------------------------------------------------------------ #
     initial_state = _build_initial_state(business_id)
+
+    logger.info(f"[VERIFICATION] Starting web verification for business_id={business_id}")
 
     try:
         _result_queue: multiprocessing.Queue = multiprocessing.Queue()
@@ -604,7 +613,14 @@ def run_verification_for_business(business_id: int) -> Dict[str, object]:
             raise _payload  # re-raise the original graph exception
 
         final_state = _payload
+        
+        logger.info(f"[VERIFICATION] Website accessible check for business_id={business_id}: {final_state.get('website_alive')}")
+        logger.info(f"[VERIFICATION] Contact page found for business_id={business_id}: {final_state.get('has_contact_page')}")
+        logger.info(f"[VERIFICATION] Legitimacy score for business_id={business_id}: {final_state.get('legitimacy_score')}")
+        logger.info(f"[VERIFICATION] Final decision for business_id={business_id}: status={final_state.get('verification_result')} legitimacy_score={final_state.get('legitimacy_score')} flags={final_state.get('risk_flags')}")
+        
     except Exception as graph_exc:
+        logger.error(f"[VERIFICATION] ERROR for business_id={business_id}: {str(graph_exc)}")
         logger.error(
             "run_verification GRAPH_CRASH business_id=%s error=%s",
             business_id,
@@ -626,7 +642,9 @@ def run_verification_for_business(business_id: int) -> Dict[str, object]:
     # ------------------------------------------------------------------ #
     try:
         _persist_verification_to_db(business_id=business_id, final_state=final_state)
+        logger.info(f"[VERIFICATION] Saved to DB: business_id={business_id} verification_status={final_state.get('verification_result')} legitimacy_score={final_state.get('legitimacy_score')}")
     except Exception as persist_exc:
+        logger.error(f"[VERIFICATION] ERROR for business_id={business_id}: {str(persist_exc)}")
         logger.error(
             "run_verification PERSIST_FAILED business_id=%s error=%s",
             business_id,
@@ -689,10 +707,12 @@ def run_verification_batch(business_ids: List[int]) -> List[Dict[str, object]]:
                 result = run_verification_for_business(business_id)
                 results.append({"business_id": business_id, "status": "ok", "result": result})
             except ValueError as exc:
+                logger.error(f"[VERIFICATION] ERROR for business_id={business_id}: {str(exc)}")
                 results.append(
                     {"business_id": business_id, "status": "not_found", "detail": str(exc)}
                 )
             except Exception as exc:
+                logger.error(f"[VERIFICATION] ERROR for business_id={business_id}: {str(exc)}")
                 logger.error(
                     "run_verification_batch ITEM_FAILED business_id=%s error=%s",
                     business_id,

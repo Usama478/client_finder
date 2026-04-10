@@ -11,7 +11,7 @@ import { useAuth } from "../../../lib/auth-context";
 import { api } from "../../../lib/api";
 
 export default function SettingsPage() {
-  const { user, refreshUser } = useAuth();
+  const { user, refreshUser, theme, toggleTheme } = useAuth();
   const [profileData, setProfileData] = useState<any>(null);
   const [profileId, setProfileId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
@@ -143,6 +143,65 @@ export default function SettingsPage() {
               }}>Save Changes</Button>
             </CardContent>
           </Card>
+
+          <div style={{ 
+            background: "var(--card)", 
+            border: "1px solid var(--border)", 
+            borderRadius: 10, 
+            padding: 20,
+            marginBottom: 16
+          }}>
+            <div style={{ 
+              fontSize: 13, 
+              fontWeight: 600, 
+              color: "var(--foreground)",
+              marginBottom: 4
+            }}>
+              Appearance
+            </div>
+            <div style={{ 
+              fontSize: 12, 
+              color: "var(--muted-foreground)",
+              marginBottom: 16
+            }}>
+              Choose between dark and light mode
+            </div>
+            <div className="flex items-center gap-3">
+              <span style={{ fontSize: 12, color: "var(--muted-foreground)" }}>
+                🌙 Dark
+              </span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  toggleTheme();
+                }}
+                style={{
+                  width: 44,
+                  height: 24,
+                  borderRadius: 12,
+                  border: "none",
+                  cursor: "pointer",
+                  position: "relative",
+                  background: theme === "light" ? "#3b82f6" : "#1c2230",
+                  transition: "background 0.2s"
+                }}>
+                <div style={{
+                  width: 18,
+                  height: 18,
+                  borderRadius: "50%",
+                  background: "white",
+                  position: "absolute",
+                  top: 3,
+                  left: theme === "light" ? 23 : 3,
+                  transition: "left 0.2s"
+                }} />
+              </button>
+              <span style={{ fontSize: 12, color: "var(--muted-foreground)" }}>
+                ☀️ Light
+              </span>
+            </div>
+          </div>
         </TabsContent>
 
         <TabsContent value="workspace">

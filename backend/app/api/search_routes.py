@@ -16,6 +16,7 @@ class SearchRequest(BaseModel):
     query: str
     page_token: Optional[str] = None
     context_id: Optional[int] = None
+    session_id: Optional[int] = None
 
 class ClientStatusUpdate(BaseModel):
     is_saved_client: bool
@@ -48,7 +49,8 @@ def search_endpoint(request: SearchRequest, db: Session = Depends(get_db)):
             user_id=request.user_id,
             query=request.query,
             page_token=request.page_token,
-            context_id=request.context_id
+            context_id=request.context_id,
+            session_id=request.session_id,
         )
         if "error" in result:
             raise HTTPException(status_code=400, detail=result["error"])
@@ -65,13 +67,32 @@ def get_search_sessions_deprecated(user_id: int):
 def list_search_sessions(user_id: int, db: Session = Depends(get_db)):
     """List search sessions for a user, ordered by most recent. Returns empty list if none."""
     try:
+        from sqlalchemy import func
         sessions = (
             db.query(SearchSession)
             .filter(SearchSession.user_id == user_id)
             .order_by(SearchSession.created_at.desc())
             .all()
         )
-        return sessions
+        
+        # Add results_count to each session
+        result = []
+        for session in sessions:
+            results_count = db.query(func.count(SearchResult.result_id)).filter(
+                SearchResult.search_id == session.search_id
+            ).scalar() or 0
+            
+            session_dict = {
+                "search_id": session.search_id,
+                "user_id": session.user_id,
+                "search_query": session.search_query,
+                "context_id": session.context_id,
+                "created_at": session.created_at.isoformat() if session.created_at else None,
+                "results_count": results_count
+            }
+            result.append(session_dict)
+        
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

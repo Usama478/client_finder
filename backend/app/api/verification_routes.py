@@ -4,6 +4,7 @@ import logging
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, HTTPException
+from fastapi import Request as FastAPIRequest
 from pydantic import BaseModel
 
 from app.agents.verification.service import (
@@ -31,6 +32,61 @@ class BatchVerifyRequest(BaseModel):
 # Routes                                                                       #
 # --------------------------------------------------------------------------- #
 
+from fastapi import Request as RawRequest
+
+@router.post("/verify/batch-debug")
+async def verify_batch_debug(request: RawRequest):
+    """Debugging endpoint - shows exactly what the frontend is sending"""
+    body = await request.body()
+    body_str = body.decode('utf-8')
+    
+    try:
+        import json
+        parsed = json.loads(body_str)
+        logger.info(f"[BATCH_DEBUG] Raw body: {body_str}")
+        logger.info(f"[BATCH_DEBUG] Parsed JSON: {parsed}")
+        logger.info(f"[BATCH_DEBUG] Type of business_ids: {type(parsed.get('business_ids'))}")
+        if 'business_ids' in parsed:
+            logger.info(f"[BATCH_DEBUG] First ID type: {type(parsed['business_ids'][0]) if parsed['business_ids'] else 'empty'}")
+        return {"status": "debug", "received": parsed}
+    except Exception as e:
+        logger.error(f"[BATCH_DEBUG] Failed to parse: {e}")
+        return {"status": "error", "raw": body_str, "error": str(e)}
+
+@router.post("/verify/batch")
+async def verify_batch(
+    batch_request: BatchVerifyRequest,
+    raw_request: FastAPIRequest
+) -> Dict[str, Any]:
+    """
+    Run the Verification Agent for a list of business IDs sequentially.
+
+    Returns a summary dict with per-business outcomes.
+    Individual failures are captured and reported without aborting the batch.
+    """
+    # Log the raw body
+    body = await raw_request.json()
+    logger.info(f"[VERIFICATION_BATCH] Raw body received: {body}")
+    logger.info(f"[VERIFICATION_BATCH] Parsed business_ids: {batch_request.business_ids}")
+
+    if not batch_request.business_ids:
+        raise HTTPException(status_code=400, detail="No business_ids provided.")
+
+    results = run_verification_batch(batch_request.business_ids)
+
+    total = len(batch_request.business_ids)
+    succeeded = sum(1 for r in results if r["status"] == "ok")
+    skipped = sum(1 for r in results if r.get("result", {}).get("status") == "skipped")
+
+    return {
+        "total": total,
+        "succeeded": succeeded,
+        "skipped": skipped,
+        "failed": total - succeeded - skipped,
+        "results": results,
+    }
+
+
 @router.post("/verify/{business_id}")
 def verify_single(business_id: int) -> Dict[str, Any]:
     """
@@ -50,32 +106,6 @@ def verify_single(business_id: int) -> Dict[str, Any]:
             "verify_single FAILED business_id=%s error=%s", business_id, exc, exc_info=True
         )
         raise HTTPException(status_code=500, detail=f"Verification failed: {exc}")
-
-
-@router.post("/verify/batch")
-def verify_batch(request: BatchVerifyRequest) -> Dict[str, Any]:
-    """
-    Run the Verification Agent for a list of business IDs sequentially.
-
-    Returns a summary dict with per-business outcomes.
-    Individual failures are captured and reported without aborting the batch.
-    """
-    if not request.business_ids:
-        raise HTTPException(status_code=400, detail="No business_ids provided.")
-
-    results = run_verification_batch(request.business_ids)
-
-    total = len(request.business_ids)
-    succeeded = sum(1 for r in results if r["status"] == "ok")
-    skipped = sum(1 for r in results if r.get("result", {}).get("status") == "skipped")
-
-    return {
-        "total": total,
-        "succeeded": succeeded,
-        "skipped": skipped,
-        "failed": total - succeeded - skipped,
-        "results": results,
-    }
 
 
 @router.post("/admin/reset-stale")

@@ -54,36 +54,30 @@ export default function DashboardPage() {
     { label: "Total Searches", value: stats ? String(stats.total_searches || 0) : "—", delta: "", icon: Search, color: "#3b82f6" },
     { label: "Saved Clients", value: stats ? String(stats.total_clients || 0) : "—", delta: "", icon: Users, color: "#10b981" },
     { label: "Verified", value: stats ? String(stats.verified_clients || 0) : "—", delta: "", icon: ShieldCheck, color: "#f59e0b" },
-    { label: "Leads Found", value: "—", delta: "", icon: Activity, color: "#8b5cf6" },
-    { label: "Relevant Leads", value: "—", delta: "", icon: Target, color: "#10b981" },
-    { label: "Emails Sent", value: "—", delta: "", icon: Mail, color: "#3b82f6" },
+    { label: "Leads Found", value: stats ? String(stats.leads_found || 0) : "—", delta: "", icon: Activity, color: "#8b5cf6" },
+    { label: "Relevant Leads", value: stats ? String(stats.relevant_leads || 0) : "—", delta: "", icon: Target, color: "#10b981" },
+    { label: "Emails Sent", value: stats ? String(stats.emails_sent || 0) : "—", delta: "", icon: Mail, color: "#3b82f6" },
   ];
 
   const pipeline = [
-    { stage: "Search",       count: "3.8k", icon: "🔍", path: "/app/search",  active: true  },
-    { stage: "Relevancy",    count: "1.2k", icon: "🤖", path: "/app/search",  active: false },
-    { stage: "Verification", count: "847",  icon: "🔒", path: "/app/clients", active: false },
-    { stage: "Clients",      count: "47",   icon: "⭐", path: "/app/clients", active: false },
-    { stage: "Outreach",     count: "312",  icon: "✉️", path: "/app/email",   active: false },
-  ];
-
-  const recentSearches = [
-    { query: "Textile exporters Lahore Pakistan", context: "B2B Outreach", time: "2h ago",  results: 284, status: "done" },
-    { query: "Wholesale distributors UAE",        context: "Export Context",time: "5h ago",  results: 156, status: "scoring" },
-    { query: "Construction suppliers Germany",    context: "Default",       time: "1d ago",  results: 412, status: "done" },
+    { stage: "Search",       count: stats?.total_searches ?? "—", icon: Search,       path: "/app/search",  active: true  },
+    { stage: "Relevancy",    count: stats?.leads_found ?? "—", icon: Target,       path: "/app/search",  active: false },
+    { stage: "Verification", count: stats?.relevant_leads ?? "—",  icon: ShieldCheck,  path: "/app/clients", active: false },
+    { stage: "Clients",      count: stats?.total_clients ?? "—",   icon: Users,        path: "/app/clients", active: false },
+    { stage: "Outreach",     count: stats?.emails_sent ?? "—",  icon: Mail,         path: "/app/email",   active: false },
   ];
 
   const funnel = [
-    { stage: "Leads Found", count: 3800, fill: "#3b82f6" },
-    { stage: "Relevant",    count: 1200, fill: "#8b5cf6" },
-    { stage: "Verified",    count: 847,  fill: "#10b981" },
-    { stage: "Clients",     count: 47,   fill: "#f59e0b" },
+    { stage: "Leads Found", count: stats?.leads_found ?? 0, fill: "#3b82f6" },
+    { stage: "Relevant",    count: stats?.relevant_leads ?? 0, fill: "#8b5cf6" },
+    { stage: "Verified",    count: stats?.verified_clients ?? 0,  fill: "#10b981" },
+    { stage: "Clients",     count: stats?.total_clients ?? 0,   fill: "#f59e0b" },
   ];
 
   const nextActions = [
-    { icon: "🤖", text: "156 leads ready for AI relevance scoring",  badge: { label: "Pending", color: "amber" as const }, path: "/app/search"  },
-    { icon: "🔒", text: "89 relevant leads ready for verification",   badge: { label: "Ready",   color: "blue"  as const }, path: "/app/clients" },
-    { icon: "✉️", text: "14 verified clients ready for outreach",     badge: { label: "New",     color: "green" as const }, path: "/app/email"   },
+    { icon: Target, text: `${stats?.leads_found ?? 0} leads ready for AI relevance scoring`,  badge: { label: "Pending", color: "amber" as const }, path: "/app/search"  },
+    { icon: ShieldCheck, text: `${stats?.relevant_leads ?? 0} relevant leads ready for verification`,   badge: { label: "Ready",   color: "blue"  as const }, path: "/app/clients" },
+    { icon: Users, text: `${stats?.verified_clients ?? 0} verified clients ready for outreach`,     badge: { label: "New",     color: "green" as const }, path: "/app/email"   },
   ];
 
   const activity = [
@@ -119,21 +113,24 @@ export default function DashboardPage() {
       <div style={S.card} className="p-5">
         <div className={S.section}>Pipeline Overview</div>
         <div className="flex items-stretch gap-0">
-          {pipeline.map((s, i) => (
-            <div key={i} className="flex items-center flex-1">
-              <Link to={s.path} className="flex-1">
-                <div className={`flex flex-col items-center p-4 rounded-lg cursor-pointer transition-all text-center
-                  ${s.active ? "border border-blue-500/30 bg-blue-500/5" : "border border-white/5 bg-[#151a22] hover:bg-[#1c2230]"}`}>
-                  <div className="text-xl mb-1">{s.icon}</div>
-                  <div className="text-[10px] font-semibold text-[#8a95a8] uppercase tracking-wider">{s.stage}</div>
-                  <div className="text-xl font-bold mt-1 text-[#e8edf5]" style={{ fontFamily: "Syne, sans-serif" }}>{s.count}</div>
-                </div>
-              </Link>
-              {i < pipeline.length - 1 && (
-                <ArrowRight className="h-4 w-4 text-[#5a6478] flex-shrink-0 mx-1" />
-              )}
-            </div>
-          ))}
+          {pipeline.map((s, i) => {
+            const StageIcon = s.icon;
+            return (
+              <div key={i} className="flex items-center flex-1">
+                <Link to={s.path} className="flex-1">
+                  <div className={`flex flex-col items-center p-4 rounded-lg cursor-pointer transition-all text-center
+                    ${s.active ? "border border-blue-500/30 bg-blue-500/5" : "border border-white/5 bg-[#151a22] hover:bg-[#1c2230]"}`}>
+                    <StageIcon className="h-5 w-5 mb-1 text-[#8a95a8]" />
+                    <div className="text-[10px] font-semibold text-[#8a95a8] uppercase tracking-wider">{s.stage}</div>
+                    <div className="text-xl font-bold mt-1 text-[#e8edf5]" style={{ fontFamily: "Syne, sans-serif" }}>{s.count}</div>
+                  </div>
+                </Link>
+                {i < pipeline.length - 1 && (
+                  <ArrowRight className="h-4 w-4 text-[#5a6478] flex-shrink-0 mx-1" />
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -145,34 +142,55 @@ export default function DashboardPage() {
             <div className={S.section} style={{ marginBottom: 0 }}>Recent Searches</div>
             <Link to="/app/search" className="text-[11px] text-blue-400 hover:text-blue-300">View all →</Link>
           </div>
-          <div className="space-y-2">
-            {(sessions.length > 0 ? sessions : recentSearches).slice(0, 3).map((s: any, i: number) => ({
-              query: s.search_query || s.query || "Search",
-              context: s.context_name || s.context || "Default",
-              time: s.created_at ? new Date(s.created_at).toLocaleDateString() : s.time || "",
-              results: s.result_count || s.results || 0,
-              status: "done" as const
-            })).map((s, i) => (
-              <div key={i} onClick={() => navigate("/app/search")}
-                className="flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors hover:bg-[#151a22]"
-                style={{ border: "1px solid rgba(255,255,255,0.04)" }}>
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-sm flex-shrink-0"
-                  style={{ background: "rgba(59,130,246,0.1)" }}>🔍</div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-[#e8edf5] truncate">{s.query}</div>
-                  <div className="text-[11px] text-[#5a6478] mt-0.5 flex items-center gap-1">
-                    <Clock className="h-3 w-3" /> {s.context} · {s.time}
+          {sessions.length > 0 ? (
+            <div className="space-y-2">
+              {sessions.slice(0, 3).map((s: any, i: number) => {
+                const getRelativeTime = (dateStr: string) => {
+                  const date = new Date(dateStr);
+                  const now = new Date();
+                  const diffMs = now.getTime() - date.getTime();
+                  const diffMins = Math.floor(diffMs / 60000);
+                  const diffHours = Math.floor(diffMins / 60);
+                  const diffDays = Math.floor(diffHours / 24);
+                  
+                  if (diffMins < 60) return `${diffMins}m ago`;
+                  if (diffHours < 24) return `${diffHours}h ago`;
+                  return `${diffDays}d ago`;
+                };
+                
+                const displayData = {
+                  query: s.search_query || "Search",
+                  context: s.context_name || "Default",
+                  time: s.created_at ? getRelativeTime(s.created_at) : "",
+                  results: s.results_count !== undefined ? s.results_count : 0,
+                  status: s.status || "done"
+                };
+                
+                return (
+                  <div key={i} onClick={() => navigate("/app/search", { state: { sessionId: s.search_id } })}
+                    className="flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors hover:bg-[#151a22]"
+                    style={{ border: "1px solid rgba(255,255,255,0.04)" }}>
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center text-sm flex-shrink-0"
+                      style={{ background: "rgba(59,130,246,0.1)" }}>🔍</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-[#e8edf5] truncate">{displayData.query}</div>
+                      <div className="text-[11px] text-[#5a6478] mt-0.5 flex items-center gap-1">
+                        <Clock className="h-3 w-3" /> {displayData.context} · {displayData.time}
+                      </div>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <div className="text-sm font-bold text-[#e8edf5]" style={{ fontFamily: "Syne, sans-serif" }}>{displayData.results}</div>
+                      {displayData.status === "done"
+                        ? <Badge color="green">Done</Badge>
+                        : <Badge color="blue">Scoring</Badge>}
+                    </div>
                   </div>
-                </div>
-                <div className="text-right flex-shrink-0">
-                  <div className="text-sm font-bold text-[#e8edf5]" style={{ fontFamily: "Syne, sans-serif" }}>{s.results}</div>
-                  {s.status === "done"
-                    ? <Badge color="green">Done</Badge>
-                    : <Badge color="blue">Scoring</Badge>}
-                </div>
-              </div>
-            ))}
-          </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="py-8 text-center text-[#5a6478] text-sm">No recent searches.</div>
+          )}
         </div>
 
         {/* Next Actions + Funnel */}
@@ -180,15 +198,18 @@ export default function DashboardPage() {
           <div style={S.card} className="p-5">
             <div className={S.section}>Next Actions</div>
             <div className="space-y-2">
-              {nextActions.map((a, i) => (
-                <div key={i} onClick={() => navigate(a.path)}
-                  className="flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors hover:bg-[#151a22]"
-                  style={{ border: "1px solid rgba(255,255,255,0.04)" }}>
-                  <span className="text-base">{a.icon}</span>
-                  <div className="flex-1 text-[13px] text-[#e8edf5]">{a.text}</div>
-                  <Badge color={a.badge.color}>{a.badge.label}</Badge>
-                </div>
-              ))}
+              {nextActions.map((a, i) => {
+                const ActionIcon = a.icon;
+                return (
+                  <div key={i} onClick={() => navigate(a.path)}
+                    className="flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors hover:bg-[#151a22]"
+                    style={{ border: "1px solid rgba(255,255,255,0.04)" }}>
+                    <ActionIcon className="h-4 w-4 text-[#8a95a8]" />
+                    <div className="flex-1 text-[13px] text-[#e8edf5]">{a.text}</div>
+                    <Badge color={a.badge.color}>{a.badge.label}</Badge>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -217,20 +238,26 @@ export default function DashboardPage() {
           <div className={S.section} style={{ marginBottom: 0 }}>Recent Activity</div>
           <Link to="/app/activity" className="text-[11px] text-blue-400 hover:text-blue-300">View all →</Link>
         </div>
-        <div className="space-y-0 divide-y" style={{ borderColor: "rgba(255,255,255,0.05)" }}>
-          {(activityEvents.length > 0 ? activityEvents : activity).map((a: any, i: number) => (
-            <div key={i} className="flex items-start gap-3 py-3">
-              <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
-                style={{ background: a.color || a.dot }}></div>
-              <div className="flex-1 text-[13px] text-[#8a95a8]">
-                {a.text || a.message || a.description}
+        {activityEvents.length > 0 ? (
+          <div className="space-y-0 divide-y" style={{ borderColor: "rgba(255,255,255,0.05)" }}>
+            {activityEvents.map((a: any, i: number) => (
+              <div key={i} className="flex items-start gap-3 py-3">
+                <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
+                  style={{ background: a.color || a.dot }}></div>
+                <div className="flex-1 text-[13px] text-[#8a95a8]">
+                  {a.text || a.message || a.description}
+                </div>
+                <div className="text-[11px] text-[#5a6478] whitespace-nowrap">
+                  {a.time ? new Date(a.time).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : ""}
+                </div>
               </div>
-              <div className="text-[11px] text-[#5a6478] whitespace-nowrap">
-                {a.time ? new Date(a.time).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : ""}
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="py-8 text-center text-[#5a6478] text-sm">
+            No recent activity.
+          </div>
+        )}
       </div>
     </div>
   );

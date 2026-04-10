@@ -68,7 +68,7 @@ export const api = {
   activityLog: (limit = 20) => request<any[]>(`/api/v1/dashboard/activity?limit=${limit}`),
 
   // Sessions
-  sessions: (userId: number) => request<any[]>(`/api/v1/sessions/${userId}`),
+  sessions: (userId: number) => request<any[]>(`/api/v1/sessions?user_id=${userId}`),
   createSession: (data: any) =>
     request<any>("/api/v1/search", { method: "POST", body: JSON.stringify(data) }),
 
@@ -95,16 +95,27 @@ export const api = {
       { method: "POST", body: JSON.stringify({ business_ids: businessIds }) }),
 
   // Relevancy
-  runRelevancy: (businessId: number, searchId: number) =>
-    request<any>("/api/relevancy/v2/run",
-      { method: "POST", body: JSON.stringify({ business_id: businessId, search_id: searchId }) }),
+  runRelevancy: (business: any, searchId: number, exporterProfile: string) =>
+    request<any>("/api/relevancy/v2/run", {
+      method: "POST",
+      body: JSON.stringify({
+        business_id: Number(business.result_id || business.id),
+        website: business.website || "",
+        exporter_profile: exporterProfile,
+        search_id: searchId || 0,
+        business_name: business.business_name || business.name || "",
+        category: business.business_type || business.category || "",
+        address: business.address || business.location || "",
+        description: "",
+      })
+    }),
 
   // Email drafts
-  emailDrafts: (businessId: number) => request<any[]>(`/api/v1/email/drafts/${businessId}`),
-  emailDraftDetail: (draftId: number) => request<any>(`/api/v1/email/drafts/detail/${draftId}`),
+  emailDrafts: (businessId: number) => request<any[]>(`/api/v1/email/drafts/${businessId}?t=${Date.now()}`),
+  emailDraftDetail: (draftId: number) => request<any>(`/api/v1/email/drafts/detail/${draftId}?t=${Date.now()}`),
   generateEmail: (businessId: number, userId: number) =>
     request<any>(`/api/v1/email/generate/${businessId}`,
-      { method: "POST", body: JSON.stringify({ user_id: userId, sequence_position: 1 }) }),
+      { method: "POST", body: JSON.stringify({ user_id: userId, exporter_profile_id: 1, sequence_position: 1 }) }),
   generateBatch: (searchId: number, userId: number) =>
     request<any>("/api/v1/email/generate-batch",
       { method: "POST", body: JSON.stringify({ search_id: searchId, user_id: userId, sequence_position: 1 }) }),

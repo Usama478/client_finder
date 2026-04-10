@@ -83,10 +83,9 @@ export default function AppLayout() {
   };
 
   return (
-    <div className="flex h-screen" style={{ background: "#0a0c10" }}>
+    <div className="flex h-screen" >
       {/* Desktop Sidebar */}
-      <aside className={`${sidebarOpen ? "w-56" : "w-14"} hidden md:flex flex-col transition-all duration-300 border-r`}
-        style={{ background: "#0f1218", borderColor: "rgba(255,255,255,0.07)" }}>
+      <aside className={`${sidebarOpen ? "w-56" : "w-14"} hidden md:flex flex-col transition-all duration-300 border-r bg-card`}>
         {/* Logo */}
         <div className="h-14 flex items-center justify-between px-3 border-b" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
           {sidebarOpen && (
@@ -132,7 +131,7 @@ export default function AppLayout() {
       {mobileMenuOpen && (
         <div className="fixed inset-0 z-50 md:hidden">
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setMobileMenuOpen(false)} />
-          <aside className="fixed left-0 top-0 bottom-0 w-64 flex flex-col border-r" style={{ background: "#0f1218", borderColor: "rgba(255,255,255,0.07)" }}>
+          <aside className="fixed left-0 top-0 bottom-0 w-64 flex flex-col border-r bg-card">
             <div className="h-14 flex items-center justify-between px-4 border-b" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
               <Link to="/app" className="flex items-center gap-2">
                 <div className="w-7 h-7 rounded-lg flex items-center justify-center text-white font-bold text-xs"
@@ -156,8 +155,7 @@ export default function AppLayout() {
       {/* Main */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Topbar */}
-        <header className="h-14 flex items-center justify-between px-4 lg:px-6 border-b flex-shrink-0"
-          style={{ background: "#0f1218", borderColor: "rgba(255,255,255,0.07)" }}>
+        <header className="h-14 flex items-center justify-between px-4 lg:px-6 border-b flex-shrink-0 bg-card">
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="icon" className="md:hidden h-8 w-8 text-[#8a95a8]" onClick={() => setMobileMenuOpen(true)}>
               <Menu className="h-4 w-4" />
@@ -184,7 +182,7 @@ export default function AppLayout() {
                   </Avatar>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48" style={{ background: "#151a22", border: "1px solid rgba(255,255,255,0.1)" }}>
+              <DropdownMenuContent align="end" className="w-48 bg-card border-border">
                 <DropdownMenuLabel className="text-[#e8edf5]">{userName}</DropdownMenuLabel>
                 <DropdownMenuSeparator style={{ background: "rgba(255,255,255,0.07)" }} />
                 <DropdownMenuItem onClick={() => navigate("/app/settings")} className="text-[#8a95a8] hover:text-[#e8edf5] cursor-pointer">
@@ -204,7 +202,7 @@ export default function AppLayout() {
           </div>
         </header>
 
-        <main className="flex-1 overflow-auto page-enter" style={{ background: "#0a0c10" }}>
+        <main className="flex-1 overflow-auto page-enter" >
           <Outlet />
         </main>
       </div>
