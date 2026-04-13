@@ -90,7 +90,8 @@ def list_search_sessions(user_id: int, db: Session = Depends(get_db), current_us
                 "search_query": session.search_query,
                 "context_id": session.context_id,
                 "created_at": session.created_at.isoformat() if session.created_at else None,
-                "results_count": results_count
+                "results_count": results_count,
+                "next_page_token": session.next_page_token
             }
             result.append(session_dict)
         

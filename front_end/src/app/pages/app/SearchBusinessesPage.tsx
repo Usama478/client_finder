@@ -23,6 +23,9 @@ export default function SearchBusinessesPage() {
   const routerLocation = useLocation();
   const [searchQuery, setSearchQuery]       = useState("");
   const [location, setLocation]             = useState("");
+  const [industry, setIndustry]             = useState("");
+  const [showOtherIndustry, setShowOtherIndustry] = useState(false);
+  const [otherIndustry, setOtherIndustry]   = useState("");
   const [selectedContext, setSelectedContext] = useState<number | null>(null);
   const [searching, setSearching]           = useState(false);
   const [loadingMore, setLoadingMore]       = useState(false);
@@ -84,9 +87,12 @@ export default function SearchBusinessesPage() {
     setSearching(true);
     const searchToastId = toast.loading("Searching businesses…");
     try {
+      const finalIndustry = showOtherIndustry ? otherIndustry : industry;
+      const parts = [searchQuery, finalIndustry, location].filter(Boolean);
+      const finalQuery = parts.join(" ");
       const searchResponse = await api.createSession({
         user_id: user.user_id,
-        query: searchQuery,
+        query: finalQuery,
         search_location: location || "",
         context_id: selectedContext ?? null,
       });
@@ -109,9 +115,12 @@ export default function SearchBusinessesPage() {
     setLoadingMore(true);
     const moreToastId = toast.loading("Loading more businesses…");
     try {
+      const finalIndustry = showOtherIndustry ? otherIndustry : industry;
+      const parts = [searchQuery, finalIndustry, location].filter(Boolean);
+      const finalQuery = parts.join(" ");
       const moreResponse = await api.createSession({
         user_id: user.user_id,
-        query: searchQuery,
+        query: finalQuery,
         search_location: location || "",
         page_token: nextPageToken,
         session_id: selectedSessionId,
@@ -302,15 +311,40 @@ export default function SearchBusinessesPage() {
           </div>
           <div className="min-w-[160px]">
             <label className="text-[10px] font-semibold text-[#5a6478] uppercase tracking-widest block mb-1.5">Industry</label>
-            <select style={{ ...inputStyle, appearance: "none" }}>
-              <option>All Industries</option>
-              <option>Manufacturing</option>
-              <option>Wholesale</option>
-              <option>Technology</option>
-              <option>Construction</option>
-              <option>Logistics</option>
+            <select 
+              style={{ ...inputStyle, appearance: "none" }} 
+              value={showOtherIndustry ? "Other" : industry}
+              onChange={e => {
+                const val = e.target.value;
+                if (val === "Other") {
+                  setShowOtherIndustry(true);
+                  setIndustry("");
+                } else {
+                  setShowOtherIndustry(false);
+                  setIndustry(val);
+                  setOtherIndustry("");
+                }
+              }}>
+              <option value="">All Industries</option>
+              <option value="Manufacturing">Manufacturing</option>
+              <option value="Wholesale">Wholesale</option>
+              <option value="Technology">Technology</option>
+              <option value="Construction">Construction</option>
+              <option value="Logistics">Logistics</option>
+              <option value="Other">Other</option>
             </select>
           </div>
+          {showOtherIndustry && (
+            <div className="min-w-[160px]">
+              <label className="text-[10px] font-semibold text-[#5a6478] uppercase tracking-widest block mb-1.5">Custom Industry</label>
+              <input 
+                style={inputStyle} 
+                placeholder="Enter industry…" 
+                value={otherIndustry} 
+                onChange={e => setOtherIndustry(e.target.value)} 
+              />
+            </div>
+          )}
           <button style={btnPrimary} onClick={handleSearch} disabled={searching}>
             {searching && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
             {!searching && <Search className="h-3.5 w-3.5" />}
@@ -439,6 +473,9 @@ export default function SearchBusinessesPage() {
                     const arr = Array.isArray(r) ? r : (r?.results ?? r?.items ?? [])
                     setResults(arr)
                     setSelectedSessionId(s.search_id)
+                    setSearchQuery(s.search_query || "")
+                    setLocation(s.search_location || "")
+                    setNextPageToken(s.next_page_token || null)
                     toast.success("Search history loaded")
                   } catch(e) { toast.error("Failed to load history") }
                 }}>

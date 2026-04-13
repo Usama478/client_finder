@@ -81,7 +81,7 @@ export default function BusinessDetailsPage() {
             <h1 className="text-3xl font-bold">{business.business_name}</h1>
             <Badge variant="outline">{business.business_type}</Badge>
           </div>
-          <div className="flex items-center gap-4 mt-2 text-gray-600">
+          <div className="flex items-center gap-4 mt-2 text-[#8a95a8]">
             <span className="flex items-center gap-1">
               <MapPin className="h-4 w-4" />
               {business.address}
@@ -110,7 +110,7 @@ export default function BusinessDetailsPage() {
 
       {/* Score Summary Cards */}
       <div className="grid md:grid-cols-2 gap-6">
-        <Card className="border-purple-200 bg-purple-50/50">
+        <Card className="border-purple-200 bg-[#151a22]">
           <CardContent className="p-6">
               <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
@@ -123,11 +123,11 @@ export default function BusinessDetailsPage() {
               <Progress value={Math.round(business.relevance_score || 0)} className="flex-1" />
               <span className="text-3xl font-bold text-purple-600">{Math.round(business.relevance_score || 0)}%</span>
             </div>
-            <div className="text-sm text-gray-600">Confidence: {business.confidence ? `${Math.round(business.confidence * 100)}%` : "—"}</div>
+            <div className="text-sm text-[#8a95a8]">Confidence: {business.confidence ? `${Math.round(business.confidence * 100)}%` : "—"}</div>
           </CardContent>
         </Card>
 
-        <Card className="border-green-200 bg-green-50/50">
+        <Card className="border-green-200 bg-[#151a22]">
           <CardContent className="p-6">
               <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
@@ -140,7 +140,7 @@ export default function BusinessDetailsPage() {
               <Progress value={business.verification_score || 0} className="flex-1" />
               <span className="text-3xl font-bold text-green-600">{business.verification_score || 0}%</span>
             </div>
-            <div className="text-sm text-gray-600">Trust Level: {business.verification_score >= 70 ? "High Trust" : "Moderate"}</div>
+            <div className="text-sm text-[#8a95a8]">Trust Level: {business.verification_score >= 70 ? "High Trust" : "Moderate"}</div>
           </CardContent>
         </Card>
       </div>
@@ -164,7 +164,7 @@ export default function BusinessDetailsPage() {
             <CardContent className="space-y-6">
               <div>
                 <h3 className="font-semibold mb-2">Description</h3>
-                <p className="text-gray-700">{business.email_context?.company_description || "No description available"}</p>
+                <p className="text-[#8a95a8]">{business.email_context?.company_description || "No description available"}</p>
               </div>
 
               <Separator />
@@ -177,15 +177,15 @@ export default function BusinessDetailsPage() {
                   </h3>
                   <dl className="space-y-2">
                     <div>
-                      <dt className="text-sm text-gray-600">Category</dt>
+                      <dt className="text-sm text-[#8a95a8]">Category</dt>
                       <dd className="font-medium">{business.business_type}</dd>
                     </div>
                     <div>
-                      <dt className="text-sm text-gray-600">Location</dt>
+                      <dt className="text-sm text-[#8a95a8]">Location</dt>
                       <dd className="font-medium">{business.address}</dd>
                     </div>
                     <div>
-                      <dt className="text-sm text-gray-600">Website Status</dt>
+                      <dt className="text-sm text-[#8a95a8]">Website Status</dt>
                       <dd>
                         <Badge className="bg-green-600">
                           <CheckCircle className="h-3 w-3 mr-1" />
@@ -203,15 +203,15 @@ export default function BusinessDetailsPage() {
                   </h3>
                   <dl className="space-y-2">
                     <div>
-                      <dt className="text-sm text-gray-600">Email</dt>
+                      <dt className="text-sm text-[#8a95a8]">Email</dt>
                       <dd className="font-medium">{business.email_found}</dd>
                     </div>
                     <div>
-                      <dt className="text-sm text-gray-600">Phone</dt>
+                      <dt className="text-sm text-[#8a95a8]">Phone</dt>
                       <dd className="font-medium">{business.phone_number}</dd>
                     </div>
                     <div>
-                      <dt className="text-sm text-gray-600">Website</dt>
+                      <dt className="text-sm text-[#8a95a8]">Website</dt>
                       <dd>
                         <a href={`https://${business.website}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700">
                           {business.website}
@@ -231,13 +231,13 @@ export default function BusinessDetailsPage() {
               <CardTitle>AI Relevance Analysis</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
+              <div className="p-4 bg-[#151a22] rounded-lg border border-[rgba(255,255,255,0.07)]">
                 <div className="flex items-center justify-between mb-3">
                   <span className="font-semibold">Score: {Math.round(business.relevance_score || 0)}%</span>
                   <Badge className="bg-green-600">{business.relevance_decision === "relevant" ? "Passed" : "Failed"}</Badge>
                 </div>
                 <Progress value={Math.round(business.relevance_score || 0)} className="mb-2" />
-                <div className="text-sm text-gray-600">
+                <div className="text-sm text-[#8a95a8]">
                   Context: <span className="font-medium">B2B Export</span>
                 </div>
               </div>
@@ -280,7 +280,7 @@ export default function BusinessDetailsPage() {
               <CardTitle>Verification Results</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+              <div className="p-4 bg-[#151a22] rounded-lg border border-[rgba(255,255,255,0.07)]">
                 <div className="flex items-center justify-between mb-3">
                   <span className="font-semibold flex items-center gap-2">
                     <ShieldCheck className="h-5 w-5 text-green-600" />
@@ -289,7 +289,7 @@ export default function BusinessDetailsPage() {
                   <Badge className="bg-green-600">{business.verification_result || "pending"}</Badge>
                 </div>
                 <Progress value={business.verification_score || 0} className="mb-2" />
-                <div className="text-sm text-gray-600">Trust Level: {business.verification_score >= 70 ? "High Trust" : "Moderate"}</div>
+                <div className="text-sm text-[#8a95a8]">Trust Level: {business.verification_score >= 70 ? "High Trust" : "Moderate"}</div>
               </div>
 
               <div className="grid md:grid-cols-2 gap-6">
@@ -347,7 +347,7 @@ export default function BusinessDetailsPage() {
               </div>
 
               {(!business.risk_flags || business.risk_flags.length === 0) && (
-                <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                <div className="p-4 bg-[#151a22] border border-[rgba(255,255,255,0.07)] rounded-lg">
                   <div className="flex items-start gap-2">
                     <CheckCircle className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
                     <div>
@@ -368,9 +368,9 @@ export default function BusinessDetailsPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-4">
-                <div className="p-4 bg-gray-50 rounded-lg">
+                <div className="p-4 bg-[#151a22] rounded-lg">
                   <div className="flex items-center gap-3 mb-2">
-                    <Mail className="h-5 w-5 text-gray-600" />
+                    <Mail className="h-5 w-5 text-[#8a95a8]" />
                     <span className="font-semibold">Email</span>
                   </div>
                   <div className="pl-8">
@@ -379,9 +379,9 @@ export default function BusinessDetailsPage() {
                   </div>
                 </div>
 
-                <div className="p-4 bg-gray-50 rounded-lg">
+                <div className="p-4 bg-[#151a22] rounded-lg">
                   <div className="flex items-center gap-3 mb-2">
-                    <Phone className="h-5 w-5 text-gray-600" />
+                    <Phone className="h-5 w-5 text-[#8a95a8]" />
                     <span className="font-semibold">Phone</span>
                   </div>
                   <div className="pl-8">
@@ -390,9 +390,9 @@ export default function BusinessDetailsPage() {
                   </div>
                 </div>
 
-                <div className="p-4 bg-gray-50 rounded-lg">
+                <div className="p-4 bg-[#151a22] rounded-lg">
                   <div className="flex items-center gap-3 mb-2">
-                    <Globe className="h-5 w-5 text-gray-600" />
+                    <Globe className="h-5 w-5 text-[#8a95a8]" />
                     <span className="font-semibold">Website</span>
                   </div>
                   <div className="pl-8">
@@ -415,12 +415,12 @@ export default function BusinessDetailsPage() {
               <div className="space-y-4">
                 {(business.activities || []).map((activity: any, i: number) => (
                   <div key={i} className="flex items-start gap-4 pb-4 border-b last:border-0">
-                    <div className="bg-blue-50 p-2 rounded-lg">
+                    <div className="bg-[#151a22] p-2 rounded-lg">
                       <Activity className="h-4 w-4 text-blue-600" />
                     </div>
                     <div className="flex-1">
                       <div className="font-medium">{activity.action}</div>
-                      <div className="text-sm text-gray-600 mt-1">
+                      <div className="text-sm text-[#8a95a8] mt-1">
                         by {activity.user} • {new Date(activity.date).toLocaleDateString()}
                       </div>
                     </div>
@@ -440,9 +440,9 @@ export default function BusinessDetailsPage() {
               {(business.email_drafts || []).length > 0 ? (
                 <div className="space-y-4">
                   {business.email_drafts.map((draft: any, i: number) => (
-                    <div key={i} className="p-4 bg-gray-50 rounded-lg border">
+                    <div key={i} className="p-4 bg-[#151a22] rounded-lg border">
                       <div className="font-medium mb-2">{draft.subject || "Email Draft"}</div>
-                      <div className="text-sm text-gray-700 whitespace-pre-line">{draft.body}</div>
+                      <div className="text-sm text-[#8a95a8] whitespace-pre-line">{draft.body}</div>
                     </div>
                   ))}
                 </div>

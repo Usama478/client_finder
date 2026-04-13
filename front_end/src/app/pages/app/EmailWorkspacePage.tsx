@@ -831,7 +831,7 @@ export default function EmailWorkspacePage() {
               finally { setScheduling(false) }
             }}
             className="mt-2 px-4 py-2 text-sm rounded border border-gray-300 
-                       text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                       text-[#8a95a8] hover:bg-[#1c2230] disabled:opacity-50"
           >
             {scheduling ? "Scheduling..." : "Schedule Follow-up in 3 days"}
           </button>

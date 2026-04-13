@@ -9,7 +9,7 @@ export default function BillingPage() {
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Billing</h1>
-        <p className="text-gray-600 mt-1">Manage your subscription and usage</p>
+        <p className="text-[#8a95a8] mt-1">Manage your subscription and usage</p>
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
@@ -67,11 +67,11 @@ export default function BillingPage() {
             <CardTitle>Payment Method</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-              <CreditCard className="h-5 w-5 text-gray-600" />
+            <div className="flex items-center gap-3 p-3 bg-[#151a22] rounded-lg">
+              <CreditCard className="h-5 w-5 text-[#8a95a8]" />
               <div className="flex-1">
                 <div className="font-medium">•••• 4242</div>
-                <div className="text-xs text-gray-600">Expires 12/26</div>
+                <div className="text-xs text-[#8a95a8]">Expires 12/26</div>
               </div>
             </div>
             <Button variant="outline" className="w-full">Update Payment</Button>
@@ -96,10 +96,10 @@ export default function BillingPage() {
               { date: "Feb 15, 2026", amount: "$149.00", status: "Paid" },
               { date: "Jan 15, 2026", amount: "$149.00", status: "Paid" }
             ].map((invoice, i) => (
-              <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+              <div key={i} className="flex items-center justify-between p-3 bg-[#151a22] rounded-lg">
                 <div>
                   <div className="font-medium">{invoice.date}</div>
-                  <div className="text-sm text-gray-600">{invoice.amount}</div>
+                  <div className="text-sm text-[#8a95a8]">{invoice.amount}</div>
                 </div>
                 <div className="flex items-center gap-3">
                   <Badge className="bg-green-600">{invoice.status}</Badge>
