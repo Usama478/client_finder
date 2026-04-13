@@ -188,6 +188,29 @@ def handle_sendgrid_webhook(events: list) -> dict:
                     lead.outreach_status = "bounced"
             
             db.commit()
+            
+            # Update SearchResult outreach_status based on event
+            try:
+                status_map = {
+                    "delivered": "sent", "open": "opened",
+                    "click": "opened", "bounce": "bounced", "unsubscribe": "bounced"
+                }
+                new_status = status_map.get(event_type)
+                if new_status and draft.business_id:
+                    order = ["pending", "sent", "opened", "bounced"]
+                    result = db.query(SearchResult).filter(
+                        SearchResult.result_id == draft.business_id
+                    ).first()
+                    if result:
+                        curr = order.index(result.outreach_status or "pending") if (result.outreach_status or "pending") in order else 0
+                        if order.index(new_status) > curr:
+                            result.outreach_status = new_status
+                            try:
+                                db.commit()
+                            except:
+                                db.rollback()
+            except:
+                pass
             db.close()
             
         except Exception as e:

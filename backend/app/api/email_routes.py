@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.agents.email_outreach.email_draft_service import (
@@ -12,8 +12,10 @@ from app.agents.email_outreach.email_draft_service import (
 )
 from app.agents.email_outreach.followup_scheduler import run_followup_check
 from app.agents.email_outreach.sendgrid_service import send_approved_draft
+from app.core.security import get_current_user
 from app.db.session import SessionLocal
 from app.models.email_draft import EmailDraft
+from app.models.search_result import SearchResult
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +42,7 @@ class GenerateBatchRequest(BaseModel):
 # --------------------------------------------------------------------------- #
 
 @router.post("/generate/{business_id}")
-def generate_draft(business_id: int, request: GenerateDraftRequest) -> Dict[str, Any]:
+def generate_draft(business_id: int, request: GenerateDraftRequest, current_user = Depends(get_current_user)) -> Dict[str, Any]:
     """
     Generate an email draft for a single lead.
 
@@ -65,7 +67,7 @@ def generate_draft(business_id: int, request: GenerateDraftRequest) -> Dict[str,
 
 
 @router.post("/generate-batch")
-def generate_batch(request: GenerateBatchRequest) -> Dict[str, Any]:
+def generate_batch(request: GenerateBatchRequest, current_user = Depends(get_current_user)) -> Dict[str, Any]:
     """
     Generate email drafts for all verified leads in a search session.
 
@@ -89,7 +91,7 @@ def generate_batch(request: GenerateBatchRequest) -> Dict[str, Any]:
 
 
 @router.get("/drafts/{business_id}")
-def get_drafts_for_business(business_id: int) -> List[Dict[str, Any]]:
+def get_drafts_for_business(business_id: int, current_user = Depends(get_current_user)) -> List[Dict[str, Any]]:
     """
     Get all email drafts for a specific business.
 
@@ -100,7 +102,11 @@ def get_drafts_for_business(business_id: int) -> List[Dict[str, Any]]:
     try:
         drafts = (
             db.query(EmailDraft)
-            .filter(EmailDraft.business_id == business_id)
+            .join(SearchResult, EmailDraft.business_id == SearchResult.result_id)
+            .filter(
+                EmailDraft.business_id == business_id,
+                SearchResult.user_id == current_user.user_id
+            )
             .all()
         )
         
@@ -123,7 +129,7 @@ def get_drafts_for_business(business_id: int) -> List[Dict[str, Any]]:
 
 
 @router.get("/drafts/detail/{draft_id}")
-def get_draft_detail(draft_id: int) -> Dict[str, Any]:
+def get_draft_detail(draft_id: int, current_user = Depends(get_current_user)) -> Dict[str, Any]:
     """
     Get full details for a specific email draft.
 
@@ -132,7 +138,15 @@ def get_draft_detail(draft_id: int) -> Dict[str, Any]:
     """
     db = SessionLocal()
     try:
-        draft = db.query(EmailDraft).filter(EmailDraft.id == draft_id).first()
+        draft = (
+            db.query(EmailDraft)
+            .join(SearchResult, EmailDraft.business_id == SearchResult.result_id)
+            .filter(
+                EmailDraft.id == draft_id,
+                SearchResult.user_id == current_user.user_id
+            )
+            .first()
+        )
         
         if not draft:
             raise HTTPException(
@@ -166,7 +180,7 @@ def get_draft_detail(draft_id: int) -> Dict[str, Any]:
 
 
 @router.patch("/drafts/{draft_id}/approve")
-def approve_draft(draft_id: int) -> Dict[str, Any]:
+def approve_draft(draft_id: int, current_user = Depends(get_current_user)) -> Dict[str, Any]:
     """
     Approve a draft for sending.
 
@@ -177,7 +191,15 @@ def approve_draft(draft_id: int) -> Dict[str, Any]:
     """
     db = SessionLocal()
     try:
-        draft = db.query(EmailDraft).filter(EmailDraft.id == draft_id).first()
+        draft = (
+            db.query(EmailDraft)
+            .join(SearchResult, EmailDraft.business_id == SearchResult.result_id)
+            .filter(
+                EmailDraft.id == draft_id,
+                SearchResult.user_id == current_user.user_id
+            )
+            .first()
+        )
         
         if not draft:
             raise HTTPException(
@@ -206,7 +228,7 @@ def approve_draft(draft_id: int) -> Dict[str, Any]:
 
 
 @router.patch("/drafts/{draft_id}/send")
-def send_draft(draft_id: int) -> Dict[str, Any]:
+def send_draft(draft_id: int, current_user = Depends(get_current_user)) -> Dict[str, Any]:
     """
     Send an approved email draft via SendGrid.
 
@@ -234,8 +256,44 @@ def send_draft(draft_id: int) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"Send failed: {exc}")
 
 
+@router.delete("/drafts/{draft_id}")
+def delete_draft(draft_id: int, current_user = Depends(get_current_user)) -> Dict[str, Any]:
+    """
+    Delete an email draft.
+
+    Returns HTTP 404 if the draft is not found.
+    """
+    db = SessionLocal()
+    try:
+        draft = (
+            db.query(EmailDraft)
+            .join(SearchResult, EmailDraft.business_id == SearchResult.result_id)
+            .filter(
+                EmailDraft.id == draft_id,
+                SearchResult.user_id == current_user.user_id
+            )
+            .first()
+        )
+        
+        if not draft:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Draft ID {draft_id} not found.",
+            )
+        
+        db.delete(draft)
+        db.commit()
+        
+        return {
+            "id": draft_id,
+            "message": "Draft deleted successfully",
+        }
+    finally:
+        db.close()
+
+
 @router.post("/followup-check")
-def followup_check() -> Dict[str, Any]:
+def followup_check(current_user = Depends(get_current_user)) -> Dict[str, Any]:
     """
     Run the follow-up scheduler to generate drafts for sent emails.
 

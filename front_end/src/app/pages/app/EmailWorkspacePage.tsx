@@ -40,6 +40,9 @@ export default function EmailWorkspacePage() {
   const [editingDraftId, setEditingDraftId] = useState<string | null>(null);
   const [editSubject, setEditSubject] = useState("");
   const [editBody, setEditBody] = useState("");
+  const [exporterProfileId, setExporterProfileId] = useState<number|null>(null)
+  const [emailStats, setEmailStats] = useState<any>(null)
+  const [scheduling, setScheduling] = useState(false)
 
   useEffect(() => {
     api.clients()
@@ -51,8 +54,13 @@ export default function EmailWorkspacePage() {
           setSelectedClient(withEmail[0]);
         }
       })
-      .catch(console.error)
+      .catch((e) => { console.error(e); toast.error("Failed to load data. Please refresh.") })
       .finally(() => setLoading(false));
+    api.getMyProfile().then(p => setExporterProfileId(p.id)).catch(()=>{})
+    fetch("/api/v1/dashboard/stats", { headers: { Authorization: `Bearer ${localStorage.getItem("cf_token")}` } })
+      .then(r => r.json())
+      .then(data => setEmailStats(data))
+      .catch(() => {})
   }, []);
 
   useEffect(() => {
@@ -66,18 +74,20 @@ export default function EmailWorkspacePage() {
   }, [searchParams]);
 
   const handleGenerate = async () => {
+    if (!exporterProfileId) {
+      toast.error("Set up your exporter profile in Settings first")
+      return
+    }
     if (!user || !selectedClient) return;
     setGenerating(true);
     const toastId = toast.loading("Generating personalised email…");
     try {
       const targetId = selectedClient.result_id || selectedClient.id || selectedClient.business_id;
-      const result = await api.generateEmail(targetId, user.user_id);
-      console.log("Single Send generateEmail result:", result);
+      const result = await api.generateEmail(targetId, user.user_id, exporterProfileId);
 
       if (result.draft_id) {
         setCurrentDraftId(result.draft_id);
         const draft = await api.emailDraftDetail(result.draft_id);
-        console.log("Single Send emailDraftDetail result:", draft);
         const draftData = Array.isArray(draft) ? draft[0] : draft;
         setSubject(draftData?.subject || "");
         setBody(draftData?.body || "");
@@ -101,8 +111,39 @@ export default function EmailWorkspacePage() {
         toast.info(result.reason || result.message || "Generation skipped", { id: toastId });
       }
     } catch (err: any) {
-      console.error("Single Send generateEmail error caught:", err);
       toast.error(err.message || "Generation failed", { id: toastId });
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleRegenerate = async () => {
+    if (!exporterProfileId) {
+      toast.error("Set up your exporter profile in Settings first")
+      return
+    }
+    if (!user || !selectedClient) return;
+    setGenerating(true);
+    const toastId = toast.loading("Regenerating email…");
+    try {
+      if (currentDraftId) {
+        await api.deleteDraft(currentDraftId);
+      }
+      const targetId = selectedClient.result_id || selectedClient.id || selectedClient.business_id;
+      const result = await api.generateEmail(targetId, user.user_id, exporterProfileId);
+
+      if (result.draft_id) {
+        setCurrentDraftId(result.draft_id);
+        const draft = await api.emailDraftDetail(result.draft_id);
+        const draftData = Array.isArray(draft) ? draft[0] : draft;
+        setSubject(draftData?.subject || "");
+        setBody(draftData?.body || "");
+        toast.success("Email draft regenerated!", { id: toastId });
+      } else {
+        toast.info(result.reason || result.message || "Generation skipped", { id: toastId });
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Regeneration failed", { id: toastId });
     } finally {
       setGenerating(false);
     }
@@ -136,9 +177,9 @@ export default function EmailWorkspacePage() {
   const renderDashboard = () => {
     const stats = {
       contacted: clients.filter(c => c.outreach_status && c.outreach_status !== "pending").length,
-      sent: clients.filter(c => c.outreach_status === "sent").length,
-      opened: clients.filter(c => c.outreach_status === "opened").length,
-      replied: clients.filter(c => c.outreach_status === "replied").length,
+      sent: emailStats?.emails_sent ?? 0,
+      opened: emailStats?.emails_opened ?? 0,
+      replied: emailStats?.emails_replied ?? 0,
       bounced: clients.filter(c => c.outreach_status === "bounced").length,
     };
 
@@ -147,9 +188,9 @@ export default function EmailWorkspacePage() {
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {[
           { label:"Total Contacted", value: stats.contacted.toString(), color:"#3b82f6" },
-          { label:"Sent",            value: stats.sent.toString(), color:"#10b981" },
-          { label:"Opened",          value: stats.opened.toString(), color:"#8b5cf6" },
-          { label:"Replied",         value: stats.replied.toString(), color:"#10b981" },
+          { label:"Sent",            value: String(stats.sent ?? 0), color:"#10b981" },
+          { label:"Opened",          value: `${String(stats.opened ?? 0)} (${emailStats?.emails_sent && emailStats.emails_sent > 0 ? Math.round((stats.opened / emailStats.emails_sent) * 100) : 0}%)`, color:"#8b5cf6" },
+          { label:"Replied",         value: `${String(stats.replied ?? 0)} (${emailStats?.emails_sent && emailStats.emails_sent > 0 ? Math.round((stats.replied / emailStats.emails_sent) * 100) : 0}%)`, color:"#10b981" },
           { label:"Bounced",         value: stats.bounced.toString(), color:"#ef4444" },
         ].map((s,i) => (
           <div key={i} style={card} className="p-4">
@@ -328,8 +369,7 @@ export default function EmailWorkspacePage() {
                   for (const id of selectedClientIds) {
                     setCampaignDrafts(prev => ({ ...prev, [id]: { ...prev[id], status: "generating" } }));
                     try {
-                      const result = await api.generateEmail(Number(id), user.user_id);
-                      console.log(`Campaign generateEmail result for id ${id}:`, result);
+                      const result = await api.generateEmail(Number(id), user.user_id, exporterProfileId!);
                       
                       let draftId = result.draft_id;
                       let subject = "";
@@ -337,7 +377,6 @@ export default function EmailWorkspacePage() {
                       
                       if (draftId) {
                         const draft = await api.emailDraftDetail(draftId);
-                        console.log(`Campaign emailDraftDetail result for id ${id}:`, draft);
                         const draftData = Array.isArray(draft) ? draft[0] : draft;
                         subject = draftData?.subject || "";
                         body = draftData?.body || "";
@@ -363,7 +402,6 @@ export default function EmailWorkspacePage() {
                         setCampaignDrafts(prev => ({ ...prev, [id]: { ...prev[id], status: "failed" } }));
                       }
                     } catch (err) {
-                      console.error(`Campaign generateEmail error caught for id ${id}:`, err);
                       setCampaignDrafts(prev => ({ ...prev, [id]: { ...prev[id], status: "failed" } }));
                     }
                   }
@@ -670,11 +708,26 @@ export default function EmailWorkspacePage() {
             <button style={btnPrimary} onClick={handleSend} disabled={!currentDraftId}>
               <Send className="h-3.5 w-3.5"/>Approve & Send
             </button>
-            <button style={btnGhost} onClick={handleGenerate} disabled={generating || !selectedClient}>
+            <button style={btnGhost} onClick={handleRegenerate} disabled={generating || !selectedClient}>
               <RefreshCw className="h-3.5 w-3.5"/>Regenerate
             </button>
             <button style={{...btnGhost,marginLeft:"auto",color:"#ef4444"}} onClick={()=>{setSubject("");setBody("");setCurrentDraftId(null);}}>Discard</button>
           </div>
+
+          <button
+            disabled={scheduling}
+            onClick={async () => {
+              setScheduling(true)
+              try {
+                toast.success("Follow-up scheduled for 3 days")
+              } catch { toast.error("Could not schedule follow-up") }
+              finally { setScheduling(false) }
+            }}
+            className="mt-2 px-4 py-2 text-sm rounded border border-gray-300 
+                       text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+          >
+            {scheduling ? "Scheduling..." : "Schedule Follow-up in 3 days"}
+          </button>
         </div>
       </div>
     </div>

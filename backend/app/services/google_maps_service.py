@@ -82,20 +82,25 @@ def search_google_maps(db: Session, user_id: int, query: str, page_token: str = 
     if page_token:
         params["pagetoken"] = page_token
 
-    try:
-        response = requests.get(PLACES_TEXT_SEARCH_URL, params=params, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        
-        api_status = data.get("status")
-        if api_status and api_status not in ["OK", "ZERO_RESULTS"]:
-            error_msg = data.get("error_message", "No details")
-            logger.error(f"Google Maps API failed: {api_status} - {error_msg}")
-            return {"error": f"Google Maps API failed: {api_status} - {error_msg}"}
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(PLACES_TEXT_SEARCH_URL, params=params, timeout=10)
+            response.raise_for_status()
+            data = response.json()
             
-    except Exception as e:
-        logger.error(f"Failed to contact Google Maps: {str(e)}")
-        return {"error": f"Failed to contact Google Maps: {str(e)}"}
+            api_status = data.get("status")
+            if api_status and api_status not in ["OK", "ZERO_RESULTS"]:
+                error_msg = data.get("error_message", "No details")
+                logger.error(f"Google Maps API failed: {api_status} - {error_msg}")
+                return {"error": f"Google Maps API failed: {api_status} - {error_msg}"}
+            break
+        except Exception as e:
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)
+            else:
+                logger.error(f"Failed to contact Google Maps: {str(e)}")
+                return {"error": f"Failed to contact Google Maps: {str(e)}"}
 
     # 4. Save next_page_token
     search_session.next_page_token = data.get("next_page_token")
@@ -116,19 +121,27 @@ def search_google_maps(db: Session, user_id: int, query: str, page_token: str = 
             if not place_id:
                 continue
 
-            # 🛑 Deduplication
-            exists = db.query(SearchResult).filter(SearchResult.place_id == place_id).first()
+            # 🛑 Deduplication per user+place_id
+            exists = db.query(SearchResult).filter(
+                SearchResult.place_id == place_id,
+                SearchResult.user_id == user_id
+            ).first()
             if exists:
                 # Associate existing lead with current search session so it appears
                 exists.search_id = search_session.search_id
                 results_added += 1
                 continue
 
-            # 🚀 THE NEW PART: Fetch Details Immediately
-            # We explicitly call the details API now.
+            # Check if another user already scraped this place
+            other_user_lead = db.query(SearchResult).filter(
+                SearchResult.place_id == place_id,
+                SearchResult.scraping_status == "completed"
+            ).first()
+
+            # Fetch details
             details = get_place_details(place_id)
-            
-            # ✅ Insert new SearchResult with Website & Phone
+
+            # Create new row for current user
             search_result = SearchResult(
                 place_id=place_id,
                 user_id=user_id,
@@ -136,18 +149,53 @@ def search_google_maps(db: Session, user_id: int, query: str, page_token: str = 
                 raw_data=item, 
                 business_name=item.get("name"),
                 address=item.get("formatted_address"),
-                
-                # Now we have them!
                 website=details["website"],
                 phone_number=details["phone"],
-                
                 scraping_status="pending",
                 relevance_status="pending",
                 verification_status="pending",
                 created_at=datetime.utcnow()
             )
+
+            # Copy scraped and verification data if available from another user
+            if other_user_lead:
+                search_result.scraping_status = other_user_lead.scraping_status
+                search_result.scraped_text_content = other_user_lead.scraped_text_content
+                search_result.verification_status = other_user_lead.verification_status
+                search_result.verification_result = other_user_lead.verification_result
+                search_result.verification_reason = other_user_lead.verification_reason
+                search_result.verification_score = other_user_lead.verification_score
+                search_result.verification_confidence = other_user_lead.verification_confidence
+                search_result.risk_flags = other_user_lead.risk_flags
+                search_result.manual_review = other_user_lead.manual_review
+                search_result.verification_artifacts = other_user_lead.verification_artifacts
+                search_result.company_name_confirmed = other_user_lead.company_name_confirmed
+                search_result.domain_match_confidence = other_user_lead.domain_match_confidence
+                search_result.country_confirmed = other_user_lead.country_confirmed
+                search_result.contactability_score = other_user_lead.contactability_score
+                search_result.email_type = other_user_lead.email_type
+                search_result.all_emails_found = other_user_lead.all_emails_found
+                search_result.all_phones_found = other_user_lead.all_phones_found
+                search_result.whatsapp_number = other_user_lead.whatsapp_number
+                search_result.linkedin_company_url = other_user_lead.linkedin_company_url
+                search_result.social_links = other_user_lead.social_links
+                search_result.contact_form_present = other_user_lead.contact_form_present
+                search_result.wholesale_page_found = other_user_lead.wholesale_page_found
+                search_result.wholesale_page_url = other_user_lead.wholesale_page_url
+                search_result.has_about_page = other_user_lead.has_about_page
+                search_result.has_contact_page = other_user_lead.has_contact_page
+                search_result.has_policy_pages = other_user_lead.has_policy_pages
+                search_result.legitimacy_score = other_user_lead.legitimacy_score
+                search_result.domain_age_years = other_user_lead.domain_age_years
+                search_result.employee_range = other_user_lead.employee_range
+                search_result.revenue_band = other_user_lead.revenue_band
+                search_result.email_context = other_user_lead.email_context
+                # Never copy relevance fields - they are user+context specific
+
             db.add(search_result)
             results_added += 1
+            continue
+
 
         db.commit()
         search_session.result_count = db.query(SearchResult).filter(

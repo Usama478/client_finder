@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
 import { Search, Download, Mail, RefreshCw, Trash2, ShieldCheck, ExternalLink, Eye } from "lucide-react";
 import { toast } from "sonner";
-import { api } from "../../../lib/api";
+import { api, exportClients, reverifyClient } from "../../../lib/api";
 
 const card: React.CSSProperties = { background: "#0d1117", border: "1px solid #1c2837", borderRadius: 10 };
 const btnPrimary: React.CSSProperties = { background: "#2563eb", color: "white", border: "none", borderRadius: 6, padding: "8px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "DM Sans, sans-serif", display: "flex", alignItems: "center", gap: 6 };
@@ -74,14 +74,20 @@ export default function ClientsPage() {
   const [activeClient, setActiveClient] = useState<Client | null>(null);
   const [apiClients, setApiClients] = useState<any[]>([]);
   const [clientsLoading, setClientsLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
+  const [reverifying, setReverifying] = useState<number | null>(null);
 
-  useEffect(() => {
+  const refreshClients = () => {
     api.clients()
       .then(c => {
         setApiClients(c || []);
       })
       .catch(console.error)
       .finally(() => setClientsLoading(false));
+  };
+
+  useEffect(() => {
+    refreshClients();
   }, []);
 
   const displayClients = apiClients.map((c: any) => ({
@@ -131,6 +137,39 @@ export default function ClientsPage() {
     { key:"pending",  label:"⏳ Pending" },
   ];
 
+  const handleExport = async (format: "csv" | "excel") => {
+    const scopeParams: { ids?: string[]; status?: string } =
+      selectedIds.length > 0
+        ? { ids: selectedIds }
+        : filter !== "all"
+        ? { status: filter }
+        : {};
+
+    setExporting(true);
+    try {
+      await exportClients({ format, ...scopeParams });
+    } catch (err) {
+      console.error(err);
+      toast.error("Export failed");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleReverify = async (resultId: number) => {
+    setReverifying(resultId);
+    try {
+      await reverifyClient(resultId);
+      toast.success("Verification started");
+      refreshClients();
+    } catch (err) {
+      console.error(err);
+      toast.error("Re-verify failed");
+    } finally {
+      setReverifying(null);
+    }
+  };
+
   const vs = activeClient?.verificationScore || 0;
   const ringColor = vs>=75 ? "#10b981" : vs>=50 ? "#f59e0b" : "#ef4444";
   const ringBg    = vs>=75 ? "rgba(16,185,129,0.1)" : vs>=50 ? "rgba(245,158,11,0.1)" : "rgba(239,68,68,0.1)";
@@ -157,7 +196,8 @@ export default function ClientsPage() {
               className="pl-9 pr-3 py-1.5 rounded-lg text-[13px] text-[#e8edf5] outline-none"
               style={{background:"#151a22",border:"1px solid rgba(255,255,255,0.09)",width:200}} />
           </div>
-          <button style={btnGhost} onClick={()=>toast.success("CSV exported!")}><Download className="h-3.5 w-3.5"/>Export CSV</button>
+          <button style={btnGhost} disabled={exporting} onClick={()=>handleExport("csv")}><Download className="h-3.5 w-3.5"/>{exporting ? "Exporting…" : "Export CSV"}</button>
+          <button style={btnGhost} disabled={exporting} onClick={()=>handleExport("excel")}><Download className="h-3.5 w-3.5"/>Export Excel</button>
           <button style={btnPrimary} onClick={()=>navigate(`/app/email?tab=campaign&clientIds=${selectedIds.join(",")}`)}>
             <Mail className="h-3.5 w-3.5"/>Generate Emails
           </button>
@@ -170,10 +210,38 @@ export default function ClientsPage() {
           style={{background:"rgba(59,130,246,0.05)",border:"1px solid rgba(59,130,246,0.2)"}}>
           <span className="text-sm font-semibold text-blue-400">{selectedIds.length} selected</span>
           <div className="flex gap-2">
-            <button style={btnGhost} onClick={()=>toast.success("CSV exported!")}><Download className="h-3.5 w-3.5"/>Export</button>
+            <button style={btnGhost} disabled={exporting} onClick={()=>handleExport("csv")}><Download className="h-3.5 w-3.5"/>Export CSV</button>
+            <button style={btnGhost} disabled={exporting} onClick={()=>handleExport("excel")}><Download className="h-3.5 w-3.5"/>Export Excel</button>
             <button style={btnPrimary} onClick={()=>navigate(`/app/email?tab=campaign&clientIds=${selectedIds.join(",")}`)}><Mail className="h-3.5 w-3.5"/>Generate Emails</button>
-            <button style={btnGhost} onClick={()=>toast.info("Re-running verification…")}><RefreshCw className="h-3.5 w-3.5"/>Re-verify</button>
-            <button style={{...btnGhost,color:"#ef4444"}} onClick={()=>{toast.success("Removed");setSelectedIds([]);}}><Trash2 className="h-3.5 w-3.5"/>Remove</button>
+            <button 
+              style={btnGhost} 
+              disabled={reverifying !== null} 
+              onClick={() => {
+                if (selectedIds.length > 0) {
+                  const resultId = Number(selectedIds[0]);
+                  handleReverify(resultId);
+                }
+              }}
+            >
+              <RefreshCw className="h-3.5 w-3.5"/>Re-verify
+            </button>
+            <button 
+              style={{...btnGhost,color:"#ef4444"}} 
+              onClick={async () => {
+                try {
+                  const resultIds = selectedIds.map(id => Number(id));
+                  await api.deleteClients(resultIds);
+                  toast.success("Removed");
+                  setSelectedIds([]);
+                  refreshClients();
+                } catch (err) {
+                  console.error(err);
+                  toast.error("Remove failed");
+                }
+              }}
+            >
+              <Trash2 className="h-3.5 w-3.5"/>Remove
+            </button>
           </div>
         </div>
       )}
@@ -183,51 +251,63 @@ export default function ClientsPage() {
 
         {/* Table */}
         <div className="overflow-hidden rounded-xl" style={{border:"1px solid #1c2837"}}>
-          {/* Header */}
-          <div className="grid text-[10px] font-semibold text-[#5a6478] uppercase tracking-widest px-4 py-3"
-            style={{gridTemplateColumns:"28px 1fr 70px 70px 100px 90px 80px 60px",background:"#151a22",borderBottom:"1px solid #1c2837"}}>
-            <div><input type="checkbox" checked={selectedIds.length===filtered.length&&filtered.length>0} onChange={toggleAll} className="accent-blue-500"/></div>
-            <div>Business</div><div>Score</div><div>Relevance</div><div>Stage</div><div>Contact</div><div>Saved</div><div>Actions</div>
-          </div>
-
-          {filtered.map((c,i) => (
-            <div key={c.id}
-              className="grid items-center px-4 py-3 cursor-pointer transition-colors"
-              style={{
-                gridTemplateColumns:"28px 1fr 70px 70px 100px 90px 80px 60px",
-                borderBottom: i<filtered.length-1 ? "1px solid rgba(255,255,255,0.05)" : "none",
-                background: activeClient?.id===c.id ? "rgba(59,130,246,0.05)" : selectedIds.includes(c.id) ? "rgba(59,130,246,0.03)" : "#0d1117",
-              }}
-              onClick={()=>setActiveClient(c)}>
-              <div onClick={e=>{e.stopPropagation();toggle(c.id);}}>
-                <input type="checkbox" checked={selectedIds.includes(c.id)} onChange={()=>toggle(c.id)} className="accent-blue-500"/>
-              </div>
-              <div>
-                <div className="text-[13px] font-semibold text-[#e8edf5]">{c.name}</div>
-                <div className="text-[11px] text-[#5a6478] mt-0.5">{c.location} · {c.category}</div>
-              </div>
-              <div><ScoreRing score={c.verificationScore}/></div>
-              <div className="text-[13px] font-bold" style={{color: c.relevanceScore>=75?"#10b981":"#f59e0b"}}>{c.relevanceScore}%</div>
-              <div>{stageBadge(c.stage)}</div>
-              <div className="text-[11px] text-[#5a6478]">{c.email?`✉ ${c.email.split("@")[0]}…`:"—"}</div>
-              <div className="text-[11px] text-[#5a6478]">{new Date(c.savedDate).toLocaleDateString("en-GB",{day:"2-digit",month:"short"})}</div>
-              <div className="flex gap-1" onClick={e=>e.stopPropagation()}>
-                <button onClick={()=>navigate(`/app/email?tab=campaign&clientIds=${c.id}`)}
-                  className="w-7 h-7 rounded flex items-center justify-center transition-colors hover:bg-[#1c2230]"
-                  style={{border:"1px solid #1c2837",color:"#8a95a8"}}>✉️</button>
-                <button onClick={()=>toast.info("Re-running verification…")}
-                  className="w-7 h-7 rounded flex items-center justify-center transition-colors hover:bg-[#1c2230]"
-                  style={{border:"1px solid #1c2837",color:"#8a95a8"}}>⋯</button>
-              </div>
+          {clientsLoading ? (
+            <div className="flex justify-center items-center py-20">
+              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
             </div>
-          ))}
+          ) : displayClients.length === 0 ? (
+            <div className="text-center py-20 text-gray-400">No clients found.</div>
+          ) : (
+            <>
+              {/* Header */}
+              <div className="grid text-[10px] font-semibold text-[#5a6478] uppercase tracking-widest px-4 py-3"
+                style={{gridTemplateColumns:"28px 1fr 70px 70px 100px 90px 80px 60px",background:"#151a22",borderBottom:"1px solid #1c2837"}}>
+                <div><input type="checkbox" checked={selectedIds.length===filtered.length&&filtered.length>0} onChange={toggleAll} className="accent-blue-500"/></div>
+                <div>Business</div><div>Score</div><div>Relevance</div><div>Stage</div><div>Contact</div><div>Saved</div><div>Actions</div>
+              </div>
 
-          {filtered.length===0 && (
-            <div className="py-12 flex flex-col items-center text-center">
-              <div className="text-3xl mb-2 opacity-40">👤</div>
-              <div className="text-sm font-bold text-[#e8edf5]">No clients match</div>
-              <div className="text-[12px] text-[#5a6478] mt-1">Try clearing the filter or search</div>
-            </div>
+              {filtered.map((c,i) => (
+                <div key={c.id}
+                  className="grid items-center px-4 py-3 cursor-pointer transition-colors"
+                  style={{
+                    gridTemplateColumns:"28px 1fr 70px 70px 100px 90px 80px 60px",
+                    borderBottom: i<filtered.length-1 ? "1px solid rgba(255,255,255,0.05)" : "none",
+                    background: activeClient?.id===c.id ? "rgba(59,130,246,0.05)" : selectedIds.includes(c.id) ? "rgba(59,130,246,0.03)" : "#0d1117",
+                  }}
+                  onClick={()=>setActiveClient(c)}>
+                  <div onClick={e=>{e.stopPropagation();toggle(c.id);}}>
+                    <input type="checkbox" checked={selectedIds.includes(c.id)} onChange={()=>toggle(c.id)} className="accent-blue-500"/>
+                  </div>
+                  <div>
+                    <div className="text-[13px] font-semibold text-[#e8edf5]">{c.name}</div>
+                    <div className="text-[11px] text-[#5a6478] mt-0.5">{c.location} · {c.category}</div>
+                  </div>
+                  <div><ScoreRing score={c.verificationScore}/></div>
+                  <div className="text-[13px] font-bold" style={{color: c.relevanceScore>=75?"#10b981":"#f59e0b"}}>{c.relevanceScore}%</div>
+                  <div>{stageBadge(c.stage)}</div>
+                  <div className="text-[11px] text-[#5a6478]">{c.email?`✉ ${c.email.split("@")[0]}…`:"—"}</div>
+                  <div className="text-[11px] text-[#5a6478]">{new Date(c.savedDate).toLocaleDateString("en-GB",{day:"2-digit",month:"short"})}</div>
+                  <div className="flex gap-1" onClick={e=>e.stopPropagation()}>
+                    <button onClick={()=>navigate(`/app/email?tab=campaign&clientIds=${c.id}`)}
+                      className="w-7 h-7 rounded flex items-center justify-center transition-colors hover:bg-[#1c2230]"
+                      style={{border:"1px solid #1c2837",color:"#8a95a8"}}>✉️</button>
+                    <button 
+                      onClick={()=>handleReverify(Number(c.id))}
+                      disabled={reverifying === Number(c.id)}
+                      className="w-7 h-7 rounded flex items-center justify-center transition-colors hover:bg-[#1c2230]"
+                      style={{border:"1px solid #1c2837",color:"#8a95a8",opacity: reverifying === Number(c.id) ? 0.5 : 1}}>⋯</button>
+                  </div>
+                </div>
+              ))}
+
+              {filtered.length===0 && (
+                <div className="py-12 flex flex-col items-center text-center">
+                  <div className="text-3xl mb-2 opacity-40">👤</div>
+                  <div className="text-sm font-bold text-[#e8edf5]">No clients match</div>
+                  <div className="text-[12px] text-[#5a6478] mt-1">Try clearing the filter or search</div>
+                </div>
+              )}
+            </>
           )}
         </div>
 
@@ -292,7 +372,11 @@ export default function ClientsPage() {
               <Mail className="h-3.5 w-3.5"/>Generate Outreach Email
             </button>
             <div className="flex gap-2">
-              <button style={{...btnGhost,flex:1,justifyContent:"center"}} onClick={()=>toast.info("Re-running verification…")}>
+              <button 
+                style={{...btnGhost,flex:1,justifyContent:"center",opacity: reverifying === Number(activeClient.id) ? 0.5 : 1}} 
+                disabled={reverifying === Number(activeClient.id)}
+                onClick={()=>handleReverify(Number(activeClient.id))}
+              >
                 <RefreshCw className="h-3.5 w-3.5"/>Re-verify
               </button>
               <a href={`https://${activeClient?.website}`} target="_blank" rel="noreferrer"

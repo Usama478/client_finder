@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from typing import List
 from app.db.session import get_db
 from app.models.search_context import SearchContext
+from app.core.security import get_current_user
 
 router = APIRouter(prefix="/api/v1", tags=["contexts"])
 
@@ -20,7 +21,7 @@ class ContextResponse(BaseModel):
         from_attributes = True
 
 @router.get("/contexts", response_model=List[ContextResponse])
-def get_all_contexts(db: Session = Depends(get_db)):
+def get_all_contexts(db: Session = Depends(get_db), current_user = Depends(get_current_user)):
     """Fetch all saved context templates."""
     try:
         contexts = db.query(SearchContext).order_by(SearchContext.id.asc()).all()
@@ -29,7 +30,7 @@ def get_all_contexts(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/contexts", response_model=ContextResponse)
-def create_context(payload: ContextCreate, db: Session = Depends(get_db)):
+def create_context(payload: ContextCreate, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
     """Create a new search context template."""
     try:
         new_context = SearchContext(

@@ -23,8 +23,9 @@ export default function SearchBusinessesPage() {
   const routerLocation = useLocation();
   const [searchQuery, setSearchQuery]       = useState("");
   const [location, setLocation]             = useState("");
-  const [selectedContext, setSelectedContext] = useState("b2b-exporters");
+  const [selectedContext, setSelectedContext] = useState<number | null>(null);
   const [searching, setSearching]           = useState(false);
+  const [loadingMore, setLoadingMore]       = useState(false);
   const [processingAI, setProcessingAI]     = useState(false);
   const [aiProgress, setAiProgress]         = useState(0);
   const [processingVerify, setProcessingVerify] = useState(false);
@@ -51,10 +52,10 @@ export default function SearchBusinessesPage() {
           setSelectedSessionId(s[0].search_id);
         }
       })
-      .catch(console.error);
+      .catch((e) => { console.error(e); toast.error("Failed to load data. Please refresh.") });
     api.contexts()
       .then(c => setApiContexts(c || []))
-      .catch(console.error);
+      .catch((e) => { console.error(e); toast.error("Failed to load data. Please refresh.") });
   }, [user]);
 
   useEffect(() => {
@@ -68,30 +69,29 @@ export default function SearchBusinessesPage() {
     setDataLoading(true);
     api.results(selectedSessionId)
       .then(r => setResults(r || []))
-      .catch(console.error)
+      .catch((e) => { console.error(e); toast.error("Failed to load data. Please refresh.") })
       .finally(() => setDataLoading(false));
   }, [selectedSessionId]);
 
-  const contexts = [
-    { id: "b2b-exporters", name: "B2B Export Outreach", desc: "Companies focused on international B2B export" },
-    { id: "tech-partners",  name: "Tech Partners",       desc: "Technology solution providers" },
-    { id: "manufacturing",  name: "Manufacturing Buyer", desc: "Industrial manufacturers and suppliers" },
-  ];
+  const contexts = apiContexts.length > 0 
+    ? apiContexts.map(c => ({ id: c.context_id, name: c.name, desc: c.prompt_text || "" }))
+    : [];
 
   const handleSearch = async () => {
     if (!searchQuery && !location) { toast.error("Enter a keyword or location to search"); return; }
     if (!user) { toast.error("Not logged in"); return; }
     setNextPageToken(null);
     setSearching(true);
-    toast.loading("Searching businesses…");
+    const searchToastId = toast.loading("Searching businesses…");
     try {
       const searchResponse = await api.createSession({
         user_id: user.user_id,
         query: searchQuery,
         search_location: location || "",
+        context_id: selectedContext ?? null,
       });
       setNextPageToken(searchResponse?.next_page_token || null);
-      toast.success("Search complete!");
+      toast.dismiss(searchToastId); toast.success("Search complete!");
       const newSessions = await api.sessions(user.user_id);
       setSessions(newSessions || []);
       if (newSessions && newSessions.length > 0) {
@@ -106,8 +106,8 @@ export default function SearchBusinessesPage() {
 
   const handleLoadMore = async () => {
     if (!nextPageToken || !user || !selectedSessionId) return;
-    setSearching(true);
-    toast.loading("Loading more businesses…");
+    setLoadingMore(true);
+    const moreToastId = toast.loading("Loading more businesses…");
     try {
       const moreResponse = await api.createSession({
         user_id: user.user_id,
@@ -115,15 +115,16 @@ export default function SearchBusinessesPage() {
         search_location: location || "",
         page_token: nextPageToken,
         session_id: selectedSessionId,
+        context_id: selectedContext ?? null,
       });
       setNextPageToken(moreResponse?.next_page_token || null);
       const r = await api.results(selectedSessionId);
       setResults(r || []);
-      toast.success("More businesses loaded!");
+      toast.dismiss(moreToastId); toast.success("More businesses loaded!");
     } catch (err: any) {
       toast.error(err.message || "Failed to load more");
     } finally {
-      setSearching(false);
+      setLoadingMore(false);
     }
   };
 
@@ -311,7 +312,8 @@ export default function SearchBusinessesPage() {
             </select>
           </div>
           <button style={btnPrimary} onClick={handleSearch} disabled={searching}>
-            {searching ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+            {searching && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
+            {!searching && <Search className="h-3.5 w-3.5" />}
             {searching ? "Searching…" : "Search"}
           </button>
         </div>
@@ -319,23 +321,40 @@ export default function SearchBusinessesPage() {
         {/* Context selector */}
         <div className="mt-4 pt-3 flex flex-wrap items-center gap-2" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
           <span className="text-[11px] text-[#5a6478] font-semibold">AI Context:</span>
-          {contexts.map(c => (
-            <button key={c.id} onClick={() => setSelectedContext(c.id)}
-              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[12px] font-medium transition-all"
-              style={selectedContext === c.id
-                ? { background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", color: "#a78bfa" }
-                : { background: "#151a22", border: "1px solid rgba(255,255,255,0.07)", color: "#8a95a8" }}>
-              {selectedContext === c.id ? "🧠 " : ""}{c.name}
+          {contexts.length === 0 ? (
+            <span className="text-[11px] text-[#5a6478] italic">No contexts available. Create one in the Context page.</span>
+          ) : (
+            <>
+              <button onClick={() => setSelectedContext(null)}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[12px] font-medium transition-all"
+                style={selectedContext === null
+                  ? { background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", color: "#a78bfa" }
+                  : { background: "#151a22", border: "1px solid rgba(255,255,255,0.07)", color: "#8a95a8" }}>
+                {selectedContext === null ? "🧠 " : ""}None
+              </button>
+              {contexts.map(c => (
+                <button key={c.id} onClick={() => setSelectedContext(c.id)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[12px] font-medium transition-all"
+                  style={selectedContext === c.id
+                    ? { background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", color: "#a78bfa" }
+                    : { background: "#151a22", border: "1px solid rgba(255,255,255,0.07)", color: "#8a95a8" }}>
+                  {selectedContext === c.id ? "🧠 " : ""}{c.name}
+                </button>
+              ))}
+            </>
+          )}
+          <Link to="/app/context">
+            <button
+              className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[12px] font-medium transition-all"
+              style={{ background: "#151a22", border: "1px solid rgba(255,255,255,0.07)", color: "#5a6478" }}>
+              + New Context
             </button>
-          ))}
-          <button onClick={() => toast.info("Context editor coming soon!")}
-            className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[12px] font-medium transition-all"
-            style={{ background: "#151a22", border: "1px solid rgba(255,255,255,0.07)", color: "#5a6478" }}>
-            + New Context
-          </button>
-          <span className="text-[11px] text-[#5a6478] ml-1 italic">
-            {contexts.find(c => c.id === selectedContext)?.desc}
-          </span>
+          </Link>
+          {selectedContext !== null && (
+            <span className="text-[11px] text-[#5a6478] ml-1 italic">
+              {contexts.find(c => c.id === selectedContext)?.desc}
+            </span>
+          )}
         </div>
       </div>
 
@@ -345,7 +364,7 @@ export default function SearchBusinessesPage() {
           <span className="text-2xl">🤖</span>
           <div className="flex-1">
             <div className="text-sm font-semibold text-[#e8edf5]">AI Relevance Scoring in progress — {Math.round(aiProgress)}% complete</div>
-            <div className="text-[12px] text-[#8a95a8] mt-0.5">Analysing against "{contexts.find(c => c.id === selectedContext)?.name}" context. Partial results shown below.</div>
+            <div className="text-[12px] text-[#8a95a8] mt-0.5">Analysing against "{contexts.find(c => c.id === selectedContext)?.name || "default"}" context. Partial results shown below.</div>
             <div className="mt-2 h-1.5 rounded-full overflow-hidden" style={{ background: "#1c2230" }}>
               <div className="h-full rounded-full transition-all duration-300" style={{ width: `${aiProgress}%`, background: "linear-gradient(90deg, #3b82f6, #8b5cf6)" }} />
             </div>
@@ -414,12 +433,14 @@ export default function SearchBusinessesPage() {
             <div className="text-[10px] font-semibold text-[#5a6478] uppercase tracking-widest mb-2">Recent Searches</div>
             {sessions.slice(0, 5).map((s: any, i: number) => (
               <div key={i} className="flex items-center gap-3 p-2.5 rounded-lg cursor-pointer hover:bg-[#151a22] transition-colors"
-                onClick={() => {
-                  setSelectedSessionId(s.search_id);
-                  setNextPageToken(s.next_page_token || null);
-                  setSearchQuery(s.search_query || "");
-                  setShowHistory(false);
-                  toast.info("Session loaded");
+                onClick={async () => {
+                  try {
+                    const r = await api.results(s.search_id)
+                    const arr = Array.isArray(r) ? r : (r?.results ?? r?.items ?? [])
+                    setResults(arr)
+                    setSelectedSessionId(s.search_id)
+                    toast.success("Search history loaded")
+                  } catch(e) { toast.error("Failed to load history") }
                 }}>
                 <div className="flex-1">
                   <div className="text-[13px] font-medium text-[#e8edf5]">
@@ -545,10 +566,9 @@ export default function SearchBusinessesPage() {
 
         {nextPageToken && (
           <div className="flex justify-center mt-4">
-            <button style={btnGhost} onClick={handleLoadMore} disabled={searching}>
-              {searching
-                ? <><RefreshCw className="h-3.5 w-3.5 animate-spin" /> Loading…</>
-                : <>↓ Load More Results</>}
+            <button style={btnGhost} onClick={handleLoadMore} disabled={loadingMore}>
+              {loadingMore && <><RefreshCw className="h-3.5 w-3.5 animate-spin" /> Loading…</>}
+              {!loadingMore && <>↓ Load More Results</>}
             </button>
           </div>
         )}

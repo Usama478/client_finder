@@ -492,3 +492,165 @@ def run_relevancy_v2_for_business(
         raise
 
     return output
+
+
+def rescore_relevancy_v2_for_business(
+    business_id: int,
+    exporter_profile: str,
+) -> Dict[str, object]:
+    """
+    Re-runs only the LLM judge using cached scraped_text_content.
+    Skips all collection nodes. Sets relevance fields only.
+    
+    Guards:
+    - Processing lock: returns immediately if the lead is already being processed.
+    - Requires scraped_text_content to be present.
+    """
+    logger.info(f"[RELEVANCY_RESCORE] Starting for business_id={business_id}")
+    
+    # ------------------------------------------------------------------ #
+    # Task 1 – Processing lock and data fetch                            #
+    # ------------------------------------------------------------------ #
+    lock_db = SessionLocal()
+    try:
+        lead = lock_db.query(SearchResult).filter(SearchResult.result_id == business_id).with_for_update().first()
+        
+        if not lead:
+            raise ValueError(f"Business ID {business_id} not found in database.")
+        
+        if lead.relevance_status == "processing":
+            logger.info(
+                "rescore_relevancy_v2 SKIP business_id=%s reason=already_processing",
+                business_id,
+            )
+            return {"status": "ignored", "message": "Already processing"}
+        
+        if not lead.scraped_text_content:
+            raise ValueError(f"Business ID {business_id} has no scraped_text_content to rescore.")
+        
+        # Capture data needed for judge
+        website = lead.website or ""
+        business_name = lead.business_name or ""
+        address = lead.address or ""
+        scraped_text = lead.scraped_text_content
+        search_id = lead.search_id
+        
+        # Stamp as processing and clear old relevance fields
+        lead.relevance_status = "processing"
+        lead.relevance_decision = None
+        lead.relevance_reason = None
+        lead.relevance_score = None
+        lead.confidence = None
+        lead.manual_review = False
+        lead.match_reasons = []
+        lead.mismatch_reasons = []
+        lead.signals_used = []
+        lead.business_type = None
+        lead.primary_niche = None
+        lock_db.commit()
+    except ValueError as exc:
+        logger.error(f"[RELEVANCY_RESCORE] ERROR for business_id={business_id}: {str(exc)}")
+        lock_db.rollback()
+        raise
+    except Exception as lock_exc:
+        logger.error(f"[RELEVANCY_RESCORE] ERROR for business_id={business_id}: {str(lock_exc)}")
+        lock_db.rollback()
+        raise
+    finally:
+        lock_db.close()
+    
+    # ------------------------------------------------------------------ #
+    # Task 2 – Build minimal state and run judge only                    #
+    # ------------------------------------------------------------------ #
+    from app.agents.relevancy.tools_v2.judge import run_llm_judge
+    
+    # Build minimal state with cached content
+    minimal_state = {
+        "business_id": business_id,
+        "search_id": search_id,
+        "business_name": business_name,
+        "website": website,
+        "address": address,
+        "exporter_profile": exporter_profile,
+        "clean_text_output": {"text_excerpt": scraped_text, "sections": {}},
+        "catalog_intelligence_output": {},
+        "business_model_intelligence_output": {},
+        "platform_detection_output": {"platform": "unknown", "confidence": 0.0},
+        "structured_signals_output": {
+            "entities": [],
+            "signal_flags": [],
+            "strong_signal": False,
+        },
+    }
+    
+    try:
+        logger.info(f"[RELEVANCY_RESCORE] Running LLM judge for business_id={business_id}")
+        judge_output = run_llm_judge(minimal_state)
+        
+        # Extract decision from judge output
+        strict_output = {
+            "relevance_decision": judge_output.get("relevance_decision", "unknown"),
+            "manual_review": judge_output.get("manual_review", True),
+            "confidence": judge_output.get("confidence", 0.0),
+            "relevance_reason": judge_output.get("relevance_reason", ""),
+            "match_reasons": _safe_list(judge_output.get("match_reasons")),
+            "mismatch_reasons": _safe_list(judge_output.get("mismatch_reasons")),
+            "signals_used": _safe_list(judge_output.get("signals_used")),
+        }
+        
+        # Build final state for persistence
+        final_state = {**minimal_state, "llm_decision_output": judge_output}
+        
+    except Exception as judge_exc:
+        logger.error(f"[RELEVANCY_RESCORE] ERROR for business_id={business_id}: {str(judge_exc)}")
+        _try_mark_failed(
+            business_id,
+            f"[RESCORE_FAILURE] Judge execution crashed: {type(judge_exc).__name__}: {judge_exc}",
+        )
+        raise
+    
+    # ------------------------------------------------------------------ #
+    # Task 3 – Persist only relevance fields                             #
+    # ------------------------------------------------------------------ #
+    try:
+        persist_db = SessionLocal()
+        try:
+            lead = persist_db.query(SearchResult).filter(SearchResult.result_id == business_id).first()
+            if not lead:
+                return strict_output
+            
+            lead.relevance_status = "completed"
+            lead.relevance_decision = str(strict_output.get("relevance_decision") or "unknown")
+            lead.relevance_reason = str(strict_output.get("relevance_reason") or "")
+            lead.confidence = float(strict_output.get("confidence") or 0.0)
+            lead.manual_review = bool(strict_output.get("manual_review"))
+            lead.match_reasons = list(strict_output.get("match_reasons") or [])
+            lead.mismatch_reasons = list(strict_output.get("mismatch_reasons") or [])
+            lead.signals_used = list(strict_output.get("signals_used") or [])
+            
+            # Extract business_type and primary_niche from judge output
+            business_type = judge_output.get("business_type")
+            primary_niche = judge_output.get("primary_niche")
+            
+            if business_type and str(business_type).strip() not in ("", "Unknown"):
+                lead.business_type = str(business_type).strip()
+            if primary_niche and str(primary_niche).strip() not in ("", "Unknown"):
+                lead.primary_niche = str(primary_niche).strip()
+            
+            persist_db.commit()
+            logger.info(f"[RELEVANCY_RESCORE] Saved to DB: business_id={business_id} decision={lead.relevance_decision}")
+        except Exception as persist_exc:
+            logger.error(f"[RELEVANCY_RESCORE] ERROR for business_id={business_id}: {str(persist_exc)}")
+            persist_db.rollback()
+            raise
+        finally:
+            persist_db.close()
+    except Exception as persist_exc:
+        logger.error(f"[RELEVANCY_RESCORE] ERROR for business_id={business_id}: {str(persist_exc)}")
+        _try_mark_failed(
+            business_id,
+            f"[RESCORE_FAILURE] persist_failed: {persist_exc}",
+        )
+        raise
+    
+    return strict_output

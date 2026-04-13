@@ -54,10 +54,11 @@ export default function ContactsPage() {
 
       <div className="overflow-hidden rounded-xl" style={{border:"1px solid rgba(255,255,255,0.07)"}}>
         <div className="grid text-[10px] font-semibold text-[#5a6478] uppercase tracking-widest px-4 py-3"
-          style={{gridTemplateColumns:"1fr 1fr 140px 120px 100px",background:"#151a22",borderBottom:"1px solid rgba(255,255,255,0.07)"}}>
+          style={{gridTemplateColumns:"1fr 1fr 140px 140px 120px 100px",background:"#151a22",borderBottom:"1px solid rgba(255,255,255,0.07)"}}>
           <div>Business</div>
           <div>Email</div>
           <div>Phone</div>
+          <div>Social</div>
           <div>Type</div>
           <div>Verified</div>
         </div>
@@ -78,9 +79,13 @@ export default function ContactsPage() {
           </div>
         )}
 
-        {!loading && filtered.map((c, i) => (
+        {!loading && filtered.map((c, i) => {
+          const socialLinks = c.social_links && typeof c.social_links === 'object' 
+            ? Object.entries(c.social_links).filter(([k,v]) => v).slice(0, 3)
+            : []
+          return (
           <div key={c.result_id} className="grid items-center px-4 py-3 hover:bg-[#151a22] transition-colors"
-            style={{gridTemplateColumns:"1fr 1fr 140px 120px 100px",
+            style={{gridTemplateColumns:"1fr 1fr 140px 140px 120px 100px",
               borderBottom:i<filtered.length-1?"1px solid rgba(255,255,255,0.05)":"none",
               background:"#0f1218"}}>
             <div>
@@ -97,6 +102,13 @@ export default function ContactsPage() {
             <div className="text-[12px] text-[#8a95a8]">
               {c.phone ? <span className="flex items-center gap-1"><Phone className="h-3 w-3"/>{c.phone}</span> : "—"}
             </div>
+            <div className="text-[11px] flex flex-wrap gap-1">
+              {c.linkedin && <a href={c.linkedin} target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300">LinkedIn</a>}
+              {socialLinks.map(([key, value]: [string, any]) => (
+                <a key={key} href={value} target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300">{key}</a>
+              ))}
+              {!c.linkedin && socialLinks.length === 0 && <span className="text-[#5a6478]">—</span>}
+            </div>
             <div>
               {c.email_type === "buying" || c.email_type === "sales"
                 ? <Badge color="green">{c.email_type}</Badge>
@@ -108,7 +120,7 @@ export default function ContactsPage() {
                 : <Badge color="blue">Partial</Badge>}
             </div>
           </div>
-        ))}
+        )})}
       </div>
     </div>
   )

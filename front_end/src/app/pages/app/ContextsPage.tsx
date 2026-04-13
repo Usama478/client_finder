@@ -17,7 +17,7 @@ export default function ContextsPage() {
   useEffect(() => {
     api.contexts()
       .then(c => setContexts(c || []))
-      .catch(console.error)
+      .catch((e) => { console.error(e); toast.error("Failed to load data. Please refresh.") })
       .finally(() => setLoading(false));
   }, []);
 

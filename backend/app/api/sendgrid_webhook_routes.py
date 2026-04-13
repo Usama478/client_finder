@@ -1,5 +1,8 @@
 import logging
-from fastapi import APIRouter, Request
+import hmac
+import hashlib
+import os
+from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse
 
 from app.agents.email_outreach.sendgrid_service import handle_sendgrid_webhook
@@ -17,6 +20,18 @@ async def sendgrid_webhook(request: Request):
     SendGrid sends events like: open, click, bounce, delivered, etc.
     This endpoint always returns 200 to prevent SendGrid from retrying.
     """
+    webhook_key = os.getenv("SENDGRID_WEBHOOK_KEY")
+    if webhook_key:
+        sig = request.headers.get(
+            "X-Twilio-Email-Event-Webhook-Signature", "")
+        ts = request.headers.get(
+            "X-Twilio-Email-Event-Webhook-Timestamp", "")
+        body = await request.body()
+        token = ts.encode() + body
+        expected = hmac.new(
+            webhook_key.encode(), token, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected, sig):
+            raise HTTPException(status_code=403, detail="Invalid signature")
     try:
         events = await request.json()
         

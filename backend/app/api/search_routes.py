@@ -8,6 +8,7 @@ from app.models.user import User
 from app.models.search_session import SearchSession
 from app.models.search_result import SearchResult
 from app.models.search_context import SearchContext
+from app.core.security import get_current_user
 
 router = APIRouter(prefix="/api/v1", tags=["search"])
 
@@ -26,7 +27,7 @@ def api_health_check():
     return {"status": "Backend API is healthy"}
 
 @router.post("/search")
-def search_endpoint(request: SearchRequest, db: Session = Depends(get_db)):
+def search_endpoint(request: SearchRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """
     Triggers a Google Maps Search and saves results to DB.
     """
@@ -59,18 +60,19 @@ def search_endpoint(request: SearchRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/sessions/{user_id}")
-def get_search_sessions_deprecated(user_id: int):
+def get_search_sessions_deprecated(user_id: int, current_user: User = Depends(get_current_user)):
     raise HTTPException(status_code=410, detail="Use /sessions?user_id=")
 
 
 @router.get("/sessions")
-def list_search_sessions(user_id: int, db: Session = Depends(get_db)):
+def list_search_sessions(user_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """List search sessions for a user, ordered by most recent. Returns empty list if none."""
     try:
         from sqlalchemy import func
         sessions = (
             db.query(SearchSession)
             .filter(SearchSession.user_id == user_id)
+            .filter(SearchSession.user_id == current_user.user_id)
             .order_by(SearchSession.created_at.desc())
             .all()
         )
@@ -102,7 +104,8 @@ def get_search_results(
     search_id: int, 
     status: Optional[str] = None, 
     min_relevancy: Optional[int] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """Fetch all scraped results linked to a search_id, with optional smart filtering."""
     try:
@@ -117,7 +120,7 @@ def get_search_results(
         results = query.all()
 
         # Join the SearchContext from SearchSession to return it in the payload
-        session = db.query(SearchSession).filter(SearchSession.search_id == search_id).first()
+        session = db.query(SearchSession).filter(SearchSession.search_id == search_id).filter(SearchSession.user_id == current_user.user_id).first()
         context_name = session.context.name if session and session.context else None
         context_prompt = session.context.prompt_text if session and session.context else None
         
@@ -133,10 +136,10 @@ def get_search_results(
 
 
 @router.get("/lead/{place_id}")
-def get_lead_details(place_id: str, db: Session = Depends(get_db)):
+def get_lead_details(place_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Fetch the full details of a single lead by place_id."""
     try:
-        lead = db.query(SearchResult).filter(SearchResult.place_id == place_id).first()
+        lead = db.query(SearchResult).join(SearchSession, SearchResult.search_id == SearchSession.search_id).filter(SearchResult.place_id == place_id).filter(SearchSession.user_id == current_user.user_id).first()
         
         return lead
     except HTTPException:
@@ -148,7 +151,8 @@ def get_lead_details(place_id: str, db: Session = Depends(get_db)):
 def update_client_status(
     result_id: str,
     payload: ClientStatusUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """Toggle the is_saved_client status for a specific lead."""
     try:
@@ -156,11 +160,11 @@ def update_client_status(
         # Actually frontend usually passes result.id, result.result_id, or result.place_id as cardId. 
         # So let's check place_id primarily or result_id if it's digit.
         if result_id.isdigit():
-            lead = db.query(SearchResult).filter(
+            lead = db.query(SearchResult).join(SearchSession, SearchResult.search_id == SearchSession.search_id).filter(
                 (SearchResult.result_id == int(result_id)) | (SearchResult.place_id == result_id)
-            ).first()
+            ).filter(SearchSession.user_id == current_user.user_id).first()
         else:
-            lead = db.query(SearchResult).filter(SearchResult.place_id == result_id).first()
+            lead = db.query(SearchResult).join(SearchSession, SearchResult.search_id == SearchSession.search_id).filter(SearchResult.place_id == result_id).filter(SearchSession.user_id == current_user.user_id).first()
             
         if not lead:
             raise HTTPException(status_code=404, detail="Lead not found.")
@@ -175,10 +179,34 @@ def update_client_status(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/clients")
-def get_saved_clients(db: Session = Depends(get_db)):
+def get_saved_clients(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Fetch all saved clients (is_saved_client == True) from the database."""
     try:
-        clients = db.query(SearchResult).filter(SearchResult.is_saved_client == True).all()
+        clients = db.query(SearchResult).join(SearchSession, SearchResult.search_id == SearchSession.search_id).filter(SearchResult.is_saved_client == True).filter(SearchSession.user_id == current_user.user_id).all()
         return clients
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/clients")
+def delete_clients(
+    result_ids: list[int],
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Set is_saved_client=False for specified client result IDs."""
+    try:
+        updated_count = 0
+        for result_id in result_ids:
+            lead = db.query(SearchResult).join(SearchSession, SearchResult.search_id == SearchSession.search_id).filter(
+                SearchResult.result_id == result_id
+            ).filter(SearchSession.user_id == current_user.user_id).first()
+            
+            if lead:
+                lead.is_saved_client = False
+                updated_count += 1
+        
+        db.commit()
+        return {"status": "success", "updated_count": updated_count}
+    except Exception as e:
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))

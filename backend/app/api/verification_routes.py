@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi import Request as FastAPIRequest
 from pydantic import BaseModel
 
@@ -12,6 +12,7 @@ from app.agents.verification.service import (
     run_verification_batch,
     run_verification_for_business,
 )
+from app.core.security import get_current_user
 from app.db.session import SessionLocal
 from app.models.search_result import SearchResult
 
@@ -35,7 +36,7 @@ class BatchVerifyRequest(BaseModel):
 from fastapi import Request as RawRequest
 
 @router.post("/verify/batch-debug")
-async def verify_batch_debug(request: RawRequest):
+async def verify_batch_debug(request: RawRequest, current_user = Depends(get_current_user)):
     """Debugging endpoint - shows exactly what the frontend is sending"""
     body = await request.body()
     body_str = body.decode('utf-8')
@@ -56,7 +57,8 @@ async def verify_batch_debug(request: RawRequest):
 @router.post("/verify/batch")
 async def verify_batch(
     batch_request: BatchVerifyRequest,
-    raw_request: FastAPIRequest
+    raw_request: FastAPIRequest,
+    current_user = Depends(get_current_user)
 ) -> Dict[str, Any]:
     """
     Run the Verification Agent for a list of business IDs sequentially.
@@ -88,7 +90,7 @@ async def verify_batch(
 
 
 @router.post("/verify/{business_id}")
-def verify_single(business_id: int) -> Dict[str, Any]:
+def verify_single(business_id: int, current_user = Depends(get_current_user)) -> Dict[str, Any]:
     """
     Run the Verification Agent for a single business synchronously.
 
@@ -109,7 +111,7 @@ def verify_single(business_id: int) -> Dict[str, Any]:
 
 
 @router.post("/admin/reset-stale")
-def reset_stale(max_age_minutes: int = 15) -> Dict[str, Any]:
+def reset_stale(max_age_minutes: int = 15, current_user = Depends(get_current_user)) -> Dict[str, Any]:
     """
     Reset leads permanently stuck in ``verification_status="processing"``.
 
@@ -137,7 +139,7 @@ def reset_stale(max_age_minutes: int = 15) -> Dict[str, Any]:
 
 
 @router.get("/{business_id}/status")
-def get_verification_status(business_id: int) -> Dict[str, Any]:
+def get_verification_status(business_id: int, current_user = Depends(get_current_user)) -> Dict[str, Any]:
     """
     Return the current verification_status, verification_result, and
     verification_score for a single business.

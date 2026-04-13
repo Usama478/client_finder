@@ -5,6 +5,8 @@ from app.db.session import get_db
 from app.models.search_result import SearchResult
 from app.models.search_session import SearchSession
 from app.models.email_draft import EmailDraft
+from app.models.user import User
+from app.core.security import get_current_user
 from pydantic import BaseModel
 from typing import List, Dict, Any
 
@@ -22,12 +24,12 @@ class DashboardStatsResponse(BaseModel):
     emails_sent: int
 
 @router.get("/stats", response_model=DashboardStatsResponse)
-def get_dashboard_stats(db: Session = Depends(get_db)):
+def get_dashboard_stats(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     # Total globally searched sessions
-    total_searches = db.query(func.count(SearchSession.search_id)).scalar() or 0
+    total_searches = db.query(func.count(SearchSession.search_id)).filter(SearchSession.user_id == current_user.user_id).scalar() or 0
 
     # Base query for all saved clients
-    saved_clients_query = db.query(SearchResult).filter(SearchResult.is_saved_client == True)
+    saved_clients_query = db.query(SearchResult).join(SearchSession, SearchResult.search_id == SearchSession.search_id).filter(SearchResult.is_saved_client == True).filter(SearchSession.user_id == current_user.user_id)
     total_clients = saved_clients_query.count()
 
     # Calculate Verification Distribution
@@ -71,13 +73,13 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
     ]
 
     # New KPI fields
-    leads_found = db.query(func.count(SearchResult.result_id)).scalar() or 0
-    relevant_leads = db.query(SearchResult).filter(
+    leads_found = db.query(func.count(SearchResult.result_id)).join(SearchSession, SearchResult.search_id == SearchSession.search_id).filter(SearchSession.user_id == current_user.user_id).scalar() or 0
+    relevant_leads = db.query(SearchResult).join(SearchSession, SearchResult.search_id == SearchSession.search_id).filter(
         SearchResult.relevance_decision == 'relevant'
-    ).count()
-    emails_sent = db.query(EmailDraft).filter(
+    ).filter(SearchSession.user_id == current_user.user_id).count()
+    emails_sent = db.query(EmailDraft).join(SearchResult, EmailDraft.business_id == SearchResult.result_id).join(SearchSession, SearchResult.search_id == SearchSession.search_id).filter(
         EmailDraft.status == 'sent'
-    ).count()
+    ).filter(SearchSession.user_id == current_user.user_id).count()
 
     return DashboardStatsResponse(
         total_clients=total_clients,
@@ -92,9 +94,9 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
     )
 
 @router.get("/activity")
-def get_activity(limit: int = 50, db: Session = Depends(get_db)):
+def get_activity(limit: int = 50, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     events = []
-    sessions = db.query(SearchSession).order_by(
+    sessions = db.query(SearchSession).filter(SearchSession.user_id == current_user.user_id).order_by(
         SearchSession.created_at.desc()).limit(15).all()
     for s in sessions:
         events.append({
@@ -103,9 +105,9 @@ def get_activity(limit: int = 50, db: Session = Depends(get_db)):
             "time": s.created_at.isoformat() if s.created_at else "",
             "color": "#3b82f6",
         })
-    verified = db.query(SearchResult).filter(
+    verified = db.query(SearchResult).join(SearchSession, SearchResult.search_id == SearchSession.search_id).filter(
         SearchResult.verification_result.in_(["verified", "partial"])
-    ).order_by(SearchResult.created_at.desc()).limit(15).all()
+    ).filter(SearchSession.user_id == current_user.user_id).order_by(SearchResult.created_at.desc()).limit(15).all()
     for r in verified:
         events.append({
             "type": "verification",
@@ -113,9 +115,9 @@ def get_activity(limit: int = 50, db: Session = Depends(get_db)):
             "time": r.created_at.isoformat() if r.created_at else "",
             "color": "#10b981",
         })
-    relevant = db.query(SearchResult).filter(
+    relevant = db.query(SearchResult).join(SearchSession, SearchResult.search_id == SearchSession.search_id).filter(
         SearchResult.relevance_decision == "relevant"
-    ).order_by(SearchResult.created_at.desc()).limit(15).all()
+    ).filter(SearchSession.user_id == current_user.user_id).order_by(SearchResult.created_at.desc()).limit(15).all()
     for r in relevant:
         events.append({
             "type": "relevance",
@@ -123,9 +125,9 @@ def get_activity(limit: int = 50, db: Session = Depends(get_db)):
             "time": r.created_at.isoformat() if r.created_at else "",
             "color": "#8b5cf6",
         })
-    sent_drafts = db.query(EmailDraft).filter(
+    sent_drafts = db.query(EmailDraft).join(SearchResult, EmailDraft.business_id == SearchResult.result_id).join(SearchSession, SearchResult.search_id == SearchSession.search_id).filter(
         EmailDraft.status == "sent"
-    ).order_by(EmailDraft.sent_at.desc()).limit(10).all()
+    ).filter(SearchSession.user_id == current_user.user_id).order_by(EmailDraft.sent_at.desc()).limit(10).all()
     for d in sent_drafts:
         lead = db.query(SearchResult).filter(
             SearchResult.result_id == d.business_id).first()
@@ -139,9 +141,9 @@ def get_activity(limit: int = 50, db: Session = Depends(get_db)):
     return events[:limit]
 
 @router.get("/result/{result_id}")
-def get_result_detail(result_id: int, db: Session = Depends(get_db)):
-    lead = db.query(SearchResult).filter(
-        SearchResult.result_id == result_id).first()
+def get_result_detail(result_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    lead = db.query(SearchResult).join(SearchSession, SearchResult.search_id == SearchSession.search_id).filter(
+        SearchResult.result_id == result_id).filter(SearchSession.user_id == current_user.user_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
     drafts = db.query(EmailDraft).filter(

@@ -81,6 +81,11 @@ export const api = {
 
   // Clients
   clients: () => request<any[]>("/api/v1/clients"),
+  deleteClients: (resultIds: number[]) =>
+    request<{ status: string; updated_count: number }>(
+      "/api/v1/clients",
+      { method: "DELETE", body: JSON.stringify(resultIds) }
+    ),
 
   // Contexts
   contexts: () => request<any[]>("/api/v1/contexts"),
@@ -113,9 +118,9 @@ export const api = {
   // Email drafts
   emailDrafts: (businessId: number) => request<any[]>(`/api/v1/email/drafts/${businessId}?t=${Date.now()}`),
   emailDraftDetail: (draftId: number) => request<any>(`/api/v1/email/drafts/detail/${draftId}?t=${Date.now()}`),
-  generateEmail: (businessId: number, userId: number) =>
+  generateEmail: (businessId: number, userId: number, exporterProfileId: number) =>
     request<any>(`/api/v1/email/generate/${businessId}`,
-      { method: "POST", body: JSON.stringify({ user_id: userId, exporter_profile_id: 1, sequence_position: 1 }) }),
+      { method: "POST", body: JSON.stringify({ user_id: userId, exporter_profile_id: exporterProfileId, sequence_position: 1 }) }),
   generateBatch: (searchId: number, userId: number) =>
     request<any>("/api/v1/email/generate-batch",
       { method: "POST", body: JSON.stringify({ search_id: searchId, user_id: userId, sequence_position: 1 }) }),
@@ -123,6 +128,8 @@ export const api = {
     request<any>(`/api/v1/email/drafts/${draftId}/approve`, { method: "PATCH" }),
   sendDraft: (draftId: number) =>
     request<any>(`/api/v1/email/drafts/${draftId}/send`, { method: "PATCH" }),
+  deleteDraft: (draftId: number) =>
+    request<any>(`/api/v1/email/drafts/${draftId}`, { method: "DELETE" }),
 
   // Exporter profile
   getMyProfile: () => request<any>("/api/v1/exporter-profiles/me"),
@@ -140,4 +147,52 @@ export const api = {
   exportResults: (searchId: number) =>
     request<any>("/api/v1/export",
       { method: "POST", body: JSON.stringify({ search_id: searchId }) }),
+}
+
+export async function exportClients(params: {
+  format: "csv" | "excel";
+  status?: string;
+  ids?: string[];
+}): Promise<void> {
+  const token = getToken()
+  const queryParams = new URLSearchParams({ format: params.format })
+  if (params.status) queryParams.set("status", params.status)
+
+  const res = await fetch(`${BASE_URL}/api/v1/export?${queryParams.toString()}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(params.ids ?? null),
+  })
+
+  if (!res.ok) {
+    throw new Error(`${res.status}`)
+  }
+
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = params.format === "csv" ? "Client_List.csv" : "Client_List.xlsx"
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+export async function reverifyClient(resultId: number): Promise<void> {
+  const token = getToken()
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  }
+  if (token) headers["Authorization"] = `Bearer ${token}`
+  
+  const res = await fetch(`${BASE_URL}/api/v1/verification/verify/${resultId}`, {
+    method: "POST",
+    headers,
+  })
+  
+  if (!res.ok) {
+    throw new Error(`Re-verification failed: ${res.status}`)
+  }
 }

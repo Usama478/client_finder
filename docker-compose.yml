@@ -15,6 +15,7 @@ services:
       - SENDGRID_API_KEY=${SENDGRID_API_KEY}        
       - SENDGRID_FROM_EMAIL=${SENDGRID_FROM_EMAIL}  
       - SENDGRID_FROM_NAME=${SENDGRID_FROM_NAME}
+      - SECRET_KEY=your-secret-key-here-make-it-long-and-random
     volumes:
       - ./backend:/app
     depends_on:
