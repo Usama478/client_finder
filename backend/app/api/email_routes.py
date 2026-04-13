@@ -29,6 +29,7 @@ router = APIRouter(prefix="/api/v1/email", tags=["email"])
 class GenerateDraftRequest(BaseModel):
     user_id: int
     sequence_position: int = 1
+    user_instructions: str = ""
 
 
 class GenerateBatchRequest(BaseModel):
@@ -55,6 +56,7 @@ def generate_draft(business_id: int, request: GenerateDraftRequest, current_user
             business_id=business_id,
             user_id=request.user_id,
             sequence_position=request.sequence_position,
+            user_instructions=request.user_instructions,
         )
         return result
     except ValueError as exc:

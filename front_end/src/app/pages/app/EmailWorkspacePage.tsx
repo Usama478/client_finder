@@ -43,6 +43,9 @@ export default function EmailWorkspacePage() {
   const [exporterProfileId, setExporterProfileId] = useState<number|null>(null)
   const [emailStats, setEmailStats] = useState<any>(null)
   const [scheduling, setScheduling] = useState(false)
+  const [regenerateInstructions, setRegenerateInstructions] = useState("")
+  const [campaignInstructions, setCampaignInstructions] = useState<Record<string, string>>({})
+  const [selectedDraftIds, setSelectedDraftIds] = useState<string[]>([])
 
   useEffect(() => {
     api.clients()
@@ -117,7 +120,7 @@ export default function EmailWorkspacePage() {
     }
   };
 
-  const handleRegenerate = async () => {
+  const handleRegenerate = async (instructions?: string) => {
     if (!exporterProfileId) {
       toast.error("Set up your exporter profile in Settings first")
       return
@@ -130,7 +133,7 @@ export default function EmailWorkspacePage() {
         await api.deleteDraft(currentDraftId);
       }
       const targetId = selectedClient.result_id || selectedClient.id || selectedClient.business_id;
-      const result = await api.generateEmail(targetId, user.user_id, exporterProfileId);
+      const result = await api.generateEmail(targetId, user.user_id, exporterProfileId, instructions);
 
       if (result.draft_id) {
         setCurrentDraftId(result.draft_id);
@@ -369,7 +372,7 @@ export default function EmailWorkspacePage() {
                   for (const id of selectedClientIds) {
                     setCampaignDrafts(prev => ({ ...prev, [id]: { ...prev[id], status: "generating" } }));
                     try {
-                      const result = await api.generateEmail(Number(id), user.user_id, exporterProfileId!);
+                      const result = await api.generateEmail(Number(id), user.user_id, exporterProfileId!, undefined);
                       
                       let draftId = result.draft_id;
                       let subject = "";
@@ -473,20 +476,39 @@ export default function EmailWorkspacePage() {
         <div className="space-y-4">
           <div className="flex items-center justify-between p-4 rounded-lg" style={{ background: "rgba(59,130,246,0.05)", border: "1px solid rgba(59,130,246,0.2)" }}>
             <div className="text-sm font-semibold text-blue-400">{approvedCount} of {totalCount} approved</div>
-            <button
-              style={btnGhost}
-              onClick={() => {
-                const newDrafts = { ...campaignDrafts };
-                for (const id in newDrafts) {
-                  if (newDrafts[id].status === "generated") {
-                    newDrafts[id].status = "approved";
+            <div className="flex gap-2">
+              {selectedDraftIds.length > 0 && (
+                <button
+                  style={btnGhost}
+                  onClick={() => {
+                    const newDrafts = { ...campaignDrafts };
+                    for (const id of selectedDraftIds) {
+                      if (newDrafts[id].status === "generated") {
+                        newDrafts[id].status = "approved";
+                      }
+                    }
+                    setCampaignDrafts(newDrafts);
+                    setSelectedDraftIds([]);
+                  }}
+                >
+                  Approve Selected ({selectedDraftIds.length})
+                </button>
+              )}
+              <button
+                style={btnGhost}
+                onClick={() => {
+                  const newDrafts = { ...campaignDrafts };
+                  for (const id in newDrafts) {
+                    if (newDrafts[id].status === "generated") {
+                      newDrafts[id].status = "approved";
+                    }
                   }
-                }
-                setCampaignDrafts(newDrafts);
-              }}
-            >
-              Approve All
-            </button>
+                  setCampaignDrafts(newDrafts);
+                }}
+              >
+                Approve All
+              </button>
+            </div>
           </div>
 
           <div className="space-y-3 max-h-[500px] overflow-y-auto">
@@ -507,10 +529,27 @@ export default function EmailWorkspacePage() {
                   className="p-4"
                 >
                   <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <div className="text-[13px] font-semibold text-[#e8edf5]">{client?.business_name || "Unknown"}</div>
-                      <div className="text-[11px] text-[#5a6478] mt-0.5">
-                        {client?.email_found ? client.email_found : <Badge color="gray">No email</Badge>}
+                    <div className="flex items-center gap-2">
+                      {!isApproved && (
+                        <input
+                          type="checkbox"
+                          checked={selectedDraftIds.includes(id)}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            if (selectedDraftIds.includes(id)) {
+                              setSelectedDraftIds(selectedDraftIds.filter(did => did !== id));
+                            } else {
+                              setSelectedDraftIds([...selectedDraftIds, id]);
+                            }
+                          }}
+                          className="accent-blue-500"
+                        />
+                      )}
+                      <div>
+                        <div className="text-[13px] font-semibold text-[#e8edf5]">{client?.business_name || "Unknown"}</div>
+                        <div className="text-[11px] text-[#5a6478] mt-0.5">
+                          {client?.email_found ? client.email_found : <Badge color="gray">No email</Badge>}
+                        </div>
                       </div>
                     </div>
                     {isApproved && <Badge color="green">Approved</Badge>}
@@ -557,6 +596,13 @@ export default function EmailWorkspacePage() {
                       <div className="text-[12px] text-[#8a95a8] mb-3">
                         {draft.body.substring(0, 100)}…
                       </div>
+                      <input
+                        placeholder="Optional instructions for regeneration…"
+                        value={campaignInstructions[id] || ""}
+                        onChange={e => setCampaignInstructions(prev => ({ ...prev, [id]: e.target.value }))}
+                        className="w-full rounded-lg px-3 py-2 text-[12px] text-[#e8edf5] outline-none mb-2"
+                        style={{ background: "#151a22", border: "1px solid rgba(255,255,255,0.09)" }}
+                      />
                       <div className="flex gap-2">
                         {!isApproved && (
                           <button
@@ -569,6 +615,56 @@ export default function EmailWorkspacePage() {
                             Approve
                           </button>
                         )}
+                        {isApproved && (
+                          <button
+                            style={{ ...btnGhost, padding: "6px 12px", fontSize: 12 }}
+                            onClick={() => {
+                              setCampaignDrafts(prev => ({ ...prev, [id]: { ...prev[id], status: "generated" } }));
+                            }}
+                          >
+                            <X className="h-3 w-3" />
+                            Unapprove
+                          </button>
+                        )}
+                        <button
+                          style={{ ...btnGhost, padding: "6px 12px", fontSize: 12 }}
+                          onClick={async () => {
+                            if (!user) return;
+                            setCampaignDrafts(prev => ({ ...prev, [id]: { ...prev[id], status: "generating" } }));
+                            try {
+                              await api.deleteDraft(draft.draftId);
+                              const result = await api.generateEmail(Number(id), user.user_id, exporterProfileId!, campaignInstructions[id]);
+                              
+                              let draftId = result.draft_id;
+                              let subject = "";
+                              let body = "";
+                              
+                              if (draftId) {
+                                const draftDetail = await api.emailDraftDetail(draftId);
+                                const draftData = Array.isArray(draftDetail) ? draftDetail[0] : draftDetail;
+                                subject = draftData?.subject || "";
+                                body = draftData?.body || "";
+                              }
+                              
+                              if (draftId) {
+                                setCampaignDrafts(prev => ({
+                                  ...prev,
+                                  [id]: { draftId, subject, body, status: "generated" }
+                                }));
+                                toast.success("Draft regenerated");
+                              } else {
+                                setCampaignDrafts(prev => ({ ...prev, [id]: { ...prev[id], status: "failed" } }));
+                                toast.error("Regeneration failed");
+                              }
+                            } catch (err: any) {
+                              setCampaignDrafts(prev => ({ ...prev, [id]: { ...prev[id], status: "failed" } }));
+                              toast.error(err.message || "Regeneration failed");
+                            }
+                          }}
+                        >
+                          <RefreshCw className="h-3 w-3" />
+                          Regenerate
+                        </button>
                         <button
                           style={{ ...btnGhost, padding: "6px 12px", fontSize: 12 }}
                           onClick={() => {
@@ -704,14 +800,25 @@ export default function EmailWorkspacePage() {
             {body && <div className="text-[11px] text-[#5a6478] mt-1 text-right">{body.length} chars</div>}
           </div>
 
+          <div>
+            <label className="text-[10px] font-semibold text-[#5a6478] uppercase tracking-widest block mb-1.5">Regenerate Instructions (Optional)</label>
+            <input
+              value={regenerateInstructions}
+              onChange={e => setRegenerateInstructions(e.target.value)}
+              placeholder="e.g. Make it more formal, add pricing details…"
+              className="w-full rounded-lg px-3 py-2 text-[13px] text-[#e8edf5] outline-none"
+              style={{ background: "#151a22", border: "1px solid rgba(255,255,255,0.09)" }}
+            />
+          </div>
+
           <div className="flex gap-2 pt-1">
             <button style={btnPrimary} onClick={handleSend} disabled={!currentDraftId}>
               <Send className="h-3.5 w-3.5"/>Approve & Send
             </button>
-            <button style={btnGhost} onClick={handleRegenerate} disabled={generating || !selectedClient}>
+            <button style={btnGhost} onClick={() => handleRegenerate(regenerateInstructions)} disabled={generating || !selectedClient}>
               <RefreshCw className="h-3.5 w-3.5"/>Regenerate
             </button>
-            <button style={{...btnGhost,marginLeft:"auto",color:"#ef4444"}} onClick={()=>{setSubject("");setBody("");setCurrentDraftId(null);}}>Discard</button>
+            <button style={{...btnGhost,marginLeft:"auto",color:"#ef4444"}} onClick={()=>{setSubject("");setBody("");setCurrentDraftId(null);setRegenerateInstructions("");}}>Discard</button>
           </div>
 
           <button

@@ -55,6 +55,7 @@ def generate_draft_for_lead(
     business_id: int,
     user_id: int,
     sequence_position: int = 1,
+    user_instructions: str = "",
 ) -> dict:
     """
     Generate (or attempt to generate) an email draft for a single lead.
@@ -126,9 +127,9 @@ def generate_draft_for_lead(
         # Step 6 – LLM generation (strategy → draft)                         #
         # ------------------------------------------------------------------ #
         try:
-            strategy = build_email_strategy(email_context, profile, sequence_position)
+            strategy = build_email_strategy(email_context, profile, sequence_position, user_instructions)
             draft_content = generate_email_draft(
-                strategy, email_context, profile, sequence_position
+                strategy, email_context, profile, sequence_position, user_instructions
             )
         except Exception as e:
             draft_content = {"subject": None, "body": None, "error": str(e)}

@@ -243,6 +243,7 @@ def build_email_strategy(
     email_context: dict,
     profile,
     sequence_position: int,
+    user_instructions: str = "",
 ) -> dict:
     """
     Call gpt-4o-mini to build a structured email strategy.
@@ -284,6 +285,9 @@ def build_email_strategy(
         f"\n"
         f"SEQUENCE POSITION: {sequence_position} of 3"
     )
+    
+    if user_instructions:
+        user_message += f"\n\nUSER INSTRUCTIONS:\n{user_instructions}"
 
     content = None
     try:
@@ -326,6 +330,7 @@ def generate_email_draft(
     email_context: dict,
     profile,
     sequence_position: int,
+    user_instructions: str = "",
 ) -> dict:
     """
     Call gpt-4o-mini to produce the final email subject and body.
@@ -362,6 +367,9 @@ def generate_email_draft(
         f"\n"
         f"SEQUENCE: Position {sequence_position} of 3"
     )
+    
+    if user_instructions:
+        user_message += f"\n\nUSER INSTRUCTIONS:\n{user_instructions}"
 
     content: Optional[str] = None
     for attempt in range(1, 3):

@@ -118,9 +118,9 @@ export const api = {
   // Email drafts
   emailDrafts: (businessId: number) => request<any[]>(`/api/v1/email/drafts/${businessId}?t=${Date.now()}`),
   emailDraftDetail: (draftId: number) => request<any>(`/api/v1/email/drafts/detail/${draftId}?t=${Date.now()}`),
-  generateEmail: (businessId: number, userId: number, exporterProfileId: number) =>
+  generateEmail: (businessId: number, userId: number, exporterProfileId: number, userInstructions?: string) =>
     request<any>(`/api/v1/email/generate/${businessId}`,
-      { method: "POST", body: JSON.stringify({ user_id: userId, exporter_profile_id: exporterProfileId, sequence_position: 1 }) }),
+      { method: "POST", body: JSON.stringify({ user_id: userId, exporter_profile_id: exporterProfileId, sequence_position: 1, user_instructions: userInstructions }) }),
   generateBatch: (searchId: number, userId: number) =>
     request<any>("/api/v1/email/generate-batch",
       { method: "POST", body: JSON.stringify({ search_id: searchId, user_id: userId, sequence_position: 1 }) }),
