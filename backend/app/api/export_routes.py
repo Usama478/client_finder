@@ -11,7 +11,9 @@ from openpyxl.utils import get_column_letter
 
 from app.db.session import get_db
 from app.models.search_result import SearchResult
-from app.api.auth_routes import get_current_user
+from app.core.security import get_current_user
+from app.services.credit_service import check_credits, deduct_credits
+from app.services.activity_service import log_activity
 
 router = APIRouter(prefix="/api/v1/export", tags=["export"])
 
@@ -198,10 +200,20 @@ def export_clients(
         elif status:
             query = query.filter(SearchResult.verification_status == status)
 
+        check_credits(db, current_user.user_id, 5)
+
         clients = query.all()
 
         if not clients:
             raise HTTPException(status_code=404, detail="No clients found to export.")
+
+        deduct_credits(db, current_user.user_id, 5, "export", reference_type="export")
+        db.commit()
+        try:
+            log_activity(db, current_user.user_id, "export", metadata={"format": format, "count": len(clients)}, credits_consumed=5)
+            db.commit()
+        except Exception:
+            pass
 
         timestamp = datetime.now().strftime("%Y-%m-%d")
 

@@ -9,6 +9,8 @@ from app.models.search_session import SearchSession
 from app.models.search_result import SearchResult
 from app.models.search_context import SearchContext
 from app.core.security import get_current_user
+from app.services.credit_service import check_credits, deduct_credits
+from app.services.activity_service import log_activity
 
 router = APIRouter(prefix="/api/v1", tags=["search"])
 
@@ -34,15 +36,9 @@ def search_endpoint(request: SearchRequest, db: Session = Depends(get_db), curre
     # Quick Check: Does user exist? (For MVP testing)
     user = db.query(User).filter(User.user_id == request.user_id).first()
     if not user:
-        # Create a test user with a UNIQUE email to prevent IntegrityError crashes
-        user = User(
-            user_id=request.user_id, 
-            name=f"Test User {request.user_id}", 
-            email=f"test_{request.user_id}@example.com", 
-            password_hash="xxx"
-        )
-        db.add(user)
-        db.commit()
+        raise HTTPException(status_code=404, detail="User not found")
+
+    check_credits(db, current_user.user_id, 10)
 
     try:
         result = search_google_maps(
@@ -55,6 +51,15 @@ def search_endpoint(request: SearchRequest, db: Session = Depends(get_db), curre
         )
         if "error" in result:
             raise HTTPException(status_code=400, detail=result["error"])
+        
+        deduct_credits(db, current_user.user_id, 10, "search_session", reference_id=str(result.get("search_id")), reference_type="session")
+        db.commit()
+        try:
+            log_activity(db, current_user.user_id, "search_created", metadata={"query": request.query}, session_id=result.get("search_id"), credits_consumed=10)
+            db.commit()
+        except Exception:
+            pass
+        
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

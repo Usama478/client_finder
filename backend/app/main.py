@@ -12,6 +12,7 @@ from app.api import (
     auth_routes,
     exporter_profile_routes,
     contacts_routes,
+    admin_routes,
 )
 
 from fastapi.exceptions import RequestValidationError
@@ -66,6 +67,7 @@ app.include_router(email_routes.router)
 app.include_router(auth_routes.router)
 app.include_router(exporter_profile_routes.router)
 app.include_router(contacts_routes.router)
+app.include_router(admin_routes.router)
 
 
 @app.get("/")

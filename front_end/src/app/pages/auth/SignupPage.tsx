@@ -21,6 +21,7 @@ export default function SignupPage() {
     termsAccepted: false
   });
   const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -36,8 +37,8 @@ export default function SignupPage() {
     }
     setLoading(true);
     try {
-      await signup(formData.fullName, formData.email, formData.password);
-      navigate("/app");
+      const message = await signup(formData.fullName, formData.email, formData.password);
+      setSuccessMessage(message);
     } catch (err: any) {
       setError(err.message || "Signup failed. Please try again.");
       setLoading(false);
@@ -47,6 +48,27 @@ export default function SignupPage() {
   const handleChange = (field: string, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
+
+  if (successMessage) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-white flex items-center justify-center p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <div className="w-12 h-12 bg-green-600 rounded-lg flex items-center justify-center text-white font-bold text-xl mx-auto mb-4">
+              ✓
+            </div>
+            <CardTitle className="text-2xl">Check Your Email</CardTitle>
+            <CardDescription>{successMessage}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Link to="/auth/login">
+              <Button className="w-full">Go to Login</Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-white flex items-center justify-center p-4">

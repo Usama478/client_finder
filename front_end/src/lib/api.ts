@@ -1,3 +1,10 @@
+export class CreditError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "CreditError"
+  }
+}
+
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000"
 
 function getToken(): string | null {
@@ -26,6 +33,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     window.location.href = "/auth/login"
     throw new Error("Unauthorized")
   }
+  if (res.status === 402) {
+    const error = await res.json().catch(() => ({ detail: "Insufficient credits" }))
+    throw new CreditError(error.detail || "Insufficient credits. Contact your team to top up.")
+  }
   if (!res.ok) {
     const error = await res.json().catch(() => ({ detail: "Request failed" }))
     throw new Error(error.detail || "Request failed")
@@ -41,11 +52,11 @@ export const api = {
       { method: "POST", body: JSON.stringify({ email, password }) }
     ),
   signup: (name: string, email: string, password: string) =>
-    request<{ access_token: string; token_type: string; user_id: number; name: string; email: string }>(
+    request<{ message: string }>(
       "/api/v1/auth/signup",
       { method: "POST", body: JSON.stringify({ name, email, password }) }
     ),
-  me: () => request<{ user_id: number; name: string; email: string }>("/api/v1/auth/me"),
+  me: () => request<{ user_id: number; name: string; email: string; is_admin: boolean }>("/api/v1/auth/me"),
   logout: () => request("/api/v1/auth/logout", { method: "POST" }),
   forgotPassword: (email: string) =>
     request<{ message: string; reset_token?: string }>(
@@ -57,6 +68,11 @@ export const api = {
       "/api/v1/auth/reset-password",
       { method: "POST", body: JSON.stringify({ token, password }) }
     ),
+  verifyEmail: (token: string) =>
+    request<{ message: string }>(
+      `/api/v1/auth/verify-email?token=${encodeURIComponent(token)}`,
+      { method: "POST" }
+    ),
   updateProfile: (data: { name?: string; email?: string; current_password?: string; new_password?: string }) =>
     request<{ user_id: number; name: string; email: string }>(
       "/api/v1/auth/update-profile",
@@ -66,6 +82,13 @@ export const api = {
   // Dashboard
   dashboardStats: () => request<any>("/api/v1/dashboard/stats"),
   activityLog: (limit = 20) => request<any[]>(`/api/v1/dashboard/activity?limit=${limit}`),
+  credits: () =>
+    request<{
+      credits_remaining: number;
+      allocated_total: number;
+      low_credits: boolean;
+      empty: boolean;
+    }>("/api/v1/dashboard/credits"),
 
   // Sessions
   sessions: (userId: number) => request<any[]>(`/api/v1/sessions?user_id=${userId}`),
@@ -147,6 +170,16 @@ export const api = {
   exportResults: (searchId: number) =>
     request<any>("/api/v1/export",
       { method: "POST", body: JSON.stringify({ search_id: searchId }) }),
+
+  // Admin
+  adminUsers: () => request<any[]>("/api/v1/admin/users"),
+  adminManageCredits: (userId: number, action: string, amount: number) =>
+    request<any>(`/api/v1/admin/users/${userId}/credits`,
+      { method: "POST", body: JSON.stringify({ action, amount }) }),
+  adminToggleActive: (userId: number) =>
+    request<any>(`/api/v1/admin/users/${userId}/toggle-active`,
+      { method: "POST" }),
+  adminHealth: () => request<any>("/api/v1/admin/health"),
 }
 
 export async function exportClients(params: {

@@ -13,6 +13,8 @@ from app.models.exporter_profile import ExporterProfile
 from app.models.search_result import SearchResult
 from app.core.security import get_current_user
 from app.models.user import User
+from app.services.credit_service import check_credits, deduct_credits
+from app.services.activity_service import log_activity
 
 
 router = APIRouter(prefix="/api/relevancy/v2", tags=["relevancy-v2"])
@@ -31,7 +33,7 @@ class RelevancyV2RunRequest(BaseModel):
 
 
 @router.post("/run")
-def run_relevancy_v2(request: RelevancyV2RunRequest, db: Session = Depends(get_db)):
+def run_relevancy_v2(request: RelevancyV2RunRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     profile = db.query(ExporterProfile).filter(
         ExporterProfile.is_default == True
     ).first()
@@ -57,6 +59,8 @@ def run_relevancy_v2(request: RelevancyV2RunRequest, db: Session = Depends(get_d
             parts.append(f"MOQ: {profile.moq} pieces")
         profile_text = ". ".join(parts)
 
+    check_credits(db, current_user.user_id, 1)
+
     try:
         output = run_relevancy_v2_for_business(
             business_id=request.business_id,
@@ -72,6 +76,14 @@ def run_relevancy_v2(request: RelevancyV2RunRequest, db: Session = Depends(get_d
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to run relevancy v2: {exc}") from exc
+
+    deduct_credits(db, current_user.user_id, 1, "relevancy", reference_id=str(request.business_id), reference_type="business")
+    db.commit()
+    try:
+        log_activity(db, current_user.user_id, "relevancy_run", business_id=request.business_id, credits_consumed=1)
+        db.commit()
+    except Exception:
+        pass
 
     return {"business_id": request.business_id, **output}
 

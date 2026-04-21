@@ -1,7 +1,8 @@
 import { Outlet, Link, useLocation, useNavigate } from "react-router";
 import {
   LayoutDashboard, Search, Users, UserCircle, Activity, Mail,
-  FileText, CreditCard, Settings, Shield, Bell, Menu, X, ChevronLeft
+  FileText, CreditCard, Settings, Shield, Bell, Menu, X, ChevronLeft,
+  Zap, Key, Gauge, ArrowLeft
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
@@ -10,8 +11,9 @@ import {
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu";
 import { Badge } from "../components/ui/badge";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "../../lib/auth-context";
+import { api } from "../../lib/api";
 
 export default function AppLayout() {
   const location = useLocation();
@@ -19,6 +21,18 @@ export default function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { user, logout } = useAuth();
+
+  const [credits, setCredits] = useState<{
+    credits_remaining: number;
+    allocated_total: number;
+    low_credits: boolean;
+    empty: boolean;
+  } | null>(null)
+
+  useEffect(() => {
+    api.credits().then(setCredits).catch(() => {})
+  }, [])
+
   const userInitials = user?.name
     ? user.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)
     : "?";
@@ -42,6 +56,16 @@ export default function AppLayout() {
     { icon: Settings, label: "Settings", path: "/app/settings" },
   ];
 
+  const adminNavItems = [
+    { icon: LayoutDashboard, label: "Admin Dashboard", path: "/app/admin", badge: null },
+    { icon: Users, label: "User Management", path: "/app/admin/users", badge: null },
+    { icon: Key, label: "API Keys", path: "/app/admin/api-keys", badge: null },
+    { icon: Gauge, label: "Thresholds", path: "/app/admin/thresholds", badge: null },
+  ];
+
+  const isAdminRoute = location.pathname.startsWith("/app/admin");
+  const showAdminNav = isAdminRoute && user?.is_admin;
+
   const pageTitles: Record<string, { title: string; sub: string }> = {
     "/app": { title: "Dashboard", sub: "Overview & pipeline" },
     "/app/search": { title: "Search Businesses", sub: "Discover → Score → Verify → Decide" },
@@ -53,6 +77,9 @@ export default function AppLayout() {
     "/app/billing": { title: "Billing", sub: "Plan & usage" },
     "/app/settings": { title: "Settings", sub: "Profile & preferences" },
     "/app/admin": { title: "Admin Panel", sub: "Platform management" },
+    "/app/admin/users": { title: "User Management", sub: "Manage platform users" },
+    "/app/admin/api-keys": { title: "API Keys", sub: "System API key configuration" },
+    "/app/admin/thresholds": { title: "Thresholds", sub: "Configure system thresholds" },
   };
 
   const currentPath = Object.keys(pageTitles).find(k =>
@@ -104,13 +131,95 @@ export default function AppLayout() {
         </div>
 
         <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
-          {sidebarOpen && <div className="px-3 py-2 text-[10px] font-semibold text-[#5a6478] uppercase tracking-widest">Workspace</div>}
-          {navItems.map(item => <NavItem key={item.path} item={item} />)}
-          <div className="mt-4 pt-3 border-t" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
-            {sidebarOpen && <div className="px-3 py-2 text-[10px] font-semibold text-[#5a6478] uppercase tracking-widest">Account</div>}
-            {accountItems.map(item => <NavItem key={item.path} item={{ ...item, badge: null, badgeGreen: false }} />)}
-          </div>
+          {showAdminNav ? (
+            <>
+              {sidebarOpen && (
+                <Link to="/app" className="flex items-center gap-2 px-3 py-2 mb-2 text-sm text-[#8a95a8] hover:text-[#e8edf5] hover:bg-[#151a22] rounded-lg transition-all">
+                  <ArrowLeft className="h-4 w-4" />
+                  <span>Back to App</span>
+                </Link>
+              )}
+              {!sidebarOpen && (
+                <Link to="/app" className="flex justify-center px-2 py-2 mb-2 text-[#8a95a8] hover:text-[#e8edf5] hover:bg-[#151a22] rounded-lg transition-all">
+                  <ArrowLeft className="h-4 w-4" />
+                </Link>
+              )}
+              {sidebarOpen && <div className="px-3 py-2 text-[10px] font-semibold text-[#5a6478] uppercase tracking-widest">Admin</div>}
+              {adminNavItems.map(item => <NavItem key={item.path} item={item} />)}
+            </>
+          ) : (
+            <>
+              {sidebarOpen && <div className="px-3 py-2 text-[10px] font-semibold text-[#5a6478] uppercase tracking-widest">Workspace</div>}
+              {navItems.map(item => <NavItem key={item.path} item={item} />)}
+              <div className="mt-4 pt-3 border-t" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
+                {sidebarOpen && <div className="px-3 py-2 text-[10px] font-semibold text-[#5a6478] uppercase tracking-widest">Account</div>}
+                {accountItems.map(item => <NavItem key={item.path} item={{ ...item, badge: null, badgeGreen: false }} />)}
+              </div>
+            </>
+          )}
         </nav>
+
+        {/* Credit widget */}
+        {credits && (
+          <div className="px-2 pb-1">
+            {sidebarOpen ? (
+              <div className={`rounded-lg p-2.5 border ${
+                credits.empty
+                  ? "border-red-500/30 bg-red-500/10"
+                  : credits.low_credits
+                  ? "border-amber-500/30 bg-amber-500/10"
+                  : "border-blue-500/20 bg-blue-500/10"
+              }`}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <Zap className={`h-3 w-3 ${
+                      credits.empty ? "text-red-400"
+                      : credits.low_credits ? "text-amber-400"
+                      : "text-blue-400"
+                    }`} />
+                    <span className="text-[10px] font-semibold text-[#5a6478] uppercase tracking-widest">Credits</span>
+                  </div>
+                  <span className={`text-xs font-bold ${
+                    credits.empty ? "text-red-400"
+                    : credits.low_credits ? "text-amber-400"
+                    : "text-[#e8edf5]"
+                  }`}>{credits.credits_remaining}</span>
+                </div>
+                <div className="w-full h-1 rounded-full bg-[#1a2030] overflow-hidden">
+                  <div
+                    className={`h-1 rounded-full transition-all ${
+                      credits.empty ? "bg-red-500"
+                      : credits.low_credits ? "bg-amber-500"
+                      : "bg-blue-500"
+                    }`}
+                    style={{
+                      width: `${credits.allocated_total > 0
+                        ? Math.min(100, Math.round((credits.credits_remaining / credits.allocated_total) * 100))
+                        : 0}%`
+                    }}
+                  />
+                </div>
+                {(credits.low_credits || credits.empty) && (
+                  <p className={`text-[9px] mt-1.5 leading-tight ${
+                    credits.empty ? "text-red-400" : "text-amber-400"
+                  }`}>
+                    {credits.empty
+                      ? "Credits exhausted. Contact your team."
+                      : "Contact team for more credits."}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="flex justify-center py-1">
+                <div className={`w-2 h-2 rounded-full ${
+                  credits.empty ? "bg-red-500"
+                  : credits.low_credits ? "bg-amber-500"
+                  : "bg-blue-500"
+                }`} />
+              </div>
+            )}
+          </div>
+        )}
 
         {/* User card */}
         <div className="p-2 border-t" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
@@ -143,10 +252,22 @@ export default function AppLayout() {
               </Button>
             </div>
             <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
-              {navItems.map(item => <NavItem key={item.path} item={item} mobile />)}
-              <div className="mt-4 pt-3 border-t" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
-                {accountItems.map(item => <NavItem key={item.path} item={{ ...item, badge: null, badgeGreen: false }} mobile />)}
-              </div>
+              {showAdminNav ? (
+                <>
+                  <Link to="/app" className="flex items-center gap-2 px-3 py-2 mb-2 text-sm text-[#8a95a8] hover:text-[#e8edf5] hover:bg-[#151a22] rounded-lg transition-all" onClick={() => setMobileMenuOpen(false)}>
+                    <ArrowLeft className="h-4 w-4" />
+                    <span>Back to App</span>
+                  </Link>
+                  {adminNavItems.map(item => <NavItem key={item.path} item={item} mobile />)}
+                </>
+              ) : (
+                <>
+                  {navItems.map(item => <NavItem key={item.path} item={item} mobile />)}
+                  <div className="mt-4 pt-3 border-t" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
+                    {accountItems.map(item => <NavItem key={item.path} item={{ ...item, badge: null, badgeGreen: false }} mobile />)}
+                  </div>
+                </>
+              )}
             </nav>
           </aside>
         </div>

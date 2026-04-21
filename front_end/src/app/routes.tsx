@@ -8,6 +8,8 @@ import PricingPage from "./pages/public/PricingPage";
 import LoginPage from "./pages/auth/LoginPage";
 import SignupPage from "./pages/auth/SignupPage";
 import ForgotPasswordPage from "./pages/auth/ForgotPasswordPage";
+import ResetPasswordPage from "./pages/auth/ResetPasswordPage";
+import VerifyEmailPage from "./pages/auth/VerifyEmailPage";
 import DashboardPage from "./pages/app/DashboardPage";
 import SearchBusinessesPage from "./pages/app/SearchBusinessesPage";
 import ClientsPage from "./pages/app/ClientsPage";
@@ -39,6 +41,8 @@ export const router = createBrowserRouter([
       { path: "login", Component: LoginPage },
       { path: "signup", Component: SignupPage },
       { path: "forgot-password", Component: ForgotPasswordPage },
+      { path: "reset-password", Component: ResetPasswordPage },
+      { path: "verify-email", Component: VerifyEmailPage },
     ],
   },
   {
@@ -59,10 +63,10 @@ export const router = createBrowserRouter([
       { path: "contexts", Component: ContextsPage },
       { path: "billing", Component: BillingPage },
       { path: "settings", Component: SettingsPage },
-      { path: "admin", Component: AdminDashboardPage },
-      { path: "admin/users", Component: UserManagementPage },
-      { path: "admin/api-keys", Component: ApiKeyManagementPage },
-      { path: "admin/thresholds", Component: ThresholdConfigPage },
+      { path: "admin", element: <ProtectedRoute requireAdmin={true}><AdminDashboardPage /></ProtectedRoute> },
+      { path: "admin/users", element: <ProtectedRoute requireAdmin={true}><UserManagementPage /></ProtectedRoute> },
+      { path: "admin/api-keys", element: <ProtectedRoute requireAdmin={true}><ApiKeyManagementPage /></ProtectedRoute> },
+      { path: "admin/thresholds", element: <ProtectedRoute requireAdmin={true}><ThresholdConfigPage /></ProtectedRoute> },
     ],
   },
 ]);

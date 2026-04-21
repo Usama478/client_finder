@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi import Request as FastAPIRequest
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from app.agents.verification.service import (
     reset_stale_processing_leads,
@@ -13,8 +14,10 @@ from app.agents.verification.service import (
     run_verification_for_business,
 )
 from app.core.security import get_current_user
-from app.db.session import SessionLocal
+from app.db.session import SessionLocal, get_db
 from app.models.search_result import SearchResult
+from app.services.credit_service import check_credits, deduct_credits
+from app.services.activity_service import log_activity
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +61,7 @@ async def verify_batch_debug(request: RawRequest, current_user = Depends(get_cur
 async def verify_batch(
     batch_request: BatchVerifyRequest,
     raw_request: FastAPIRequest,
+    db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ) -> Dict[str, Any]:
     """
@@ -74,7 +78,18 @@ async def verify_batch(
     if not batch_request.business_ids:
         raise HTTPException(status_code=400, detail="No business_ids provided.")
 
+    cost = len(batch_request.business_ids) * 2
+    check_credits(db, current_user.user_id, cost)
+
     results = run_verification_batch(batch_request.business_ids)
+
+    deduct_credits(db, current_user.user_id, cost, "verification", reference_type="batch")
+    db.commit()
+    try:
+        log_activity(db, current_user.user_id, "verification_run", metadata={"count": len(batch_request.business_ids)}, credits_consumed=cost)
+        db.commit()
+    except Exception:
+        pass
 
     total = len(batch_request.business_ids)
     succeeded = sum(1 for r in results if r["status"] == "ok")
@@ -90,7 +105,7 @@ async def verify_batch(
 
 
 @router.post("/verify/{business_id}")
-def verify_single(business_id: int, current_user = Depends(get_current_user)) -> Dict[str, Any]:
+def verify_single(business_id: int, db: Session = Depends(get_db), current_user = Depends(get_current_user)) -> Dict[str, Any]:
     """
     Run the Verification Agent for a single business synchronously.
 
@@ -98,8 +113,19 @@ def verify_single(business_id: int, current_user = Depends(get_current_user)) ->
     Returns HTTP 404 if the business_id does not exist in the database.
     Returns HTTP 500 for any other unexpected failure.
     """
+    check_credits(db, current_user.user_id, 2)
+    
     try:
         result = run_verification_for_business(business_id)
+        
+        deduct_credits(db, current_user.user_id, 2, "verification", reference_id=str(business_id), reference_type="business")
+        db.commit()
+        try:
+            log_activity(db, current_user.user_id, "verification_run", business_id=business_id, credits_consumed=2)
+            db.commit()
+        except Exception:
+            pass
+        
         return {"business_id": business_id, "result": result}
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))

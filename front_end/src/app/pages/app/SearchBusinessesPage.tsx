@@ -3,7 +3,7 @@ import { Link, useLocation } from "react-router";
 import { Search, MapPin, Sparkles, ShieldCheck, Save, ExternalLink, Clock, RefreshCw, Play, Eye, X, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../../../lib/auth-context";
-import { api } from "../../../lib/api";
+import { api, CreditError } from "../../../lib/api";
 
 /* ── Shared dark style tokens ── */
 const card: React.CSSProperties = { background: "#0f1218", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10 };
@@ -19,7 +19,7 @@ const Badge = ({ children, color }: { children: React.ReactNode; color: "green" 
 
 
 export default function SearchBusinessesPage() {
-  const { user } = useAuth();
+  const { user, credits, refreshCredits } = useAuth();
   const routerLocation = useLocation();
   const [searchQuery, setSearchQuery]       = useState("");
   const [location, setLocation]             = useState("");
@@ -81,11 +81,18 @@ export default function SearchBusinessesPage() {
     : [];
 
   const handleSearch = async () => {
-    if (!searchQuery && !location) { toast.error("Enter a keyword or location to search"); return; }
-    if (!user) { toast.error("Not logged in"); return; }
-    setNextPageToken(null);
+    if (!searchQuery.trim()) { toast.error("Enter a search query"); return; }
+    if (!user) return;
+    if (credits && credits.empty) {
+      toast.error("Credits exhausted — contact your team to top up.");
+      return;
+    }
+    if (credits && credits.credits_remaining < 10) {
+      toast.error(`Insufficient credits. Search costs 10 credits. You have ${credits.credits_remaining}.`);
+      return;
+    }
     setSearching(true);
-    const searchToastId = toast.loading("Searching businesses…");
+    const searchToastId = toast.loading("Searching for businesses…");
     try {
       const finalIndustry = showOtherIndustry ? otherIndustry : industry;
       const parts = [searchQuery, finalIndustry, location].filter(Boolean);
@@ -97,14 +104,21 @@ export default function SearchBusinessesPage() {
         context_id: selectedContext ?? null,
       });
       setNextPageToken(searchResponse?.next_page_token || null);
-      toast.dismiss(searchToastId); toast.success("Search complete!");
+      toast.dismiss(searchToastId);
+      toast.success("Search complete!");
+      await refreshCredits();
       const newSessions = await api.sessions(user.user_id);
       setSessions(newSessions || []);
       if (newSessions && newSessions.length > 0) {
         setSelectedSessionId(newSessions[0].search_id);
       }
     } catch (err: any) {
-      toast.error(err.message || "Search failed");
+      toast.dismiss(searchToastId);
+      if (err instanceof CreditError) {
+        toast.error("Credits exhausted — contact your team to top up.");
+      } else {
+        toast.error(err.message || "Search failed");
+      }
     } finally {
       setSearching(false);
     }
@@ -139,6 +153,15 @@ export default function SearchBusinessesPage() {
 
   const handleRunAI = async () => {
     if (!selectedIds.length) { toast.error("Select at least one business"); return; }
+    if (credits && credits.empty) {
+      toast.error("Credits exhausted — contact your team to top up.");
+      return;
+    }
+    const cost = selectedIds.length * 1;
+    if (credits && credits.credits_remaining < cost) {
+      toast.error(`Insufficient credits. AI scoring ${selectedIds.length} leads costs ${cost} credits. You have ${credits.credits_remaining}.`);
+      return;
+    }
     setProcessingAI(true);
     setAiProgress(0);
     toast.info(`Running AI relevance on ${selectedIds.length} leads…`);
@@ -170,6 +193,14 @@ export default function SearchBusinessesPage() {
             ));
             passed++;
           } catch (err: any) {
+            if (err instanceof CreditError) {
+              toast.error("Credits exhausted — contact your team to top up.");
+              setProcessingAI(false);
+              setAiProgress(100);
+              setSelectedIds([]);
+              await refreshCredits();
+              return;
+            }
             setResults(prev => prev.map(r =>
               r.result_id === Number(id)
                 ? { ...r, relevance_decision: "error", relevance_reason: err.message }
@@ -184,9 +215,14 @@ export default function SearchBusinessesPage() {
         const r = await api.results(selectedSessionId);
         setResults(r || []);
       }
+      await refreshCredits();
       toast.success(`AI complete: ${passed} scored, ${failed} skipped/failed`);
     } catch (err: any) {
-      toast.error(err.message || "AI scoring failed");
+      if (err instanceof CreditError) {
+        toast.error("Credits exhausted — contact your team to top up.");
+      } else {
+        toast.error(err.message || "AI scoring failed");
+      }
     } finally {
       setProcessingAI(false);
       setAiProgress(100);
@@ -196,27 +232,39 @@ export default function SearchBusinessesPage() {
 
   const handleVerify = async () => {
     if (!selectedIds.length) { toast.error("Select at least one business"); return; }
+    if (credits && credits.empty) {
+      toast.error("Credits exhausted — contact your team to top up.");
+      return;
+    }
+    const cost = selectedIds.length * 2;
+    if (credits && credits.credits_remaining < cost) {
+      toast.error(`Insufficient credits. Verifying ${selectedIds.length} leads costs ${cost} credits. You have ${credits.credits_remaining}.`);
+      return;
+    }
     setProcessingVerify(true);
     toast.info(`Verifying ${selectedIds.length} leads…`);
     try {
       const validIds = selectedIds
         .map(id => Number(id))
         .filter(id => !isNaN(id) && id > 0);
-
       if (validIds.length === 0) {
         toast.error("No valid business IDs selected");
         setProcessingVerify(false);
         return;
       }
-
       await api.verifyBatch(validIds);
       if (selectedSessionId) {
         const r = await api.results(selectedSessionId);
         setResults(r || []);
       }
+      await refreshCredits();
       toast.success("Verification complete!");
     } catch (err: any) {
-      toast.error(err.message || "Verification failed");
+      if (err instanceof CreditError) {
+        toast.error("Credits exhausted — contact your team to top up.");
+      } else {
+        toast.error(err.message || "Verification failed");
+      }
     } finally {
       setProcessingVerify(false);
       setSelectedIds([]);
@@ -345,7 +393,8 @@ export default function SearchBusinessesPage() {
               />
             </div>
           )}
-          <button style={btnPrimary} onClick={handleSearch} disabled={searching}>
+          <button style={btnPrimary} onClick={handleSearch}
+            disabled={searching || !!(credits && credits.empty)}>
             {searching && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
             {!searching && <Search className="h-3.5 w-3.5" />}
             {searching ? "Searching…" : "Search"}
@@ -427,9 +476,15 @@ export default function SearchBusinessesPage() {
         <div className="flex flex-wrap items-center gap-3 p-3 rounded-xl" style={{ background: "rgba(59,130,246,0.06)", border: "1px solid rgba(59,130,246,0.25)" }}>
           <span className="text-sm font-semibold text-blue-400">{selectedIds.length} selected</span>
           <div className="flex gap-2 flex-wrap">
-            <button style={btnPrimary} onClick={handleRunAI}><Sparkles className="h-3.5 w-3.5" />Run AI Relevance</button>
+            <button style={btnPrimary} onClick={handleRunAI}
+              disabled={!!(credits && credits.empty)}>
+              <Sparkles className="h-3.5 w-3.5" />Run AI Relevance
+            </button>
             {hasScoredLeads && (
-              <button style={btnGhost} onClick={handleVerify}><ShieldCheck className="h-3.5 w-3.5" />Verify Selected</button>
+              <button style={btnGhost} onClick={handleVerify}
+                disabled={!!(credits && credits.empty)}>
+                <ShieldCheck className="h-3.5 w-3.5" />Verify Selected
+              </button>
             )}
             <button style={btnGhost} onClick={handleSave}><Save className="h-3.5 w-3.5" />Save to Clients</button>
           </div>

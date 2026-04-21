@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -18,6 +19,8 @@ from app.models.email_draft import EmailDraft
 from app.models.search_result import SearchResult
 
 logger = logging.getLogger(__name__)
+
+EMAIL_AGENT_ENABLED = os.getenv("EMAIL_AGENT_ENABLED", "false").lower() == "true"
 
 router = APIRouter(prefix="/api/v1/email", tags=["email"])
 
@@ -51,6 +54,8 @@ def generate_draft(business_id: int, request: GenerateDraftRequest, current_user
     Returns HTTP 404 if the business_id does not exist.
     Returns HTTP 500 for any other unexpected failure.
     """
+    if not EMAIL_AGENT_ENABLED:
+        raise HTTPException(status_code=503, detail="Email agent temporarily disabled")
     try:
         result = generate_draft_for_lead(
             business_id=business_id,
@@ -75,6 +80,8 @@ def generate_batch(request: GenerateBatchRequest, current_user = Depends(get_cur
 
     Returns a summary dict with generation statistics.
     """
+    if not EMAIL_AGENT_ENABLED:
+        raise HTTPException(status_code=503, detail="Email agent temporarily disabled")
     try:
         result = generate_batch_for_session(
             search_id=request.search_id,
@@ -237,6 +244,8 @@ def send_draft(draft_id: int, current_user = Depends(get_current_user)) -> Dict[
     Returns the send result dict.
     Returns HTTP 400 if the draft cannot be sent (e.g., not approved).
     """
+    if not EMAIL_AGENT_ENABLED:
+        raise HTTPException(status_code=503, detail="Email agent temporarily disabled")
     try:
         result = send_approved_draft(draft_id)
         
@@ -304,6 +313,8 @@ def followup_check(current_user = Depends(get_current_user)) -> Dict[str, Any]:
 
     Can be triggered manually or via a cron job.
     """
+    if not EMAIL_AGENT_ENABLED:
+        raise HTTPException(status_code=503, detail="Email agent temporarily disabled")
     try:
         result = run_followup_check()
         return result

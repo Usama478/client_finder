@@ -15,6 +15,12 @@ export default function SettingsPage() {
   const [profileData, setProfileData] = useState<any>(null);
   const [profileId, setProfileId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
+  
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
   const [profileForm, setProfileForm] = useState({
     company_name: "", company_location: "", year_established: "",
@@ -26,6 +32,13 @@ export default function SettingsPage() {
   });
 
   const [emailNotifications, setEmailNotifications] = useState(true);
+
+  useEffect(() => {
+    if (user) {
+      setName(user.name || "");
+      setEmail(user.email || "");
+    }
+  }, [user]);
 
   useEffect(() => {
     api.getMyProfile()
@@ -111,31 +124,41 @@ export default function SettingsPage() {
               <div className="grid md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Full Name</Label>
-                  <Input defaultValue="John Doe" />
+                  <Input value={name} onChange={(e) => setName(e.target.value)} />
                 </div>
                 <div className="space-y-2">
                   <Label>Email</Label>
-                  <Input type="email" defaultValue="john@company.com" />
+                  <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
                 </div>
               </div>
               <div className="space-y-2">
                 <Label>Current Password</Label>
-                <Input type="password" />
+                <Input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
               </div>
               <div className="grid md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>New Password</Label>
-                  <Input type="password" />
+                  <Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
                 </div>
                 <div className="space-y-2">
                   <Label>Confirm New Password</Label>
-                  <Input type="password" />
+                  <Input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
                 </div>
               </div>
               <Button onClick={async () => {
                 try {
-                  await api.updateProfile({ name: user?.name, email: user?.email });
+                  if (newPassword && newPassword !== confirmPassword) {
+                    toast.error("Passwords do not match");
+                    return;
+                  }
+                  const payload: any = { name, email };
+                  if (currentPassword) payload.current_password = currentPassword;
+                  if (newPassword) payload.new_password = newPassword;
+                  await api.updateProfile(payload);
                   await refreshUser();
+                  setCurrentPassword("");
+                  setNewPassword("");
+                  setConfirmPassword("");
                   toast.success("Profile updated");
                 } catch (err: any) {
                   toast.error(err.message || "Failed to update profile");

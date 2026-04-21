@@ -6,6 +6,7 @@ from app.models.search_result import SearchResult
 from app.models.search_session import SearchSession
 from app.models.email_draft import EmailDraft
 from app.models.user import User
+from app.models.user_credit import UserCredit
 from app.core.security import get_current_user
 from pydantic import BaseModel
 from typing import List, Dict, Any
@@ -207,4 +208,23 @@ def get_result_detail(result_id: int, db: Session = Depends(get_db), current_use
             }
             for d in drafts
         ]
+    }
+
+@router.get("/credits")
+def get_credits(db: Session = Depends(get_db),
+                current_user: User = Depends(get_current_user)):
+    credit = db.query(UserCredit).filter(
+        UserCredit.user_id == current_user.user_id).first()
+    if not credit:
+        return {
+            "credits_remaining": 0,
+            "allocated_total": 0,
+            "low_credits": True,
+            "empty": True,
+        }
+    return {
+        "credits_remaining": credit.credits_remaining,
+        "allocated_total": credit.allocated_total,
+        "low_credits": credit.credits_remaining < 20,
+        "empty": credit.credits_remaining <= 0,
     }

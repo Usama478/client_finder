@@ -1,23 +1,58 @@
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Badge } from "../../components/ui/badge";
 import { Users, Search, Mail, Activity, AlertCircle, CheckCircle } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { api } from "../../../lib/api";
 
 export default function AdminDashboardPage() {
-  const metrics = [
-    { label: "Active Users", value: "24", icon: Users, color: "text-blue-600" },
-    { label: "Searches Today", value: "156", icon: Search, color: "text-purple-600" },
-    { label: "Emails Today", value: "89", icon: Mail, color: "text-green-600" },
-    { label: "System Health", value: "Good", icon: CheckCircle, color: "text-emerald-600" }
-  ];
+  const [metrics, setMetrics] = useState([
+    { label: "Active Users", value: "...", icon: Users, color: "text-blue-600" },
+    { label: "Searches Today", value: "...", icon: Search, color: "text-purple-600" },
+    { label: "Emails Today", value: "...", icon: Mail, color: "text-green-600" },
+    { label: "System Health", value: "...", icon: CheckCircle, color: "text-emerald-600" }
+  ]);
 
-  const usageData = [
-    { day: "Mon", searches: 120, emails: 45 },
-    { day: "Tue", searches: 150, emails: 67 },
-    { day: "Wed", searches: 98, emails: 34 },
-    { day: "Thu", searches: 156, emails: 89 },
-    { day: "Fri", searches: 142, emails: 76 }
-  ];
+  const [usageData, setUsageData] = useState([
+    { day: "Mon", searches: 0, emails: 0 },
+    { day: "Tue", searches: 0, emails: 0 },
+    { day: "Wed", searches: 0, emails: 0 },
+    { day: "Thu", searches: 0, emails: 0 },
+    { day: "Fri", searches: 0, emails: 0 }
+  ]);
+
+  const [systemStatus, setSystemStatus] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [users, health] = await Promise.all([
+          api.adminUsers(),
+          api.adminHealth()
+        ]);
+
+        const activeUsers = users.filter((u: any) => u.is_active).length;
+        
+        setMetrics([
+          { label: "Active Users", value: String(activeUsers), icon: Users, color: "text-blue-600" },
+          { label: "Searches Today", value: String(health.searches_today || 0), icon: Search, color: "text-purple-600" },
+          { label: "Emails Today", value: String(health.emails_today || 0), icon: Mail, color: "text-green-600" },
+          { label: "System Health", value: health.status || "Good", icon: CheckCircle, color: "text-emerald-600" }
+        ]);
+
+        if (health.usage_data) {
+          setUsageData(health.usage_data);
+        }
+
+        if (health.services) {
+          setSystemStatus(health.services);
+        }
+      } catch (error) {
+        console.error("Failed to fetch admin data:", error);
+      }
+    };
+    fetchData();
+  }, []);
 
   return (
     <div className="p-6 space-y-6">
@@ -71,23 +106,26 @@ export default function AdminDashboardPage() {
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            {[
-              { service: "Search Engine", status: "operational", uptime: "99.9%" },
-              { service: "AI Service", status: "operational", uptime: "99.8%" },
-              { service: "Verification Service", status: "operational", uptime: "99.7%" },
-              { service: "Email Service", status: "operational", uptime: "99.9%" }
-            ].map((service, i) => (
+            {systemStatus.length > 0 ? systemStatus.map((service, i) => (
               <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                 <div className="flex items-center gap-3">
-                  <CheckCircle className="h-5 w-5 text-green-600" />
+                  {service.status === "operational" ? (
+                    <CheckCircle className="h-5 w-5 text-green-600" />
+                  ) : (
+                    <AlertCircle className="h-5 w-5 text-red-600" />
+                  )}
                   <div>
                     <div className="font-medium">{service.service}</div>
                     <div className="text-sm text-gray-600">Uptime: {service.uptime}</div>
                   </div>
                 </div>
-                <Badge className="bg-green-600">Operational</Badge>
+                <Badge className={service.status === "operational" ? "bg-green-600" : "bg-red-600"}>
+                  {service.status === "operational" ? "Operational" : "Down"}
+                </Badge>
               </div>
-            ))}
+            )) : (
+              <div className="text-center text-gray-500 py-4">Loading system status...</div>
+            )}
           </div>
         </CardContent>
       </Card>

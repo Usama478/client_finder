@@ -9,15 +9,14 @@ from app.core.security import (
     verify_password, hash_password,
     create_access_token, decode_access_token
 )
+from app.services.credit_service import initialize_credits
+from app.services.email_service import send_verification_email, send_password_reset_email
 import secrets
 from datetime import datetime, timedelta, timezone
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
-
-_reset_tokens: dict[str, tuple[str, datetime]] = {}
-# {token: (email, expires_at)}
 
 class SignupRequest(BaseModel):
     name: str
@@ -30,11 +29,13 @@ class LoginResponse(BaseModel):
     user_id: int
     name: str
     email: str
+    is_admin: bool
 
 class UserResponse(BaseModel):
     user_id: int
     name: str
     email: str
+    is_admin: bool
 
 def get_current_user(
     token: str = Depends(oauth2_scheme),
@@ -57,7 +58,7 @@ def get_current_user(
         raise credentials_exception
     return user
 
-@router.post("/signup", response_model=LoginResponse)
+@router.post("/signup")
 def signup(request: SignupRequest, db: Session = Depends(get_db)):
     existing = db.query(User).filter(
         User.email == request.email.lower().strip()).first()
@@ -66,34 +67,47 @@ def signup(request: SignupRequest, db: Session = Depends(get_db)):
             status_code=400,
             detail="Email already registered"
         )
+    verification_token = secrets.token_urlsafe(32)
+    verification_expires = datetime.now(timezone.utc) + timedelta(hours=1)
     user = User(
         name=request.name.strip(),
         email=request.email.lower().strip(),
         password_hash=hash_password(request.password),
+        is_verified=False,
+        is_active=True,
+        verification_token=verification_token,
+        verification_token_expires=verification_expires,
     )
     db.add(user)
     db.commit()
     db.refresh(user)
-    token = create_access_token({"sub": str(user.user_id)})
-    return LoginResponse(
-        access_token=token,
-        token_type="bearer",
-        user_id=user.user_id,
-        name=user.name,
-        email=user.email,
-    )
+    initialize_credits(db, user.user_id, 200)
+    db.commit()
+    send_verification_email(user.email, verification_token)
+    return {"message": "Account created. Please check your email to verify your account."}
 
 @router.post("/login", response_model=LoginResponse)
 def login(form_data: OAuth2PasswordRequestForm = Depends(),
           db: Session = Depends(get_db)):
     user = db.query(User).filter(
         User.email == form_data.username.lower().strip()).first()
-    if not user or not verify_password(form_data.password,
-                                        user.password_hash):
+    if not user or not verify_password(form_data.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
         )
+    if not user.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Please verify your email before logging in.",
+        )
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account deactivated. Contact support.",
+        )
+    user.last_login = datetime.now(timezone.utc)
+    db.commit()
     token = create_access_token({"sub": str(user.user_id)})
     return LoginResponse(
         access_token=token,
@@ -101,6 +115,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(),
         user_id=user.user_id,
         name=user.name,
         email=user.email,
+        is_admin=bool(user.is_admin),
     )
 
 class LoginRequest(BaseModel):
@@ -111,12 +126,23 @@ class LoginRequest(BaseModel):
 def login_json(request: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(
         User.email == request.email.lower().strip()).first()
-    if not user or not verify_password(request.password,
-                                        user.password_hash):
+    if not user or not verify_password(request.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
         )
+    if not user.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Please verify your email before logging in.",
+        )
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account deactivated. Contact support.",
+        )
+    user.last_login = datetime.now(timezone.utc)
+    db.commit()
     token = create_access_token({"sub": str(user.user_id)})
     return LoginResponse(
         access_token=token,
@@ -124,6 +150,7 @@ def login_json(request: LoginRequest, db: Session = Depends(get_db)):
         user_id=user.user_id,
         name=user.name,
         email=user.email,
+        is_admin=bool(user.is_admin),
     )
 
 @router.get("/me", response_model=UserResponse)
@@ -132,11 +159,27 @@ def get_me(current_user: User = Depends(get_current_user)):
         user_id=current_user.user_id,
         name=current_user.name,
         email=current_user.email,
+        is_admin=bool(current_user.is_admin),
     )
 
 @router.post("/logout")
 def logout():
     return {"message": "Logged out successfully"}
+
+@router.post("/verify-email")
+def verify_email(token: str, db: Session = Depends(get_db)):
+    user = db.query(User).filter(
+        User.verification_token == token).first()
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid verification token.")
+    if user.verification_token_expires is None or \
+       datetime.now(timezone.utc) > user.verification_token_expires.replace(tzinfo=timezone.utc):
+        raise HTTPException(status_code=400, detail="Verification token has expired.")
+    user.is_verified = True
+    user.verification_token = None
+    user.verification_token_expires = None
+    db.commit()
+    return {"message": "Email verified successfully. You can now log in."}
 
 class ForgotPasswordRequest(BaseModel):
     email: str
@@ -148,16 +191,11 @@ def forgot_password(request: ForgotPasswordRequest,
         User.email == request.email.lower().strip()).first()
     if user:
         token = secrets.token_urlsafe(32)
-        expires = datetime.now(timezone.utc) + timedelta(hours=1)
-        _reset_tokens[token] = (user.email, expires)
-        return {
-            "message": "If this email exists, a reset link has been sent.",
-            "reset_token": token,
-            "expires_in_minutes": 60
-        }
-    return {
-        "message": "If this email exists, a reset link has been sent."
-    }
+        user.verification_token = token
+        user.verification_token_expires = datetime.now(timezone.utc) + timedelta(hours=1)
+        db.commit()
+        send_password_reset_email(user.email, token)
+    return {"message": "If this email exists, a reset link has been sent."}
 
 class ResetPasswordRequest(BaseModel):
     token: str
@@ -166,21 +204,17 @@ class ResetPasswordRequest(BaseModel):
 @router.post("/reset-password")
 def reset_password(request: ResetPasswordRequest,
                    db: Session = Depends(get_db)):
-    entry = _reset_tokens.get(request.token)
-    if not entry:
-        raise HTTPException(status_code=400,
-                            detail="Invalid or expired reset token")
-    email, expires = entry
-    if datetime.now(timezone.utc) > expires:
-        del _reset_tokens[request.token]
-        raise HTTPException(status_code=400,
-                            detail="Reset token has expired")
-    user = db.query(User).filter(User.email == email).first()
+    user = db.query(User).filter(
+        User.verification_token == request.token).first()
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+    if user.verification_token_expires is None or \
+       datetime.now(timezone.utc) > user.verification_token_expires.replace(tzinfo=timezone.utc):
+        raise HTTPException(status_code=400, detail="Reset token has expired")
     user.password_hash = hash_password(request.password)
+    user.verification_token = None
+    user.verification_token_expires = None
     db.commit()
-    del _reset_tokens[request.token]
     return {"message": "Password reset successfully"}
 
 class UpdateProfileRequest(BaseModel):
