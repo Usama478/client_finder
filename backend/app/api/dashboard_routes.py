@@ -147,6 +147,13 @@ def get_result_detail(result_id: int, db: Session = Depends(get_db), current_use
         SearchResult.result_id == result_id).filter(SearchSession.user_id == current_user.user_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
+    from app.models.search_context import SearchContext
+    session_row = db.query(SearchSession).filter(SearchSession.search_id == lead.search_id).first()
+    context_name = None
+    if session_row and session_row.context_id:
+        ctx = db.query(SearchContext).filter(SearchContext.id == session_row.context_id).first()
+        if ctx:
+            context_name = ctx.name
     drafts = db.query(EmailDraft).filter(
         EmailDraft.business_id == result_id
     ).order_by(EmailDraft.created_at.desc()).all()
@@ -195,6 +202,7 @@ def get_result_detail(result_id: int, db: Session = Depends(get_db), current_use
         "email_context": lead.email_context or {},
         "is_saved_client": lead.is_saved_client,
         "created_at": lead.created_at.isoformat() if lead.created_at else None,
+        "context_name": context_name,
         "email_drafts": [
             {
                 "id": d.id,

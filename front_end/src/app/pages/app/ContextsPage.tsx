@@ -13,6 +13,14 @@ import { api } from "../../../lib/api";
 export default function ContextsPage() {
   const [contexts, setContexts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [ctxName, setCtxName] = useState("");
+  const [ctxDesc, setCtxDesc] = useState("");
+  const [ctxCriteria, setCtxCriteria] = useState("");
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editingContext, setEditingContext] = useState<any>(null);
+  const [editName, setEditName] = useState("");
+  const [editPrompt, setEditPrompt] = useState("");
 
   useEffect(() => {
     api.contexts()
@@ -36,7 +44,7 @@ export default function ContextsPage() {
           <h1 className="text-3xl font-bold">Search Contexts</h1>
           <p className="text-[#8a95a8] mt-1">Define reusable search criteria for AI relevance scoring</p>
         </div>
-        <Dialog>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button>
               <Plus className="mr-2 h-4 w-4" />
@@ -50,30 +58,31 @@ export default function ContextsPage() {
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label>Context Name</Label>
-                <Input id="ctx-name" placeholder="e.g., Food Industry Partners" />
+                <Input placeholder="e.g., Food Industry Partners" value={ctxName} onChange={e => setCtxName(e.target.value)} />
               </div>
               <div className="space-y-2">
                 <Label>Description</Label>
-                <Input id="ctx-desc" placeholder="Brief description of this context" />
+                <Input placeholder="Brief description of this context" value={ctxDesc} onChange={e => setCtxDesc(e.target.value)} />
               </div>
               <div className="space-y-2">
                 <Label>AI Criteria</Label>
-                <Textarea id="ctx-criteria" placeholder="Describe what makes a business relevant..." className="min-h-[150px]" />
+                <Textarea placeholder="Describe what makes a business relevant..." className="min-h-[150px]" value={ctxCriteria} onChange={e => setCtxCriteria(e.target.value)} />
               </div>
               <Button className="w-full" onClick={async () => {
                 try {
-                  const nameEl = document.getElementById("ctx-name") as HTMLInputElement;
-                  const descEl = document.getElementById("ctx-desc") as HTMLInputElement;
-                  const criteriaEl = document.getElementById("ctx-criteria") as HTMLTextAreaElement;
-                  if (!nameEl?.value) { toast.error("Enter a context name"); return; }
+                  if (!ctxName) { toast.error("Enter a context name"); return; }
                   await api.createContext({
-                    name: nameEl.value,
-                    description: descEl?.value || "",
-                    prompt_text: criteriaEl?.value || "",
+                    name: ctxName,
+                    description: ctxDesc,
+                    prompt_text: ctxCriteria,
                   });
                   const updated = await api.contexts();
                   setContexts(updated || []);
                   toast.success("Context created");
+                  setDialogOpen(false);
+                  setCtxName("");
+                  setCtxDesc("");
+                  setCtxCriteria("");
                 } catch (err: any) {
                   toast.error(err.message || "Failed to create context");
                 }
@@ -104,11 +113,25 @@ export default function ContextsPage() {
                 <div className="text-sm text-gray-700 whitespace-pre-line">{context.criteria}</div>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" size="sm">
+                <Button variant="outline" size="sm" onClick={() => {
+                  setEditingContext(context);
+                  setEditName(context.name);
+                  setEditPrompt(context.criteria);
+                  setEditDialogOpen(true);
+                }}>
                   <Edit className="mr-2 h-4 w-4" />
                   Edit
                 </Button>
-                <Button variant="ghost" size="sm">
+                <Button variant="ghost" size="sm" onClick={async () => {
+                  try {
+                    await api.deleteContext(Number(context.id));
+                    const updated = await api.contexts();
+                    setContexts(updated || []);
+                    toast.success("Context deleted");
+                  } catch (err: any) {
+                    toast.error(err.message || "Failed to delete context");
+                  }
+                }}>
                   <Trash2 className="mr-2 h-4 w-4" />
                   Delete
                 </Button>
@@ -117,6 +140,38 @@ export default function ContextsPage() {
           </Card>
         ))}
       </div>
+
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Search Context</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Context Name</Label>
+              <Input placeholder="e.g., Food Industry Partners" value={editName} onChange={e => setEditName(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>AI Criteria</Label>
+              <Textarea placeholder="Describe what makes a business relevant..." className="min-h-[150px]" value={editPrompt} onChange={e => setEditPrompt(e.target.value)} />
+            </div>
+            <Button className="w-full" onClick={async () => {
+              try {
+                if (!editName) { toast.error("Enter a context name"); return; }
+                await api.updateContext(Number(editingContext.id), { name: editName, prompt_text: editPrompt });
+                const updated = await api.contexts();
+                setContexts(updated || []);
+                setEditDialogOpen(false);
+                toast.success("Context updated");
+              } catch (err: any) {
+                toast.error(err.message || "Failed to update context");
+              }
+            }}>
+              Save Changes
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

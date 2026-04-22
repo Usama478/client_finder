@@ -114,6 +114,10 @@ export const api = {
   contexts: () => request<any[]>("/api/v1/contexts"),
   createContext: (data: any) =>
     request<any>("/api/v1/contexts", { method: "POST", body: JSON.stringify(data) }),
+  deleteContext: (id: number) =>
+    request<any>(`/api/v1/contexts/${id}`, { method: "DELETE" }),
+  updateContext: (id: number, data: any) =>
+    request<any>(`/api/v1/contexts/${id}`, { method: "PUT", body: JSON.stringify(data) }),
 
   // Verification
   verifyBusiness: (businessId: number) =>
@@ -121,15 +125,19 @@ export const api = {
   verifyBatch: (businessIds: number[]) =>
     request<any>("/api/v1/verification/verify/batch",
       { method: "POST", body: JSON.stringify({ business_ids: businessIds }) }),
+  verificationStatus: (businessId: number) =>
+    request<{ business_id: number; verification_status: string | null; verification_result: string | null; verification_score: number | null }>(
+      `/api/v1/verification/${businessId}/status`
+    ),
 
   // Relevancy
-  runRelevancy: (business: any, searchId: number, exporterProfile: string) =>
+  runRelevancy: (business: any, searchId: number, contextId: number | null) =>
     request<any>("/api/relevancy/v2/run", {
       method: "POST",
       body: JSON.stringify({
         business_id: Number(business.result_id || business.id),
         website: business.website || "",
-        exporter_profile: exporterProfile,
+        context_id: contextId,
         search_id: searchId || 0,
         business_name: business.business_name || business.name || "",
         category: business.business_type || business.category || "",
@@ -157,7 +165,7 @@ export const api = {
   // Exporter profile
   getMyProfile: () => request<any>("/api/v1/exporter-profiles/me"),
   createProfile: (data: any) =>
-    request<any>("/api/v1/exporter-profiles",
+    request<any>("/api/v1/exporter-profiles/",
       { method: "POST", body: JSON.stringify(data) }),
   updateProfile2: (profileId: number, data: any) =>
     request<any>(`/api/v1/exporter-profiles/${profileId}`,

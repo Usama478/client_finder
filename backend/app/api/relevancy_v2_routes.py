@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.agents.relevancy.service_v2 import run_relevancy_v2_for_business, rescore_relevancy_v2_for_business
 from app.db.session import get_db
-from app.models.exporter_profile import ExporterProfile
+from app.models.search_context import SearchContext
 from app.models.search_result import SearchResult
 from app.core.security import get_current_user
 from app.models.user import User
@@ -23,7 +23,7 @@ router = APIRouter(prefix="/api/relevancy/v2", tags=["relevancy-v2"])
 class RelevancyV2RunRequest(BaseModel):
     business_id: int
     website: str
-    exporter_profile: str = ""
+    context_id: Optional[int] = None
     # Optional full-context metadata — hydrates the LangGraph state
     search_id: int = 0
     business_name: Optional[str] = None
@@ -34,30 +34,11 @@ class RelevancyV2RunRequest(BaseModel):
 
 @router.post("/run")
 def run_relevancy_v2(request: RelevancyV2RunRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    profile = db.query(ExporterProfile).filter(
-        ExporterProfile.is_default == True
-    ).first()
-    
     profile_text = ""
-    if profile:
-        parts = []
-        if profile.company_name:
-            parts.append(f"Company: {profile.company_name}")
-        if profile.company_location:
-            parts.append(f"Location: {profile.company_location}")
-        if profile.product_categories:
-            parts.append(f"Products: {', '.join(profile.product_categories)}")
-        if profile.specializations:
-            parts.append(f"Specializations: {', '.join(profile.specializations)}")
-        if profile.export_markets:
-            parts.append(f"Target markets: {', '.join(profile.export_markets)}")
-        if profile.target_buyer_types:
-            parts.append(f"Target buyers: {', '.join(profile.target_buyer_types)}")
-        if profile.value_proposition:
-            parts.append(f"Value proposition: {profile.value_proposition}")
-        if profile.moq:
-            parts.append(f"MOQ: {profile.moq} pieces")
-        profile_text = ". ".join(parts)
+    if request.context_id:
+        ctx = db.query(SearchContext).filter(SearchContext.id == request.context_id).first()
+        if ctx and ctx.prompt_text:
+            profile_text = ctx.prompt_text
 
     check_credits(db, current_user.user_id, 1)
 
@@ -110,31 +91,7 @@ def rescore_relevancy_v2_endpoint(
             detail=f"Business ID {business_id} not found or does not belong to current user"
         )
     
-    # Get exporter profile
-    profile = db.query(ExporterProfile).filter(
-        ExporterProfile.is_default == True
-    ).first()
-    
     profile_text = ""
-    if profile:
-        parts = []
-        if profile.company_name:
-            parts.append(f"Company: {profile.company_name}")
-        if profile.company_location:
-            parts.append(f"Location: {profile.company_location}")
-        if profile.product_categories:
-            parts.append(f"Products: {', '.join(profile.product_categories)}")
-        if profile.specializations:
-            parts.append(f"Specializations: {', '.join(profile.specializations)}")
-        if profile.export_markets:
-            parts.append(f"Target markets: {', '.join(profile.export_markets)}")
-        if profile.target_buyer_types:
-            parts.append(f"Target buyers: {', '.join(profile.target_buyer_types)}")
-        if profile.value_proposition:
-            parts.append(f"Value proposition: {profile.value_proposition}")
-        if profile.moq:
-            parts.append(f"MOQ: {profile.moq} pieces")
-        profile_text = ". ".join(parts)
     
     # Run rescore in background thread
     def _rescore_task():

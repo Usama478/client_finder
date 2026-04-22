@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
-import { Link, useLocation } from "react-router";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { Link, useLocation, useNavigate } from "react-router";
 import { Search, MapPin, Sparkles, ShieldCheck, Save, ExternalLink, Clock, RefreshCw, Play, Eye, X, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../../../lib/auth-context";
@@ -21,6 +21,7 @@ const Badge = ({ children, color }: { children: React.ReactNode; color: "green" 
 export default function SearchBusinessesPage() {
   const { user, credits, refreshCredits } = useAuth();
   const routerLocation = useLocation();
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery]       = useState("");
   const [location, setLocation]             = useState("");
   const [industry, setIndustry]             = useState("");
@@ -30,6 +31,8 @@ export default function SearchBusinessesPage() {
   const [searching, setSearching]           = useState(false);
   const [loadingMore, setLoadingMore]       = useState(false);
   const [processingAI, setProcessingAI]     = useState(false);
+  const [processingItemId, setProcessingItemId] = useState<string | null>(null);
+  const [completedItemIds, setCompletedItemIds] = useState<Set<string>>(new Set());
   const [aiProgress, setAiProgress]         = useState(0);
   const [processingVerify, setProcessingVerify] = useState(false);
   const [selectedIds, setSelectedIds]       = useState<string[]>([]);
@@ -41,6 +44,9 @@ export default function SearchBusinessesPage() {
   const [dataLoading, setDataLoading] = useState(false);
   const [apiContexts, setApiContexts] = useState<any[]>([]);
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
+  const [pollingIds, setPollingIds] = useState<Set<string>>(new Set());
+  const pollingIntervalsRef = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
+  const isMountedRef = useRef(true);
 
   const hasScoredLeads = results.some(
     (r: any) => r.relevance_decision !== null && r.relevance_decision !== undefined
@@ -48,11 +54,15 @@ export default function SearchBusinessesPage() {
 
   useEffect(() => {
     if (!user) return;
+    const isFresh = window.history.state?.usr?.fresh === true;
     api.sessions(user.user_id)
       .then(s => {
         setSessions(s || []);
-        if (s && s.length > 0) {
-          setSelectedSessionId(s[0].search_id);
+        if (!isFresh) {
+          const lastId = localStorage.getItem("cf_last_session_id");
+          if (lastId) {
+            setSelectedSessionId(Number(lastId));
+          }
         }
       })
       .catch((e) => { console.error(e); toast.error("Failed to load data. Please refresh.") });
@@ -62,13 +72,27 @@ export default function SearchBusinessesPage() {
   }, [user]);
 
   useEffect(() => {
+    if (routerLocation.state?.fresh) {
+      localStorage.removeItem("cf_last_session_id");
+      setSelectedSessionId(null);
+      setResults([]);
+      setSearchQuery("");
+      setLocation("");
+      setIndustry("");
+      setSelectedContext(null);
+      setActiveFilter("all");
+      setSelectedIds([]);
+      setNextPageToken(null);
+      return;
+    }
     if (routerLocation.state?.sessionId) {
       setSelectedSessionId(routerLocation.state.sessionId);
     }
-  }, [location.state]);
+  }, [routerLocation.state]);
 
   useEffect(() => {
     if (!selectedSessionId) return;
+    localStorage.setItem("cf_last_session_id", String(selectedSessionId));
     setDataLoading(true);
     api.results(selectedSessionId)
       .then(r => setResults(r || []))
@@ -76,13 +100,94 @@ export default function SearchBusinessesPage() {
       .finally(() => setDataLoading(false));
   }, [selectedSessionId]);
 
+  // Restore in-flight AI progress when the user returns to this session
+  useEffect(() => {
+    if (!selectedSessionId) return;
+    console.log("[RECOVERY] effect fired, selectedSessionId=", selectedSessionId);
+    const raw = sessionStorage.getItem(`cf_ai_progress_${selectedSessionId}`);
+    if (!raw) return;
+    console.log("[RECOVERY] raw snapshot=", raw);
+    try {
+      const snap = JSON.parse(raw);
+      console.log("[RECOVERY] parsed snap=", snap);
+      if (snap.processingAI) {
+        console.log("[RECOVERY] restoring state processingAI=", snap.processingAI);
+        setProcessingAI(snap.processingAI);
+        setAiProgress(snap.aiProgress);
+        setCompletedItemIds(new Set<string>(snap.completedItemIds));
+        api.results(selectedSessionId)
+          .then(r => setResults(r || []))
+          .catch(console.error);
+      }
+    } catch {
+      // ignore malformed snapshots
+    }
+  }, [selectedSessionId]);
+
+  useEffect(() => {
+    return () => { isMountedRef.current = false; };
+  }, []);
+
+  // Clear all polling intervals on unmount
+  useEffect(() => {
+    return () => {
+      pollingIntervalsRef.current.forEach(clearInterval);
+      pollingIntervalsRef.current.clear();
+    };
+  }, []);
+
+  const stopPollingId = useCallback((id: string) => {
+    const handle = pollingIntervalsRef.current.get(id);
+    if (handle !== undefined) {
+      clearInterval(handle);
+      pollingIntervalsRef.current.delete(id);
+    }
+    setPollingIds(prev => {
+      const next = new Set(prev);
+      next.delete(id);
+      if (next.size === 0) setProcessingVerify(false);
+      return next;
+    });
+  }, []);
+
+  const startPolling = useCallback((id: string) => {
+    const handle = setInterval(async () => {
+      try {
+        const status = await api.verificationStatus(Number(id));
+        const isTerminal =
+          status.verification_status !== null &&
+          status.verification_status !== "processing";
+        if (isTerminal) {
+          stopPollingId(id);
+          setResults(prev =>
+            prev.map(r =>
+              r.result_id === Number(id)
+                ? {
+                    ...r,
+                    verification_status: status.verification_status,
+                    verification_result: status.verification_result,
+                    verification_score: status.verification_score,
+                  }
+                : r
+            )
+          );
+        }
+      } catch (err) {
+        console.error(`Polling failed for business ${id}`, err);
+      }
+    }, 3000);
+    pollingIntervalsRef.current.set(id, handle);
+  }, [stopPollingId]);
+
   const contexts = apiContexts.length > 0 
-    ? apiContexts.map(c => ({ id: c.context_id, name: c.name, desc: c.prompt_text || "" }))
+    ? apiContexts.map(c => ({ id: c.id ?? c.context_id, name: c.name, desc: c.prompt_text || "" }))
     : [];
+  const contextLocked = selectedSessionId !== null;
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) { toast.error("Enter a search query"); return; }
     if (!user) return;
+    if (selectedContext === null) { toast.error("Please select an AI context before searching"); return; }
     if (credits && credits.empty) {
       toast.error("Credits exhausted — contact your team to top up.");
       return;
@@ -111,6 +216,7 @@ export default function SearchBusinessesPage() {
       setSessions(newSessions || []);
       if (newSessions && newSessions.length > 0) {
         setSelectedSessionId(newSessions[0].search_id);
+        localStorage.setItem("cf_last_session_id", String(newSessions[0].search_id));
       }
     } catch (err: any) {
       toast.dismiss(searchToastId);
@@ -164,11 +270,16 @@ export default function SearchBusinessesPage() {
     }
     setProcessingAI(true);
     setAiProgress(0);
+    setProcessingItemId(null);
+    setCompletedItemIds(new Set());
     toast.info(`Running AI relevance on ${selectedIds.length} leads…`);
     let passed = 0;
     let failed = 0;
+    const totalIds = selectedIds.length;
+    const localCompleted: string[] = [];
     try {
       for (const id of selectedIds) {
+        setProcessingItemId(id);
         const businessObject = results.find((r: any) => String(r.result_id) === id);
         if (businessObject) {
           if (!businessObject.website) {
@@ -182,7 +293,7 @@ export default function SearchBusinessesPage() {
             continue;
           }
           try {
-            const response = await api.runRelevancy(businessObject, selectedSessionId || 0, "My Company");
+            const response = await api.runRelevancy(businessObject, selectedSessionId || 0, selectedContext);
             setResults(prev => prev.map(r =>
               r.result_id === Number(id)
                 ? { ...r,
@@ -209,7 +320,24 @@ export default function SearchBusinessesPage() {
             failed++;
           }
         }
-        setAiProgress(p => Math.min(p + (100 / selectedIds.length), 95));
+        setCompletedItemIds(prev => new Set(prev).add(id));
+        localCompleted.push(id);
+        setProcessingItemId(null);
+        const newProgress = Math.min((localCompleted.length / totalIds) * 100, 95);
+        setAiProgress(newProgress);
+        if (selectedSessionId) {
+          sessionStorage.setItem(
+            `cf_ai_progress_${selectedSessionId}`,
+            JSON.stringify({
+              processingAI: true,
+              aiProgress: newProgress,
+              completedItemIds: localCompleted,
+              processingItemId: null,
+              totalIds,
+              sessionId: selectedSessionId,
+            })
+          );
+        }
       }
       if (selectedSessionId) {
         const r = await api.results(selectedSessionId);
@@ -226,11 +354,16 @@ export default function SearchBusinessesPage() {
     } finally {
       setProcessingAI(false);
       setAiProgress(100);
+      setProcessingItemId(null);
+      setCompletedItemIds(new Set());
       setSelectedIds([]);
+      if (selectedSessionId && isMountedRef.current) {
+        sessionStorage.removeItem(`cf_ai_progress_${selectedSessionId}`);
+      }
     }
   };
 
-  const handleVerify = async () => {
+  const handleVerify = () => {
     if (!selectedIds.length) { toast.error("Select at least one business"); return; }
     if (credits && credits.empty) {
       toast.error("Credits exhausted — contact your team to top up.");
@@ -241,34 +374,38 @@ export default function SearchBusinessesPage() {
       toast.error(`Insufficient credits. Verifying ${selectedIds.length} leads costs ${cost} credits. You have ${credits.credits_remaining}.`);
       return;
     }
-    setProcessingVerify(true);
-    toast.info(`Verifying ${selectedIds.length} leads…`);
-    try {
-      const validIds = selectedIds
-        .map(id => Number(id))
-        .filter(id => !isNaN(id) && id > 0);
-      if (validIds.length === 0) {
-        toast.error("No valid business IDs selected");
-        setProcessingVerify(false);
-        return;
-      }
-      await api.verifyBatch(validIds);
-      if (selectedSessionId) {
-        const r = await api.results(selectedSessionId);
-        setResults(r || []);
-      }
-      await refreshCredits();
-      toast.success("Verification complete!");
-    } catch (err: any) {
-      if (err instanceof CreditError) {
-        toast.error("Credits exhausted — contact your team to top up.");
-      } else {
-        toast.error(err.message || "Verification failed");
-      }
-    } finally {
-      setProcessingVerify(false);
-      setSelectedIds([]);
+
+    const validIds = selectedIds
+      .map(id => Number(id))
+      .filter(id => !isNaN(id) && id > 0);
+    if (validIds.length === 0) {
+      toast.error("No valid business IDs selected");
+      return;
     }
+
+    // Fire and forget — do not await; navigation stays unblocked
+    api.verifyBatch(validIds)
+      .then(() => refreshCredits())
+      .catch((err: any) => {
+        if (err instanceof CreditError) {
+          toast.error("Credits exhausted — contact your team to top up.");
+        } else {
+          toast.error(err.message || "Verification request failed");
+        }
+      });
+
+    toast.info(`Verifying ${validIds.length} leads…`);
+    setProcessingVerify(true);
+    setSelectedIds([]);
+
+    // Mark each id as polling and begin 3-second status checks
+    const idStrings = validIds.map(String);
+    setPollingIds(prev => {
+      const next = new Set(prev);
+      idStrings.forEach(id => next.add(id));
+      return next;
+    });
+    idStrings.forEach(startPolling);
   };
 
   const handleSave = async () => {
@@ -309,7 +446,7 @@ export default function SearchBusinessesPage() {
     if (activeFilter === "passed")   return r.relevanceStatus === "passed";
     if (activeFilter === "failed")   return r.relevanceStatus === "failed";
     if (activeFilter === "lowconf")  return r.relevanceStatus === "low-confidence";
-    if (activeFilter === "pending")  return r.verificationStatus === "pending";
+    if (activeFilter === "pending")  return r.relevanceStatus === "pending";
     return true;
   });
 
@@ -394,12 +531,15 @@ export default function SearchBusinessesPage() {
             </div>
           )}
           <button style={btnPrimary} onClick={handleSearch}
-            disabled={searching || !!(credits && credits.empty)}>
+            disabled={searching || selectedContext === null || !!(credits && credits.empty)}>
             {searching && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
             {!searching && <Search className="h-3.5 w-3.5" />}
             {searching ? "Searching…" : "Search"}
           </button>
         </div>
+        {selectedContext === null && (
+          <span className="text-[11px] text-red-400 mt-1 block">Please select an AI context before searching</span>
+        )}
 
         {/* Context selector */}
         <div className="mt-4 pt-3 flex flex-wrap items-center gap-2" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
@@ -409,36 +549,43 @@ export default function SearchBusinessesPage() {
           ) : (
             <>
               <button onClick={() => setSelectedContext(null)}
+                disabled={searching || contextLocked}
                 className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[12px] font-medium transition-all"
-                style={selectedContext === null
-                  ? { background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", color: "#a78bfa" }
-                  : { background: "#151a22", border: "1px solid rgba(255,255,255,0.07)", color: "#8a95a8" }}>
+                style={{
+                  ...(selectedContext === null
+                    ? { background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", color: "#a78bfa" }
+                    : { background: "#151a22", border: "1px solid rgba(255,255,255,0.07)", color: "#8a95a8" }),
+                  ...(searching ? { opacity: 0.4, cursor: "not-allowed" } : {}),
+                  ...(contextLocked ? { opacity: 0.5, cursor: "not-allowed" } : {}),
+                }}>
                 {selectedContext === null ? "🧠 " : ""}None
               </button>
               {contexts.map(c => (
                 <button key={c.id} onClick={() => setSelectedContext(c.id)}
+                  disabled={searching || contextLocked}
                   className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[12px] font-medium transition-all"
-                  style={selectedContext === c.id
-                    ? { background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", color: "#a78bfa" }
-                    : { background: "#151a22", border: "1px solid rgba(255,255,255,0.07)", color: "#8a95a8" }}>
+                  style={{
+                    ...(selectedContext === c.id
+                      ? { background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", color: "#a78bfa" }
+                      : { background: "#151a22", border: "1px solid rgba(255,255,255,0.07)", color: "#8a95a8" }),
+                    ...(searching ? { opacity: 0.4, cursor: "not-allowed" } : {}),
+                    ...(contextLocked ? { opacity: 0.5, cursor: "not-allowed" } : {}),
+                  }}>
                   {selectedContext === c.id ? "🧠 " : ""}{c.name}
                 </button>
               ))}
             </>
           )}
-          <Link to="/app/context">
-            <button
-              className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[12px] font-medium transition-all"
-              style={{ background: "#151a22", border: "1px solid rgba(255,255,255,0.07)", color: "#5a6478" }}>
-              + New Context
-            </button>
-          </Link>
-          {selectedContext !== null && (
-            <span className="text-[11px] text-[#5a6478] ml-1 italic">
-              {contexts.find(c => c.id === selectedContext)?.desc}
-            </span>
-          )}
+          <button
+            onClick={() => navigate("/app/contexts")}
+            className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[12px] font-medium transition-all"
+            style={{ background: "#151a22", border: "1px solid rgba(255,255,255,0.07)", color: "#5a6478" }}>
+            + New Context
+          </button>
         </div>
+        {contextLocked && (
+          <span className="text-[11px] text-[#5a6478] mt-1 block">Context is locked to this search session. Start a new search to change it.</span>
+        )}
       </div>
 
       {/* AI Processing Banner */}
@@ -573,7 +720,17 @@ export default function SearchBusinessesPage() {
                 borderBottom: i < filtered.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none",
                 background: selectedIds.includes(r.id) ? "rgba(59,130,246,0.04)" : "#0f1218",
               }}>
-              <div><input type="checkbox" checked={selectedIds.includes(r.id)} onChange={() => toggle(r.id)} className="accent-blue-500" /></div>
+              <div className="flex items-center justify-center">
+                {processingItemId === r.id ? (
+                  <RefreshCw className="h-3.5 w-3.5 text-blue-400 animate-spin" />
+                ) : completedItemIds.has(r.id) ? (
+                  <span style={{ color: "#10b981", fontSize: 14, lineHeight: 1 }}>✓</span>
+                ) : processingAI && selectedIds.includes(r.id) ? (
+                  <Clock className="h-3.5 w-3.5 text-[#5a6478]" />
+                ) : (
+                  <input type="checkbox" checked={selectedIds.includes(r.id)} onChange={() => toggle(r.id)} className="accent-blue-500" />
+                )}
+              </div>
 
               <div style={{ minWidth: 0, overflow: "hidden" }}>
                 <div className="text-[13px] font-semibold text-[#e8edf5]" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</div>
@@ -616,7 +773,7 @@ export default function SearchBusinessesPage() {
                 <div className="text-[10px] text-[#5a6478] mt-1 line-clamp-1">{r.reasoning}</div>
               </div>
 
-              <div style={{ minWidth: 0 }}>{verifyBadge(r.verificationStatus)}</div>
+              <div style={{ minWidth: 0 }}>{verifyBadge(pollingIds.has(r.id) ? "running" : r.verificationStatus)}</div>
               <div style={{ minWidth: 0 }}>{relevanceBadge(r.relevanceStatus)}</div>
 
               <div className="flex gap-1.5">

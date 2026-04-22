@@ -38,7 +38,7 @@ def create_profile(data: dict,
     profile = ExporterProfile(
         user_id=current_user.user_id,
         is_default=True,
-        **{k: v for k, v in data.items() if hasattr(ExporterProfile, k)}
+        **{k: v for k, v in data.items() if hasattr(ExporterProfile, k) and k not in ("is_default", "user_id")}
     )
     db.add(profile)
     db.commit()

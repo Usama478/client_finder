@@ -833,6 +833,17 @@ def llm_relevance_judge(state: RelevancyAgentState) -> Dict[str, object]:
                 )
                 content = response.content if isinstance(response.content, str) else str(response.content)
                 payload = json.loads(content)
+                # Sanitize: LLM sometimes returns relevance_reason as a dict instead of a string
+                if isinstance(payload.get("relevance_reason"), dict):
+                    reason_dict = payload["relevance_reason"]
+                    payload["relevance_reason"] = " ".join(
+                        str(v) for v in reason_dict.values() if v
+                    ).strip() or "Insufficient evidence to classify."
+                elif not isinstance(payload.get("relevance_reason"), str):
+                    payload["relevance_reason"] = str(payload.get("relevance_reason") or "Insufficient evidence to classify.")
+                # Truncate to fit Pydantic 600-char limit
+                if isinstance(payload.get("relevance_reason"), str) and len(payload["relevance_reason"]) > 597:
+                    payload["relevance_reason"] = payload["relevance_reason"][:597] + "…"
                 parsed = LLMRelevanceDecision.model_validate(payload)
                 decision = _merge_llm_refinement(pre_decision, parsed, typed_signal_tags, policy)
             except Exception as e:

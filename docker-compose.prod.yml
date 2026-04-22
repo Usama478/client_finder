@@ -1,0 +1,76 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: client_finder_backend
+    restart: always
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - MAPS_API_KEY=${MAPS_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SENDGRID_API_KEY=${SENDGRID_API_KEY}
+      - SENDGRID_FROM_EMAIL=${SENDGRID_FROM_EMAIL}
+      - SENDGRID_FROM_NAME=${SENDGRID_FROM_NAME}
+      - SECRET_KEY=${SECRET_KEY}
+      - GMAIL_ADDRESS=${GMAIL_ADDRESS}
+      - GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD}
+      - FRONTEND_URL=${FRONTEND_URL}
+      - EMAIL_AGENT_ENABLED=${EMAIL_AGENT_ENABLED}
+      - DEFAULT_CREDITS=${DEFAULT_CREDITS}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - client_finder_net
+  frontend:
+    build:
+      context: ./front_end
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_BASE_URL=https://${DOMAIN}/api/v1
+    container_name: client_finder_frontend
+    restart: always
+    depends_on:
+      - backend
+    networks:
+      - client_finder_net
+  db:
+    image: postgres:15-alpine
+    container_name: client_finder_db
+    restart: always
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d clientfinder"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - client_finder_net
+  nginx:
+    image: nginx:alpine
+    container_name: client_finder_nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - client_finder_net
+volumes:
+  pgdata:
+networks:
+  client_finder_net:
+    driver: bridge

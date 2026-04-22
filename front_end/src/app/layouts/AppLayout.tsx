@@ -291,7 +291,7 @@ export default function AppLayout() {
               <Bell className="h-4 w-4" />
               <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-red-500 rounded-full"></span>
             </Button>
-            <Button onClick={() => navigate("/app/search")}
+            <Button onClick={() => navigate("/app/search", { state: { fresh: true } })}
               className="text-xs h-8 px-3 bg-blue-600 hover:bg-blue-700 text-white">
               + New Search
             </Button>

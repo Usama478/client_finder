@@ -687,24 +687,9 @@ export default function EmailWorkspacePage() {
           {approvedCount > 0 && (
             <div className="flex items-center justify-end p-4 rounded-lg" style={{ background: "rgba(59,130,246,0.05)", border: "1px solid rgba(59,130,246,0.2)" }}>
               <button
-                style={btnPrimary}
-                onClick={async () => {
-                  const approvedIds = Object.keys(campaignDrafts).filter(id => campaignDrafts[id].status === "approved");
-                  
-                  for (const id of approvedIds) {
-                    setCampaignDrafts(prev => ({ ...prev, [id]: { ...prev[id], status: "generating" } }));
-                    try {
-                      await api.approveDraft(campaignDrafts[id].draftId);
-                      await api.sendDraft(campaignDrafts[id].draftId);
-                      setCampaignDrafts(prev => ({ ...prev, [id]: { ...prev[id], status: "sent" } }));
-                    } catch (err: any) {
-                      setCampaignDrafts(prev => ({ ...prev, [id]: { ...prev[id], status: "failed" } }));
-                      toast.error(err.message || "Send failed");
-                    }
-                  }
-
-                  setCampaignPhase("done");
-                }}
+                style={{ ...btnPrimary, opacity: 0.5, cursor: "not-allowed" }}
+                disabled
+                onClick={() => toast.info("Email sending is coming soon.")}
               >
                 <Send className="h-3.5 w-3.5" />
                 Send Approved ({approvedCount})
@@ -812,7 +797,11 @@ export default function EmailWorkspacePage() {
           </div>
 
           <div className="flex gap-2 pt-1">
-            <button style={btnPrimary} onClick={handleSend} disabled={!currentDraftId}>
+            <button
+              style={{ ...btnPrimary, opacity: 0.5, cursor: "not-allowed" }}
+              disabled
+              onClick={() => toast.info("Email sending is coming soon.")}
+            >
               <Send className="h-3.5 w-3.5"/>Approve & Send
             </button>
             <button style={btnGhost} onClick={() => handleRegenerate(regenerateInstructions)} disabled={generating || !selectedClient}>

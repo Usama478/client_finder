@@ -24,7 +24,7 @@ class ContextResponse(BaseModel):
 def get_all_contexts(db: Session = Depends(get_db), current_user = Depends(get_current_user)):
     """Fetch all saved context templates."""
     try:
-        contexts = db.query(SearchContext).order_by(SearchContext.id.asc()).all()
+        contexts = db.query(SearchContext).filter(SearchContext.user_id == current_user.user_id).order_by(SearchContext.id.asc()).all()
         return contexts
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -34,6 +34,7 @@ def create_context(payload: ContextCreate, db: Session = Depends(get_db), curren
     """Create a new search context template."""
     try:
         new_context = SearchContext(
+            user_id=current_user.user_id,
             name=payload.name,
             prompt_text=payload.prompt_text
         )
@@ -44,3 +45,23 @@ def create_context(payload: ContextCreate, db: Session = Depends(get_db), curren
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/contexts/{context_id}")
+def delete_context(context_id: int, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
+    ctx = db.query(SearchContext).filter(SearchContext.id == context_id, SearchContext.user_id == current_user.user_id).first()
+    if not ctx:
+        raise HTTPException(status_code=404, detail="Context not found")
+    db.delete(ctx)
+    db.commit()
+    return {"ok": True}
+
+@router.put("/contexts/{context_id}", response_model=ContextResponse)
+def update_context(context_id: int, payload: ContextCreate, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
+    ctx = db.query(SearchContext).filter(SearchContext.id == context_id, SearchContext.user_id == current_user.user_id).first()
+    if not ctx:
+        raise HTTPException(status_code=404, detail="Context not found")
+    ctx.name = payload.name
+    ctx.prompt_text = payload.prompt_text
+    db.commit()
+    db.refresh(ctx)
+    return ctx

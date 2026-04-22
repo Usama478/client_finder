@@ -238,14 +238,32 @@ export default function BusinessDetailsPage() {
                 </div>
                 <Progress value={Math.round(business.relevance_score || 0)} className="mb-2" />
                 <div className="text-sm text-[#8a95a8]">
-                  Context: <span className="font-medium">B2B Export</span>
+                  Context Used: <span className="font-medium">{business.context_name || "No context recorded"}</span>
                 </div>
               </div>
 
               <div>
                 <h3 className="font-semibold mb-3">AI Reasoning</h3>
                 <div className="prose prose-sm max-w-none">
-                  <p className="whitespace-pre-line text-gray-700">{business.relevance_reason || ""}</p>
+                  {(() => {
+                    if (!business.relevance_reason) return null;
+                    
+                    try {
+                      const parsed = JSON.parse(business.relevance_reason);
+                      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+                        return Object.entries(parsed).map(([key, value]) => (
+                          <div key={key} className="mb-3">
+                            <p className="font-bold">{key.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}</p>
+                            <p className="text-[#8a95a8]">{String(value)}</p>
+                          </div>
+                        ));
+                      }
+                    } catch {
+                      // Fall through to default rendering
+                    }
+                    
+                    return <p className="whitespace-pre-line text-[#8a95a8]">{business.relevance_reason}</p>;
+                  })()}
                 </div>
               </div>
 

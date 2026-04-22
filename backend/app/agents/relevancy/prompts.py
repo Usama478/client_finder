@@ -28,7 +28,7 @@ def build_relevancy_prompt(exporter_profile: str, signals: Dict[str, object]) ->
         '  "mismatch_reasons":["..."],\n'
         '  "signals_used":["..."],\n'
         '  "relevance_score":0,\n'
-        '  "relevance_reason":"...",\n'
+        '  "relevance_reason":{"category_match":"...","product_evidence":"...","score_rationale":"...","export_fit":"..."},\n'
         '  "business_type":"...",\n'
         '  "primary_niche":"..."\n'
         "}\n\n"
@@ -36,6 +36,11 @@ def build_relevancy_prompt(exporter_profile: str, signals: Dict[str, object]) ->
         "1. relevance_score is integer 0-100.\n"
         "2. confidence is float 0-1.\n"
         "3. unknown must set manual_review=true.\n"
-        "4. relevance_reason must be concise and evidence-based.\n"
+        "4. relevance_reason must be a JSON object with exactly four keys:\n"
+        "   - category_match: 2-3 sentences on whether the business category and industry match the exporter profile.\n"
+        "   - product_evidence: 2-3 sentences on what product or catalog signals were found and whether they confirm the business sells relevant goods.\n"
+        "   - score_rationale: 2-3 sentences explaining why the relevance_score was assigned at that level, referencing specific signals.\n"
+        "   - export_fit: 2-3 sentences on whether this business is a realistic B2B buyer target for the exporter, considering size, geography, and business model.\n"
+        "   Each value must be a plain string. No nested objects. No bullet points inside values.\n"
         f"Signals:\n{compact_signals}"
     )

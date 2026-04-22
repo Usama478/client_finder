@@ -56,6 +56,10 @@ async def validation_exception_handler(request, exc):
         content={"detail": exc.errors(), "body_received": body_str}
     )
 
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
 app.include_router(search_routes.router)
 app.include_router(relevancy_v2_routes.router)
 app.include_router(verification_routes.router)
