@@ -18,16 +18,28 @@ from app.models.search_session import SearchSession
 logger = logging.getLogger(__name__)
 
 
-def _get_exporter_profile(user_id: int, search_id: int, db) -> object | None:
+def _get_exporter_profile(
+    user_id: int,
+    search_id: int,
+    db,
+    explicit_profile_id: int | None = None,
+) -> object | None:
     """
     Resolve the exporter profile for a given user and search session.
 
     Preference order:
-    1. Profile pinned to the SearchSession (session.exporter_profile_id).
-    2. The user's default profile (is_default=True).
-    3. None if neither exists.
+    1. Explicitly supplied profile ID (from the API request).
+    2. Profile pinned to the SearchSession (session.exporter_profile_id).
+    3. The user's default profile (is_default=True).
+    4. None if none of the above exist.
     """
     try:
+        if explicit_profile_id is not None:
+            return (
+                db.query(ExporterProfile)
+                .filter(ExporterProfile.id == explicit_profile_id)
+                .first()
+            )
         session = (
             db.query(SearchSession)
             .filter(SearchSession.search_id == search_id)
@@ -56,6 +68,7 @@ def generate_draft_for_lead(
     user_id: int,
     sequence_position: int = 1,
     user_instructions: str = "",
+    exporter_profile_id: int | None = None,
 ) -> dict:
     """
     Generate (or attempt to generate) an email draft for a single lead.
@@ -90,7 +103,7 @@ def generate_draft_for_lead(
         # ------------------------------------------------------------------ #
         # Step 3 – Resolve exporter profile                                   #
         # ------------------------------------------------------------------ #
-        profile = _get_exporter_profile(user_id, lead.search_id, db)
+        profile = _get_exporter_profile(user_id, lead.search_id, db, explicit_profile_id=exporter_profile_id)
         if profile is None:
             logger.info(
                 "email_draft SKIPPED business_id=%s reason=no_profile",
@@ -198,6 +211,7 @@ def generate_batch_for_session(
     search_id: int,
     user_id: int,
     sequence_position: int = 1,
+    user_instructions: str = "",
 ) -> Dict[str, object]:
     """
     Generate email drafts for every verified lead in a search session.
@@ -225,7 +239,7 @@ def generate_batch_for_session(
     failed_ids: List[int] = []
 
     for idx, business_id in enumerate(lead_ids):
-        result = generate_draft_for_lead(business_id, user_id, sequence_position)
+        result = generate_draft_for_lead(business_id, user_id, sequence_position, user_instructions)
 
         if result["status"] == "created":
             created_ids.append(result["draft_id"])

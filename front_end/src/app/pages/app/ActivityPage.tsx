@@ -10,11 +10,11 @@ const typeIcon: Record<string, any> = {
   export: Download,
 }
 const typeColor: Record<string, string> = {
-  search: "#3b82f6",
+  search: "var(--primary)",
   relevance: "#8b5cf6",
-  verification: "#10b981",
-  email: "#10b981",
-  export: "#f59e0b",
+  verification: "var(--chart-2)",
+  email: "var(--chart-2)",
+  export: "var(--chart-3)",
 }
 
 export default function ActivityPage() {
@@ -32,16 +32,16 @@ export default function ActivityPage() {
     <div className="p-6 space-y-4 page-enter">
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-xl font-bold text-[#e8edf5]"
+          <div className="text-xl font-bold text-foreground"
             style={{ fontFamily: "Syne, sans-serif" }}>Activity</div>
-          <div className="text-[12px] text-[#5a6478] mt-0.5">
+          <div className="text-[12px] text-muted-foreground mt-0.5">
             Complete timeline of your workspace actions
           </div>
         </div>
       </div>
 
       <div className="rounded-xl overflow-hidden"
-        style={{ background: "#0f1218", border: "1px solid rgba(255,255,255,0.07)" }}>
+        style={{ background: "var(--card)", border: "1px solid var(--border)" }}>
         {loading && (
           <div className="flex items-center justify-center py-16">
             <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
@@ -50,28 +50,28 @@ export default function ActivityPage() {
         {!loading && events.length === 0 && (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <div className="text-3xl mb-3 opacity-30">📋</div>
-            <div className="text-sm font-bold text-[#e8edf5]">No activity yet</div>
-            <div className="text-[12px] text-[#5a6478] mt-1">
+            <div className="text-sm font-bold text-foreground">No activity yet</div>
+            <div className="text-[12px] text-muted-foreground mt-1">
               Activity will appear here as you use the platform
             </div>
           </div>
         )}
         {!loading && events.length > 0 && (
-          <div className="divide-y" style={{ borderColor: "rgba(255,255,255,0.05)" }}>
+          <div className="divide-y" style={{ borderColor: "var(--border)" }}>
             {events.map((event, i) => {
               const Icon = typeIcon[event.type] || Clock
-              const color = typeColor[event.type] || "#8a95a8"
+              const color = typeColor[event.type] || "var(--muted-foreground)"
               return (
                 <div key={i} className="flex items-start gap-4 px-5 py-4
-                  hover:bg-[#151a22] transition-colors">
+                  hover:bg-muted transition-colors">
                   <div className="w-8 h-8 rounded-lg flex items-center justify-center
                     flex-shrink-0 mt-0.5"
                     style={{ background: `${color}15` }}>
                     <Icon className="h-4 w-4" style={{ color }} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-[13px] text-[#e8edf5]">{event.text}</div>
-                    <div className="text-[11px] text-[#5a6478] mt-1 flex items-center gap-1">
+                    <div className="text-[13px] text-foreground">{event.text}</div>
+                    <div className="text-[11px] text-muted-foreground mt-1 flex items-center gap-1">
                       <Clock className="h-3 w-3" />
                       {event.time
                         ? new Date(event.time).toLocaleString([], {

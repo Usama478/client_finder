@@ -307,7 +307,7 @@ class LLMRelevanceDecision(CompactModel):
     mismatch_reasons: List[str] = Field(default_factory=list, max_length=8)
     signals_used: List[str] = Field(default_factory=list, max_length=12)
     relevance_score: int = Field(..., ge=0, le=100)
-    relevance_reason: str = Field(..., min_length=1, max_length=600)
+    relevance_reason: str = Field(..., min_length=1, max_length=2000)
     business_type: str = Field(default="Unknown", max_length=120)
     primary_niche: str = Field(default="Unknown", max_length=120)
 

@@ -66,40 +66,68 @@ def search_endpoint(request: SearchRequest, db: Session = Depends(get_db), curre
 
 @router.get("/sessions/{user_id}")
 def get_search_sessions_deprecated(user_id: int, current_user: User = Depends(get_current_user)):
-    raise HTTPException(status_code=410, detail="Use /sessions?user_id=")
+    raise HTTPException(status_code=410, detail="Use /sessions (JWT-authenticated, no user_id param needed)")
 
 
 @router.get("/sessions")
-def list_search_sessions(user_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """List search sessions for a user, ordered by most recent. Returns empty list if none."""
+def list_search_sessions(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """List search sessions for the authenticated user, ordered by most recent."""
     try:
         from sqlalchemy import func
         sessions = (
             db.query(SearchSession)
-            .filter(SearchSession.user_id == user_id)
             .filter(SearchSession.user_id == current_user.user_id)
             .order_by(SearchSession.created_at.desc())
             .all()
         )
-        
-        # Add results_count to each session
+
+        # Bulk-fetch all search_ids for result counts and scoring status
+        search_ids = [s.search_id for s in sessions]
+
+        # Count total results per session in one query
+        counts_rows = (
+            db.query(SearchResult.search_id, func.count(SearchResult.result_id))
+            .filter(SearchResult.search_id.in_(search_ids))
+            .group_by(SearchResult.search_id)
+            .all()
+        )
+        counts_map = {row[0]: row[1] for row in counts_rows}
+
+        # Count unscored results per session to derive status
+        unscored_rows = (
+            db.query(SearchResult.search_id, func.count(SearchResult.result_id))
+            .filter(SearchResult.search_id.in_(search_ids))
+            .filter(SearchResult.relevance_decision.is_(None))
+            .group_by(SearchResult.search_id)
+            .all()
+        )
+        unscored_map = {row[0]: row[1] for row in unscored_rows}
+
         result = []
         for session in sessions:
-            results_count = db.query(func.count(SearchResult.result_id)).filter(
-                SearchResult.search_id == session.search_id
-            ).scalar() or 0
-            
+            results_count = counts_map.get(session.search_id, 0)
+            unscored = unscored_map.get(session.search_id, 0)
+            status = "scoring" if (results_count > 0 and unscored > 0) else "done"
+
+            context_name = None
+            if session.context_id:
+                ctx = db.query(SearchContext).filter(SearchContext.id == session.context_id).first()
+                if ctx:
+                    context_name = ctx.name
+
             session_dict = {
                 "search_id": session.search_id,
                 "user_id": session.user_id,
                 "search_query": session.search_query,
                 "context_id": session.context_id,
+                "context_name": context_name,
                 "created_at": session.created_at.isoformat() if session.created_at else None,
                 "results_count": results_count,
-                "next_page_token": session.next_page_token
+                "status": status,
+                "next_page_token": session.next_page_token,
             }
             result.append(session_dict)
-        
+
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -115,6 +143,15 @@ def get_search_results(
 ):
     """Fetch all scraped results linked to a search_id, with optional smart filtering."""
     try:
+        # Ownership guard — ensures the session belongs to the current user before
+        # returning any rows; prevents cross-user data leakage via direct search_id access.
+        session = db.query(SearchSession).filter(
+            SearchSession.search_id == search_id,
+            SearchSession.user_id == current_user.user_id
+        ).first()
+        if not session:
+            raise HTTPException(status_code=403, detail="Access denied.")
+
         query = db.query(SearchResult).filter(SearchResult.search_id == search_id)
         
         if status:
@@ -125,10 +162,8 @@ def get_search_results(
             
         results = query.all()
 
-        # Join the SearchContext from SearchSession to return it in the payload
-        session = db.query(SearchSession).filter(SearchSession.search_id == search_id).filter(SearchSession.user_id == current_user.user_id).first()
-        context_name = session.context.name if session and session.context else None
-        context_prompt = session.context.prompt_text if session and session.context else None
+        context_name = session.context.name if session.context else None
+        context_prompt = session.context.prompt_text if session.context else None
         
         # Attach context to each result transiently for frontend
         for result_item in results:

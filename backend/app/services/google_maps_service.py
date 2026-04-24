@@ -190,6 +190,7 @@ def search_google_maps(db: Session, user_id: int, query: str, page_token: str = 
                 search_result.employee_range = other_user_lead.employee_range
                 search_result.revenue_band = other_user_lead.revenue_band
                 search_result.email_context = other_user_lead.email_context
+                search_result.relevancy_artifacts = other_user_lead.relevancy_artifacts
                 # Never copy relevance fields - they are user+context specific
 
             db.add(search_result)

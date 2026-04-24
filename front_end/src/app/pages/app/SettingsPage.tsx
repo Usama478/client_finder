@@ -206,7 +206,7 @@ export default function SettingsPage() {
                   border: "none",
                   cursor: "pointer",
                   position: "relative",
-                  background: theme === "light" ? "#3b82f6" : "#1c2230",
+                  background: theme === "light" ? "var(--primary)" : "var(--accent)",
                   transition: "background 0.2s"
                 }}>
                 <div style={{

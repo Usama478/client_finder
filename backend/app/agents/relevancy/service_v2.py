@@ -534,6 +534,7 @@ def rescore_relevancy_v2_for_business(
         address = lead.address or ""
         scraped_text = lead.scraped_text_content
         search_id = lead.search_id
+        artifacts = lead.relevancy_artifacts or {}
         
         # Stamp as processing and clear old relevance fields
         lead.relevance_status = "processing"
@@ -573,12 +574,17 @@ def rescore_relevancy_v2_for_business(
         "address": address,
         "exporter_profile": exporter_profile,
         "clean_text_output": {"text_excerpt": scraped_text, "sections": {}},
-        "catalog_intelligence_output": {},
-        "business_model_intelligence_output": {},
-        "platform_detection_output": {"platform": "unknown", "confidence": 0.0},
+        # Inject cached intelligence from relevancy_artifacts so the LLM judge
+        # has the same rich signals as a full run, without re-crawling.
+        "catalog_intelligence_output": artifacts.get("catalog_intelligence_full") or {},
+        "business_model_intelligence_output": artifacts.get("business_model_full") or {},
+        "platform_detection_output": {
+            "platform": artifacts.get("platform") or "unknown",
+            "confidence": 0.0,
+        },
         "structured_signals_output": {
-            "entities": [],
-            "signal_flags": [],
+            "entities": artifacts.get("structured_entities") or [],
+            "signal_flags": artifacts.get("structured_signal_flags") or [],
             "strong_signal": False,
         },
     }

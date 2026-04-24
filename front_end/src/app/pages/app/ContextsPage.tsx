@@ -42,7 +42,7 @@ export default function ContextsPage() {
       <div className="flex justify-between items-start">
         <div>
           <h1 className="text-3xl font-bold">Search Contexts</h1>
-          <p className="text-[#8a95a8] mt-1">Define reusable search criteria for AI relevance scoring</p>
+          <p className="text-muted-foreground mt-1">Define reusable search criteria for AI relevance scoring</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
@@ -107,8 +107,8 @@ export default function ContextsPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <p className="text-sm text-[#8a95a8]">{context.description}</p>
-              <div className="p-3 bg-[#151a22] rounded-lg">
+              <p className="text-sm text-muted-foreground">{context.description}</p>
+              <div className="p-3 bg-muted rounded-lg">
                 <div className="text-sm font-medium mb-2">AI Criteria:</div>
                 <div className="text-sm text-gray-700 whitespace-pre-line">{context.criteria}</div>
               </div>

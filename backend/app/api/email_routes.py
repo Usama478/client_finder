@@ -20,7 +20,7 @@ from app.models.search_result import SearchResult
 
 logger = logging.getLogger(__name__)
 
-EMAIL_AGENT_ENABLED = os.getenv("EMAIL_AGENT_ENABLED", "false").lower() == "true"
+EMAIL_AGENT_ENABLED = os.getenv("EMAIL_AGENT_ENABLED", "true").lower() == "true"
 
 router = APIRouter(prefix="/api/v1/email", tags=["email"])
 
@@ -33,12 +33,19 @@ class GenerateDraftRequest(BaseModel):
     user_id: int
     sequence_position: int = 1
     user_instructions: str = ""
+    exporter_profile_id: int | None = None
 
 
 class GenerateBatchRequest(BaseModel):
     search_id: int
     user_id: int
     sequence_position: int = 1
+    user_instructions: str = ""
+
+
+class UpdateDraftRequest(BaseModel):
+    subject: str
+    body: str
 
 
 # --------------------------------------------------------------------------- #
@@ -62,6 +69,7 @@ def generate_draft(business_id: int, request: GenerateDraftRequest, current_user
             user_id=request.user_id,
             sequence_position=request.sequence_position,
             user_instructions=request.user_instructions,
+            exporter_profile_id=request.exporter_profile_id,
         )
         return result
     except ValueError as exc:
@@ -87,6 +95,7 @@ def generate_batch(request: GenerateBatchRequest, current_user = Depends(get_cur
             search_id=request.search_id,
             user_id=request.user_id,
             sequence_position=request.sequence_position,
+            user_instructions=request.user_instructions,
         )
         return result
     except Exception as exc:
@@ -183,6 +192,49 @@ def get_draft_detail(draft_id: int, current_user = Depends(get_current_user)) ->
             "generation_error": draft.generation_error,
             "created_at": draft.created_at,
             "updated_at": draft.updated_at,
+        }
+    finally:
+        db.close()
+
+
+@router.patch("/drafts/detail/{draft_id}")
+def update_draft(draft_id: int, request: UpdateDraftRequest, current_user = Depends(get_current_user)) -> Dict[str, Any]:
+    """
+    Update subject and body of an existing email draft.
+
+    Persists manual edits made by the user so they survive a page refresh.
+    Only the owning user can update their draft.
+    Returns HTTP 404 if the draft is not found.
+    """
+    db = SessionLocal()
+    try:
+        draft = (
+            db.query(EmailDraft)
+            .join(SearchResult, EmailDraft.business_id == SearchResult.result_id)
+            .filter(
+                EmailDraft.id == draft_id,
+                SearchResult.user_id == current_user.user_id
+            )
+            .first()
+        )
+
+        if not draft:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Draft ID {draft_id} not found.",
+            )
+
+        draft.subject = request.subject
+        draft.body = request.body
+        db.commit()
+
+        return {
+            "id": draft.id,
+            "business_id": draft.business_id,
+            "subject": draft.subject,
+            "body": draft.body,
+            "status": draft.status,
+            "message": "Draft updated successfully",
         }
     finally:
         db.close()

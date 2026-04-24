@@ -1,15 +1,33 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router";
-import { Search, Download, Mail, RefreshCw, Trash2, ShieldCheck, ExternalLink, Eye } from "lucide-react";
+import { Search, Download, Mail, RefreshCw, Trash2, ExternalLink, Eye } from "lucide-react";
 import { toast } from "sonner";
 import { api, exportClients, reverifyClient } from "../../../lib/api";
 
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+/** Prepend https:// only when the URL has no protocol yet. */
+const normalizeUrl = (url: string): string =>
+  /^https?:\/\//i.test(url) ? url : `https://${url}`;
+
+/** Safely parse a value that may be a stringified JSON object. */
+const safeParse = (v: any): Record<string, any> => {
+  if (typeof v === "string") {
+    try { return JSON.parse(v); } catch { return {}; }
+  }
+  return v ?? {};
+};
+
+// ── Styles ─────────────────────────────────────────────────────────────────────
+
 const card: React.CSSProperties = { background: "#0d1117", border: "1px solid #1c2837", borderRadius: 10 };
 const btnPrimary: React.CSSProperties = { background: "#2563eb", color: "white", border: "none", borderRadius: 6, padding: "8px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "DM Sans, sans-serif", display: "flex", alignItems: "center", gap: 6 };
-const btnGhost: React.CSSProperties = { background: "transparent", color: "#8a95a8", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 500, cursor: "pointer", fontFamily: "DM Sans, sans-serif", display: "flex", alignItems: "center", gap: 6 };
+const btnGhost: React.CSSProperties = { background: "transparent", color: "var(--muted-foreground)", border: "1px solid var(--border)", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 500, cursor: "pointer", fontFamily: "DM Sans, sans-serif", display: "flex", alignItems: "center", gap: 6 };
+
+// ── Small components ───────────────────────────────────────────────────────────
 
 const Badge = ({ children, color }: { children: React.ReactNode; color: "green"|"blue"|"amber"|"red"|"gray" }) => {
-  const m = { green: ["rgba(16,185,129,0.1)","#10b981"], blue: ["rgba(59,130,246,0.15)","#60a5fa"], amber: ["rgba(245,158,11,0.1)","#f59e0b"], red: ["rgba(239,68,68,0.1)","#ef4444"], gray: ["rgba(255,255,255,0.05)","#8a95a8"] };
+  const m = { green: ["rgba(16,185,129,0.1)","var(--chart-2)"], blue: ["rgba(59,130,246,0.15)","#60a5fa"], amber: ["rgba(245,158,11,0.1)","var(--chart-3)"], red: ["rgba(239,68,68,0.1)","var(--destructive)"], gray: ["var(--border)","var(--muted-foreground)"] };
   const [bg,text]=m[color];
   return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{background:bg,color:text}}>{children}</span>;
 };
@@ -30,8 +48,7 @@ type Client = {
     websiteLive?: boolean;
     ssl?: boolean;
     domainAge?: string;
-    privacyPolicy?: boolean;
-    terms?: boolean;
+    policyPages?: boolean;
     socialProfiles?: number;
     emailValid?: boolean;
     legalReg?: boolean;
@@ -40,7 +57,7 @@ type Client = {
 };
 
 const ScoreRing = ({ score }: { score: number }) => {
-  const color = score >= 75 ? "#10b981" : score >= 50 ? "#f59e0b" : "#ef4444";
+  const color = score >= 75 ? "var(--chart-2)" : score >= 50 ? "var(--chart-3)" : "var(--destructive)";
   const bg    = score >= 75 ? "rgba(16,185,129,0.1)" : score >= 50 ? "rgba(245,158,11,0.1)" : "rgba(239,68,68,0.1)";
   return (
     <div className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold"
@@ -49,22 +66,25 @@ const ScoreRing = ({ score }: { score: number }) => {
 };
 
 const Signal = ({ label, value, ok }: { label: string; value: string; ok: boolean }) => (
-  <div className="flex items-center gap-2 py-2" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+  <div className="flex items-center gap-2 py-2" style={{ borderBottom: "1px solid var(--border)" }}>
     <div className="w-6 h-6 rounded flex items-center justify-center text-xs flex-shrink-0"
       style={{ background: ok ? "rgba(16,185,129,0.1)" : "rgba(239,68,68,0.1)" }}>
       {ok ? "✓" : "✗"}
     </div>
-    <div className="flex-1 text-[12px] text-[#8a95a8]">{label}</div>
-    <div className="text-[12px] font-semibold" style={{ color: ok ? "#10b981" : "#ef4444" }}>{value}</div>
+    <div className="flex-1 text-[12px] text-muted-foreground">{label}</div>
+    <div className="text-[12px] font-semibold" style={{ color: ok ? "var(--chart-2)" : "var(--destructive)" }}>{value}</div>
   </div>
 );
 
 const stageBadge = (s: string) => {
-  if (s === "Email Sent") return <Badge color="blue">📧 Email Sent</Badge>;
-  if (s === "Outreach")   return <Badge color="blue">📤 Outreach</Badge>;
-  if (s === "Re-verify")  return <Badge color="amber">⚠ Re-verify</Badge>;
+  if (s === "Email Sent")  return <Badge color="blue">📧 Email Sent</Badge>;
+  if (s === "Outreach")    return <Badge color="blue">📤 Outreach</Badge>;
+  if (s === "Re-verify")   return <Badge color="amber">⚠ Re-verify</Badge>;
+  if (s === "Email Ready") return <Badge color="green">✉ Email Ready</Badge>;
   return <Badge color="gray">Saved</Badge>;
 };
+
+// ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function ClientsPage() {
   const navigate = useNavigate();
@@ -75,12 +95,24 @@ export default function ClientsPage() {
   const [apiClients, setApiClients] = useState<any[]>([]);
   const [clientsLoading, setClientsLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
-  const [reverifying, setReverifying] = useState<number | null>(null);
+  const [reverifyingIds, setReverifyingIds] = useState<number[]>([]);
 
   const refreshClients = () => {
     api.clients()
-      .then(c => {
+      .then((c: any[]) => {
         setApiClients(c || []);
+        // Keep the active panel in sync with the freshly fetched data.
+        setActiveClient(prev =>
+          prev
+            ? (c || []).find((x: any) => String(x.result_id) === prev.id)
+              ? {
+                  ...prev,
+                  verificationScore: (c || []).find((x: any) => String(x.result_id) === prev.id)?.verification_score ?? prev.verificationScore,
+                  verificationStatus: (c || []).find((x: any) => String(x.result_id) === prev.id)?.verification_result ?? prev.verificationStatus,
+                }
+              : null
+            : null
+        );
       })
       .catch(console.error)
       .finally(() => setClientsLoading(false));
@@ -90,51 +122,67 @@ export default function ClientsPage() {
     refreshClients();
   }, []);
 
-  const displayClients = apiClients.map((c: any) => ({
-    id: String(c.result_id),
-    name: c.business_name || "Unknown",
-    category: c.business_type || "—",
-    location: c.address || "—",
-    website: c.website || "",
-    email: c.email_found || null,
-    relevanceScore: Math.round(c.relevance_score || 0),
-    verificationStatus: c.verification_result || "pending",
-    verificationScore: c.verification_score || 0,
-    stage: c.email_found ? "Email Ready" : "Saved",
-    savedDate: c.created_at || new Date().toISOString(),
-    signals: {
-      websiteLive: c.verification_artifacts?.accessibility?.website_live ?? true,
-      ssl: c.verification_artifacts?.accessibility?.ssl_valid ?? false,
-      domainAge: c.domain_age_years ? `${c.domain_age_years} years` : "Unknown",
-      privacyPolicy: c.has_policy_pages || false,
-      terms: c.has_policy_pages || false,
-      socialProfiles: Object.keys(c.social_links || {}).length,
-      emailValid: !!c.email_found,
-      legalReg: (c.verification_score || 0) > 60,
-      riskFlags: (c.risk_flags || []).length === 0 ? "None" : (c.risk_flags || []).join(", ")
-    }
-  }));
+  // Memoized so that downstream effects don't re-fire on every unrelated render.
+  const displayClients = useMemo(() => apiClients.map((c: any) => {
+    const artifacts = safeParse(c.verification_artifacts);
+    const socials   = safeParse(c.social_links);
+    return {
+      id: String(c.result_id),
+      name: c.business_name || "Unknown",
+      category: c.business_type || "—",
+      location: c.address || "—",
+      website: c.website || "",
+      email: c.email_found || null,
+      relevanceScore: Math.round(c.relevance_score || 0),
+      verificationStatus: c.verification_result || "pending",
+      verificationScore: c.verification_score || 0,
+      stage: c.email_found ? "Email Ready" : "Saved",
+      savedDate: c.created_at || new Date().toISOString(),
+      signals: {
+        websiteLive: artifacts?.accessibility?.website_live ?? true,
+        ssl: artifacts?.accessibility?.ssl_valid ?? false,
+        domainAge: c.domain_age_years ? `${c.domain_age_years} years` : "Unknown",
+        policyPages: c.has_policy_pages || false,
+        socialProfiles: Object.keys(socials).length,
+        emailValid: !!c.email_found,
+        legalReg: (c.verification_score || 0) > 60,
+        riskFlags: (c.risk_flags || []).length === 0 ? "None" : (c.risk_flags || []).join(", ")
+      }
+    };
+  }), [apiClients]);
 
+  // Auto-select the first client when the list loads for the first time.
   useEffect(() => {
     if (!activeClient && displayClients.length > 0) {
       setActiveClient(displayClients[0]);
     }
-  }, [displayClients, activeClient]);
+  }, [displayClients]);
 
-  const toggle = (id: string) => setSelectedIds(p => p.includes(id) ? p.filter(i=>i!==id) : [...p,id]);
-  const toggleAll = () => setSelectedIds(p => p.length===filtered.length ? [] : filtered.map(c=>c.id));
-
-  const filtered = displayClients.filter(c => {
+  const filtered = useMemo(() => displayClients.filter(c => {
     const matchSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) || (c.location || "").toLowerCase().includes(searchQuery.toLowerCase());
-    const matchFilter = filter==="all" || c.verificationStatus===filter;
+    const matchFilter = filter === "all" || c.verificationStatus === filter;
     return matchSearch && matchFilter;
-  });
+  }), [displayClients, searchQuery, filter]);
+
+  // If the active client is no longer visible due to a filter/search change,
+  // reset the panel to the first visible client (or null if the list is empty).
+  useEffect(() => {
+    if (activeClient && !filtered.some(c => c.id === activeClient.id)) {
+      setActiveClient(filtered[0] ?? null);
+    }
+  }, [filtered]);
+
+  // Derived value — true when every visible client is already selected.
+  const allFilteredSelected = filtered.length > 0 && filtered.every(c => selectedIds.includes(c.id));
+
+  const toggle    = (id: string) => setSelectedIds(p => p.includes(id) ? p.filter(i => i !== id) : [...p, id]);
+  const toggleAll = () => setSelectedIds(allFilteredSelected ? [] : filtered.map(c => c.id));
 
   const filterTabs = [
-    { key:"all",      label:`All (${displayClients.length})` },
-    { key:"verified", label:"✓ Verified" },
-    { key:"partial",  label:"⚠ Partial" },
-    { key:"pending",  label:"⏳ Pending" },
+    { key: "all",      label: `All (${displayClients.length})` },
+    { key: "verified", label: "✓ Verified" },
+    { key: "partial",  label: "⚠ Partial" },
+    { key: "pending",  label: "⏳ Pending" },
   ];
 
   const handleExport = async (format: "csv" | "excel") => {
@@ -156,23 +204,30 @@ export default function ClientsPage() {
     }
   };
 
-  const handleReverify = async (resultId: number) => {
-    setReverifying(resultId);
+  // Accepts one or many IDs — uses Promise.allSettled so a single failure
+  // does not abort the remaining re-verification requests.
+  const handleReverify = async (resultIds: number[]) => {
+    setReverifyingIds(prev => [...prev, ...resultIds]);
     try {
-      await reverifyClient(resultId);
-      toast.success("Verification started");
+      const results = await Promise.allSettled(resultIds.map(id => reverifyClient(id)));
+      const failed = results.filter(r => r.status === "rejected").length;
+      if (failed === 0) {
+        toast.success(resultIds.length > 1 ? `Re-verifying ${resultIds.length} clients` : "Verification started");
+      } else {
+        toast.warning(`${resultIds.length - failed} started, ${failed} failed`);
+      }
       refreshClients();
     } catch (err) {
       console.error(err);
       toast.error("Re-verify failed");
     } finally {
-      setReverifying(null);
+      setReverifyingIds(prev => prev.filter(id => !resultIds.includes(id)));
     }
   };
 
   const vs = activeClient?.verificationScore || 0;
-  const ringColor = vs>=75 ? "#10b981" : vs>=50 ? "#f59e0b" : "#ef4444";
-  const ringBg    = vs>=75 ? "rgba(16,185,129,0.1)" : vs>=50 ? "rgba(245,158,11,0.1)" : "rgba(239,68,68,0.1)";
+  const ringColor = vs >= 75 ? "var(--chart-2)" : vs >= 50 ? "var(--chart-3)" : "var(--destructive)";
+  const ringBg    = vs >= 75 ? "rgba(16,185,129,0.1)" : vs >= 50 ? "rgba(245,158,11,0.1)" : "rgba(239,68,68,0.1)";
 
   return (
     <div className="p-6 space-y-4 page-enter">
@@ -180,53 +235,48 @@ export default function ClientsPage() {
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex gap-1.5 flex-wrap">
           {filterTabs.map(t => (
-            <button key={t.key} onClick={()=>setFilter(t.key)}
+            <button key={t.key} onClick={() => setFilter(t.key)}
               className="px-3 py-1.5 rounded-full text-[12px] font-medium transition-all"
-              style={filter===t.key
-                ? {background:"rgba(59,130,246,0.15)",border:"1px solid rgba(59,130,246,0.3)",color:"#60a5fa"}
-                : {background:"#151a22",border:"1px solid #1c2837",color:"#8a95a8"}}>
+              style={filter === t.key
+                ? { background: "rgba(59,130,246,0.15)", border: "1px solid rgba(59,130,246,0.3)", color: "#60a5fa" }
+                : { background: "var(--muted)", border: "1px solid #1c2837", color: "var(--muted-foreground)" }}>
               {t.label}
             </button>
           ))}
         </div>
         <div className="ml-auto flex gap-2 flex-wrap items-center">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#5a6478]" />
-            <input placeholder="Search clients…" value={searchQuery} onChange={e=>setSearchQuery(e.target.value)}
-              className="pl-9 pr-3 py-1.5 rounded-lg text-[13px] text-[#e8edf5] outline-none"
-              style={{background:"#151a22",border:"1px solid rgba(255,255,255,0.09)",width:200}} />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <input placeholder="Search clients…" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+              className="pl-9 pr-3 py-1.5 rounded-lg text-[13px] text-foreground outline-none"
+              style={{ background: "var(--muted)", border: "1px solid var(--border)", width: 200 }} />
           </div>
-          <button style={btnGhost} disabled={exporting} onClick={()=>handleExport("csv")}><Download className="h-3.5 w-3.5"/>{exporting ? "Exporting…" : "Export CSV"}</button>
-          <button style={btnGhost} disabled={exporting} onClick={()=>handleExport("excel")}><Download className="h-3.5 w-3.5"/>Export Excel</button>
-          <button style={btnPrimary} onClick={()=>navigate(`/app/email?tab=campaign&clientIds=${selectedIds.join(",")}`)}>
+          <button style={btnGhost} disabled={exporting} onClick={() => handleExport("csv")}><Download className="h-3.5 w-3.5"/>{exporting ? "Exporting…" : "Export CSV"}</button>
+          <button style={btnGhost} disabled={exporting} onClick={() => handleExport("excel")}><Download className="h-3.5 w-3.5"/>Export Excel</button>
+          <button style={btnPrimary} onClick={() => navigate(`/app/email?tab=campaign&clientIds=${selectedIds.join(",")}`)}>
             <Mail className="h-3.5 w-3.5"/>Generate Emails
           </button>
         </div>
       </div>
 
-      {/* Bulk bar */}
-      {selectedIds.length>0 && (
+      {/* Bulk action bar */}
+      {selectedIds.length > 0 && (
         <div className="flex flex-wrap items-center gap-3 p-3 rounded-xl"
-          style={{background:"rgba(59,130,246,0.05)",border:"1px solid rgba(59,130,246,0.2)"}}>
+          style={{ background: "rgba(59,130,246,0.05)", border: "1px solid rgba(59,130,246,0.2)" }}>
           <span className="text-sm font-semibold text-blue-400">{selectedIds.length} selected</span>
           <div className="flex gap-2">
-            <button style={btnGhost} disabled={exporting} onClick={()=>handleExport("csv")}><Download className="h-3.5 w-3.5"/>Export CSV</button>
-            <button style={btnGhost} disabled={exporting} onClick={()=>handleExport("excel")}><Download className="h-3.5 w-3.5"/>Export Excel</button>
-            <button style={btnPrimary} onClick={()=>navigate(`/app/email?tab=campaign&clientIds=${selectedIds.join(",")}`)}><Mail className="h-3.5 w-3.5"/>Generate Emails</button>
-            <button 
-              style={btnGhost} 
-              disabled={reverifying !== null} 
-              onClick={() => {
-                if (selectedIds.length > 0) {
-                  const resultId = Number(selectedIds[0]);
-                  handleReverify(resultId);
-                }
-              }}
+            <button style={btnGhost} disabled={exporting} onClick={() => handleExport("csv")}><Download className="h-3.5 w-3.5"/>Export CSV</button>
+            <button style={btnGhost} disabled={exporting} onClick={() => handleExport("excel")}><Download className="h-3.5 w-3.5"/>Export Excel</button>
+            <button style={btnPrimary} onClick={() => navigate(`/app/email?tab=campaign&clientIds=${selectedIds.join(",")}`)}><Mail className="h-3.5 w-3.5"/>Generate Emails</button>
+            <button
+              style={btnGhost}
+              disabled={reverifyingIds.length > 0}
+              onClick={() => handleReverify(selectedIds.map(id => Number(id)))}
             >
-              <RefreshCw className="h-3.5 w-3.5"/>Re-verify
+              <RefreshCw className="h-3.5 w-3.5"/>Re-verify All
             </button>
-            <button 
-              style={{...btnGhost,color:"#ef4444"}} 
+            <button
+              style={{ ...btnGhost, color: "var(--destructive)" }}
               onClick={async () => {
                 try {
                   const resultIds = selectedIds.map(id => Number(id));
@@ -247,10 +297,10 @@ export default function ClientsPage() {
       )}
 
       {/* Two-column layout */}
-      <div className="grid gap-4" style={{gridTemplateColumns:"1fr 340px",alignItems:"start"}}>
+      <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 340px", alignItems: "start" }}>
 
         {/* Table */}
-        <div className="overflow-hidden rounded-xl" style={{border:"1px solid #1c2837"}}>
+        <div className="overflow-hidden rounded-xl" style={{ border: "1px solid #1c2837" }}>
           {clientsLoading ? (
             <div className="flex justify-center items-center py-20">
               <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
@@ -260,51 +310,61 @@ export default function ClientsPage() {
           ) : (
             <>
               {/* Header */}
-              <div className="grid text-[10px] font-semibold text-[#5a6478] uppercase tracking-widest px-4 py-3"
-                style={{gridTemplateColumns:"28px 1fr 70px 70px 100px 90px 80px 60px",background:"#151a22",borderBottom:"1px solid #1c2837"}}>
-                <div><input type="checkbox" checked={selectedIds.length===filtered.length&&filtered.length>0} onChange={toggleAll} className="accent-blue-500"/></div>
+              <div className="grid text-[10px] font-semibold text-muted-foreground uppercase tracking-widest px-4 py-3"
+                style={{ gridTemplateColumns: "28px 1fr 70px 70px 100px 90px 80px 60px", background: "var(--muted)", borderBottom: "1px solid #1c2837" }}>
+                <div>
+                  <input
+                    type="checkbox"
+                    checked={allFilteredSelected}
+                    onChange={toggleAll}
+                    className="accent-blue-500"
+                  />
+                </div>
                 <div>Business</div><div>Score</div><div>Relevance</div><div>Stage</div><div>Contact</div><div>Saved</div><div>Actions</div>
               </div>
 
-              {filtered.map((c,i) => (
-                <div key={c.id}
-                  className="grid items-center px-4 py-3 cursor-pointer transition-colors"
-                  style={{
-                    gridTemplateColumns:"28px 1fr 70px 70px 100px 90px 80px 60px",
-                    borderBottom: i<filtered.length-1 ? "1px solid rgba(255,255,255,0.05)" : "none",
-                    background: activeClient?.id===c.id ? "rgba(59,130,246,0.05)" : selectedIds.includes(c.id) ? "rgba(59,130,246,0.03)" : "#0d1117",
-                  }}
-                  onClick={()=>setActiveClient(c)}>
-                  <div onClick={e=>{e.stopPropagation();toggle(c.id);}}>
-                    <input type="checkbox" checked={selectedIds.includes(c.id)} onChange={()=>toggle(c.id)} className="accent-blue-500"/>
+              {filtered.map((c, i) => {
+                const isReverifying = reverifyingIds.includes(Number(c.id));
+                return (
+                  <div key={c.id}
+                    className="grid items-center px-4 py-3 cursor-pointer transition-colors"
+                    style={{
+                      gridTemplateColumns: "28px 1fr 70px 70px 100px 90px 80px 60px",
+                      borderBottom: i < filtered.length - 1 ? "1px solid var(--border)" : "none",
+                      background: activeClient?.id === c.id ? "rgba(59,130,246,0.05)" : selectedIds.includes(c.id) ? "rgba(59,130,246,0.03)" : "#0d1117",
+                    }}
+                    onClick={() => setActiveClient(c)}>
+                    <div onClick={e => { e.stopPropagation(); toggle(c.id); }}>
+                      <input type="checkbox" checked={selectedIds.includes(c.id)} onChange={() => toggle(c.id)} className="accent-blue-500"/>
+                    </div>
+                    <div>
+                      <div className="text-[13px] font-semibold text-foreground">{c.name}</div>
+                      <div className="text-[11px] text-muted-foreground mt-0.5">{c.location} · {c.category}</div>
+                    </div>
+                    <div><ScoreRing score={c.verificationScore}/></div>
+                    <div className="text-[13px] font-bold" style={{ color: c.relevanceScore >= 75 ? "var(--chart-2)" : "var(--chart-3)" }}>{c.relevanceScore}%</div>
+                    <div>{stageBadge(c.stage)}</div>
+                    <div className="text-[11px] text-muted-foreground">{c.email ? `✉ ${c.email.split("@")[0]}…` : "—"}</div>
+                    <div className="text-[11px] text-muted-foreground">{new Date(c.savedDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</div>
+                    <div className="flex gap-1" onClick={e => e.stopPropagation()}>
+                      <button onClick={() => navigate(`/app/email?tab=campaign&clientIds=${c.id}`)}
+                        className="w-7 h-7 rounded flex items-center justify-center transition-colors hover:bg-accent"
+                        style={{ border: "1px solid #1c2837", color: "var(--muted-foreground)" }}>✉️</button>
+                      <button
+                        onClick={() => handleReverify([Number(c.id)])}
+                        disabled={isReverifying}
+                        className="w-7 h-7 rounded flex items-center justify-center transition-colors hover:bg-accent"
+                        style={{ border: "1px solid #1c2837", color: "var(--muted-foreground)", opacity: isReverifying ? 0.5 : 1 }}>⋯</button>
+                    </div>
                   </div>
-                  <div>
-                    <div className="text-[13px] font-semibold text-[#e8edf5]">{c.name}</div>
-                    <div className="text-[11px] text-[#5a6478] mt-0.5">{c.location} · {c.category}</div>
-                  </div>
-                  <div><ScoreRing score={c.verificationScore}/></div>
-                  <div className="text-[13px] font-bold" style={{color: c.relevanceScore>=75?"#10b981":"#f59e0b"}}>{c.relevanceScore}%</div>
-                  <div>{stageBadge(c.stage)}</div>
-                  <div className="text-[11px] text-[#5a6478]">{c.email?`✉ ${c.email.split("@")[0]}…`:"—"}</div>
-                  <div className="text-[11px] text-[#5a6478]">{new Date(c.savedDate).toLocaleDateString("en-GB",{day:"2-digit",month:"short"})}</div>
-                  <div className="flex gap-1" onClick={e=>e.stopPropagation()}>
-                    <button onClick={()=>navigate(`/app/email?tab=campaign&clientIds=${c.id}`)}
-                      className="w-7 h-7 rounded flex items-center justify-center transition-colors hover:bg-[#1c2230]"
-                      style={{border:"1px solid #1c2837",color:"#8a95a8"}}>✉️</button>
-                    <button 
-                      onClick={()=>handleReverify(Number(c.id))}
-                      disabled={reverifying === Number(c.id)}
-                      className="w-7 h-7 rounded flex items-center justify-center transition-colors hover:bg-[#1c2230]"
-                      style={{border:"1px solid #1c2837",color:"#8a95a8",opacity: reverifying === Number(c.id) ? 0.5 : 1}}>⋯</button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
 
-              {filtered.length===0 && (
+              {filtered.length === 0 && (
                 <div className="py-12 flex flex-col items-center text-center">
                   <div className="text-3xl mb-2 opacity-40">👤</div>
-                  <div className="text-sm font-bold text-[#e8edf5]">No clients match</div>
-                  <div className="text-[12px] text-[#5a6478] mt-1">Try clearing the filter or search</div>
+                  <div className="text-sm font-bold text-foreground">No clients match</div>
+                  <div className="text-[12px] text-muted-foreground mt-1">Try clearing the filter or search</div>
                 </div>
               )}
             </>
@@ -313,20 +373,20 @@ export default function ClientsPage() {
 
         {/* Verification Details Panel */}
         {activeClient && (
-        <div className="rounded-xl overflow-hidden sticky top-4" style={{border:"1px solid #1c2837",background:"#0d1117"}}>
+        <div className="rounded-xl overflow-hidden sticky top-4" style={{ border: "1px solid #1c2837", background: "#0d1117" }}>
           {/* Panel header */}
-          <div className="p-4 flex items-center gap-3" style={{borderBottom:"1px solid #1c2837"}}>
+          <div className="p-4 flex items-center gap-3" style={{ borderBottom: "1px solid #1c2837" }}>
             <div className="w-14 h-14 rounded-full flex items-center justify-center text-xl font-bold flex-shrink-0"
-              style={{border:`2px solid ${ringColor}`,background:ringBg,color:ringColor,fontFamily:"Syne,sans-serif"}}>
+              style={{ border: `2px solid ${ringColor}`, background: ringBg, color: ringColor, fontFamily: "Syne,sans-serif" }}>
               {activeClient?.verificationScore}
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-[13px] font-bold text-[#e8edf5] truncate" style={{fontFamily:"Syne,sans-serif"}}>{activeClient?.name}</div>
-              <div className="text-[11px] text-[#5a6478] mt-0.5">Verification Report</div>
+              <div className="text-[13px] font-bold text-foreground truncate" style={{ fontFamily: "Syne,sans-serif" }}>{activeClient?.name}</div>
+              <div className="text-[11px] text-muted-foreground mt-0.5">Verification Report</div>
               <div className="mt-1">
-                {activeClient?.verificationStatus==="verified"
+                {activeClient?.verificationStatus === "verified"
                   ? <Badge color="green">✓ Fully Verified</Badge>
-                  : activeClient?.verificationStatus==="partial"
+                  : activeClient?.verificationStatus === "partial"
                     ? <Badge color="amber">⚠ Partial</Badge>
                     : <Badge color="red">✗ Failed</Badge>}
               </div>
@@ -335,80 +395,75 @@ export default function ClientsPage() {
 
           {/* Trust Signals */}
           <div className="px-4 py-3">
-            <div className="text-[10px] font-bold text-[#5a6478] uppercase tracking-widest mb-1">Trust Signals</div>
-            <Signal label="Website Live"          value={(activeClient?.signals?.websiteLive || false) ? "Active" : "Down"}   ok={activeClient?.signals?.websiteLive || false} />
-            <Signal label="SSL Certificate"       value={(activeClient?.signals?.ssl || false) ? "Valid" : "Invalid"}          ok={activeClient?.signals?.ssl || false} />
-            <Signal label="Domain Age"            value={(activeClient?.signals?.domainAge || "Unknown")}                       ok={true} />
-            <Signal label="Privacy Policy"        value={(activeClient?.signals?.privacyPolicy || false) ? "Found" : "Missing"} ok={activeClient?.signals?.privacyPolicy || false} />
-            <Signal label="Terms & Conditions"    value={(activeClient?.signals?.terms || false) ? "Found" : "Missing"}         ok={activeClient?.signals?.terms || false} />
-            <Signal label="Social Media"          value={`${(activeClient?.signals?.socialProfiles || 0)} profiles`}    ok={(activeClient?.signals?.socialProfiles || 0)>0} />
-            <Signal label="Email Validity"        value={(activeClient?.signals?.emailValid || false) ? "Deliverable" : "Risky"} ok={activeClient?.signals?.emailValid || false} />
-            <Signal label="Legal Registration"    value={(activeClient?.signals?.legalReg || false) ? "Verified" : "Unknown"}   ok={activeClient?.signals?.legalReg || false} />
+            <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1">Trust Signals</div>
+            <Signal label="Website Live"       value={(activeClient?.signals?.websiteLive || false) ? "Active" : "Down"}      ok={activeClient?.signals?.websiteLive || false} />
+            <Signal label="SSL Certificate"    value={(activeClient?.signals?.ssl || false) ? "Valid" : "Invalid"}            ok={activeClient?.signals?.ssl || false} />
+            <Signal label="Domain Age"         value={activeClient?.signals?.domainAge || "Unknown"}                          ok={true} />
+            <Signal label="Policy Pages"       value={(activeClient?.signals?.policyPages || false) ? "Found" : "Missing"}    ok={activeClient?.signals?.policyPages || false} />
+            <Signal label="Social Media"       value={`${activeClient?.signals?.socialProfiles || 0} profiles`}               ok={(activeClient?.signals?.socialProfiles || 0) > 0} />
+            <Signal label="Email Validity"     value={(activeClient?.signals?.emailValid || false) ? "Deliverable" : "Risky"} ok={activeClient?.signals?.emailValid || false} />
+            <Signal label="Legal Registration" value={(activeClient?.signals?.legalReg || false) ? "Verified" : "Unknown"}    ok={activeClient?.signals?.legalReg || false} />
             <div className="flex items-center gap-2 pt-2">
               <div className="w-6 h-6 rounded flex items-center justify-center text-xs flex-shrink-0"
-                style={{background: (activeClient?.signals?.riskFlags || "None")==="None"?"rgba(16,185,129,0.1)":"rgba(239,68,68,0.1)"}}>⚠</div>
-              <div className="flex-1 text-[12px] text-[#8a95a8]">Risk Flags</div>
-              <div className="text-[12px] font-semibold" style={{color: (activeClient?.signals?.riskFlags || "None")==="None"?"#10b981":"#ef4444"}}>
-                {(activeClient?.signals?.riskFlags || "None")}
+                style={{ background: (activeClient?.signals?.riskFlags || "None") === "None" ? "rgba(16,185,129,0.1)" : "rgba(239,68,68,0.1)" }}>⚠</div>
+              <div className="flex-1 text-[12px] text-muted-foreground">Risk Flags</div>
+              <div className="text-[12px] font-semibold" style={{ color: (activeClient?.signals?.riskFlags || "None") === "None" ? "var(--chart-2)" : "var(--destructive)" }}>
+                {activeClient?.signals?.riskFlags || "None"}
               </div>
             </div>
           </div>
 
           {/* AI Relevance summary */}
-          <div className="px-4 py-3" style={{borderTop:"1px solid #1c2837"}}>
-            <div className="text-[10px] font-bold text-[#5a6478] uppercase tracking-widest mb-2">AI Relevance</div>
+          <div className="px-4 py-3" style={{ borderTop: "1px solid #1c2837" }}>
+            <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">AI Relevance</div>
             <div className="flex items-center gap-2 mb-1">
-              <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{background:"#1c2230"}}>
-                <div className="h-full rounded-full" style={{width:`${(activeClient?.relevanceScore || 0)}%`,background:"#8b5cf6"}}/>
+              <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--accent)" }}>
+                <div className="h-full rounded-full" style={{ width: `${activeClient?.relevanceScore || 0}%`, background: "#8b5cf6" }}/>
               </div>
-              <span className="text-[12px] font-bold text-[#8b5cf6]">{(activeClient?.relevanceScore || 0)}%</span>
+              <span className="text-[12px] font-bold text-[#8b5cf6]">{activeClient?.relevanceScore || 0}%</span>
             </div>
-            <div className="text-[11px] text-[#5a6478]">Strong B2B profile match. Verified export market presence.</div>
+            <div className="text-[11px] text-muted-foreground">Strong B2B profile match. Verified export market presence.</div>
           </div>
 
           {/* Actions */}
-          <div className="px-4 py-3 space-y-2" style={{borderTop:"1px solid #1c2837"}}>
-            <button style={{...btnPrimary,width:"100%",justifyContent:"center"}} onClick={()=>navigate(`/app/email?tab=campaign&clientIds=${activeClient.id}`)}>
+          <div className="px-4 py-3 space-y-2" style={{ borderTop: "1px solid #1c2837" }}>
+            <button style={{ ...btnPrimary, width: "100%", justifyContent: "center" }} onClick={() => navigate(`/app/email?tab=campaign&clientIds=${activeClient.id}`)}>
               <Mail className="h-3.5 w-3.5"/>Generate Outreach Email
             </button>
             <div className="flex gap-2">
-              <button 
-                style={{...btnGhost,flex:1,justifyContent:"center",opacity: reverifying === Number(activeClient.id) ? 0.5 : 1}} 
-                disabled={reverifying === Number(activeClient.id)}
-                onClick={()=>handleReverify(Number(activeClient.id))}
+              <button
+                style={{ ...btnGhost, flex: 1, justifyContent: "center", opacity: reverifyingIds.includes(Number(activeClient.id)) ? 0.5 : 1 }}
+                disabled={reverifyingIds.includes(Number(activeClient.id))}
+                onClick={() => handleReverify([Number(activeClient.id)])}
               >
                 <RefreshCw className="h-3.5 w-3.5"/>Re-verify
               </button>
-              <a href={`https://${activeClient?.website}`} target="_blank" rel="noreferrer"
-                className="flex-1 flex items-center justify-center gap-1 rounded-lg text-[12px] font-medium text-[#8a95a8] hover:text-[#e8edf5] transition-colors"
-                style={{border:"1px solid rgba(255,255,255,0.1)",padding:"6px 12px"}}>
+              <a href={normalizeUrl(activeClient?.website || "")} target="_blank" rel="noreferrer"
+                className="flex-1 flex items-center justify-center gap-1 rounded-lg text-[12px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+                style={{ border: "1px solid var(--border)", padding: "6px 12px" }}>
                 <ExternalLink className="h-3.5 w-3.5"/>Website
               </a>
             </div>
             <button
               onClick={() => navigate(`/app/business/${activeClient?.id}`)}
               style={{
-                width: '100%',
-                padding: '10px 16px',
-                background: 'transparent',
-                border: '1px solid #1c2837',
-                borderRadius: '6px',
-                color: '#e8edf5',
-                fontSize: '14px',
-                fontWeight: '500',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                cursor: 'pointer',
-                transition: 'all 0.2s'
+                width: "100%",
+                padding: "10px 16px",
+                background: "transparent",
+                border: "1px solid #1c2837",
+                borderRadius: "6px",
+                color: "var(--foreground)",
+                fontSize: "14px",
+                fontWeight: "500",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "8px",
+                cursor: "pointer",
+                transition: "all 0.2s"
               }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = '#1c2837'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent'
-              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "#1c2837"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
             >
               <Eye className="h-4 w-4" />
               View Full Details

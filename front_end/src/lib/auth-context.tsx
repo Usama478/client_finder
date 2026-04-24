@@ -67,7 +67,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const stored = localStorage.getItem("cf_user")
     if (stored) {
-      try { setUser(JSON.parse(stored)) } catch {}
+      try {
+        setUser(JSON.parse(stored))
+        api.credits().then(setCredits).catch(() => {})
+      } catch {}
     }
     setLoading(false)
   }, [])

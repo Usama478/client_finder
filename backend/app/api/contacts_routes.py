@@ -12,6 +12,7 @@ def get_contacts(current_user: User = Depends(get_current_user),
                  db: Session = Depends(get_db)):
     leads = db.query(SearchResult).filter(
         SearchResult.user_id == current_user.user_id,
+        SearchResult.is_saved_client == True,
         SearchResult.email_found.isnot(None)
     ).order_by(SearchResult.created_at.desc()).all()
     return [

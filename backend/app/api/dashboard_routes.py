@@ -129,12 +129,19 @@ def get_activity(limit: int = 50, db: Session = Depends(get_db), current_user: U
     sent_drafts = db.query(EmailDraft).join(SearchResult, EmailDraft.business_id == SearchResult.result_id).join(SearchSession, SearchResult.search_id == SearchSession.search_id).filter(
         EmailDraft.status == "sent"
     ).filter(SearchSession.user_id == current_user.user_id).order_by(EmailDraft.sent_at.desc()).limit(10).all()
+    # Bulk-fetch all lead names in one query instead of one query per draft
+    draft_business_ids = [d.business_id for d in sent_drafts]
+    leads_map: Dict[int, str] = {}
+    if draft_business_ids:
+        lead_rows = db.query(SearchResult.result_id, SearchResult.business_name).filter(
+            SearchResult.result_id.in_(draft_business_ids)
+        ).all()
+        leads_map = {row[0]: row[1] for row in lead_rows}
     for d in sent_drafts:
-        lead = db.query(SearchResult).filter(
-            SearchResult.result_id == d.business_id).first()
+        business_name = leads_map.get(d.business_id, "lead")
         events.append({
             "type": "email",
-            "text": f"Email sent to {lead.business_name if lead else 'lead'}",
+            "text": f"Email sent to {business_name}",
             "time": d.sent_at.isoformat() if d.sent_at else "",
             "color": "#10b981",
         })

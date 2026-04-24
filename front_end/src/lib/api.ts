@@ -5,6 +5,37 @@ export class CreditError extends Error {
   }
 }
 
+export interface DashboardStats {
+  total_searches: number
+  total_clients: number
+  verified_clients: number
+  unverified_clients: number
+  leads_found: number
+  relevant_leads: number
+  emails_sent: number
+  risk_distribution: { name: string; value: number; color: string }[]
+  verification_data: { name: string; value: number; color: string }[]
+}
+
+export interface SearchSession {
+  search_id: number
+  user_id: number
+  search_query: string
+  context_id: number | null
+  context_name: string | null
+  created_at: string | null
+  results_count: number
+  status: "done" | "scoring"
+  next_page_token: string | null
+}
+
+export interface ActivityEvent {
+  type: string
+  text: string
+  time: string
+  color: string
+}
+
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000"
 
 function getToken(): string | null {
@@ -47,7 +78,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 export const api = {
   // Auth
   login: (email: string, password: string) =>
-    request<{ access_token: string; token_type: string; user_id: number; name: string; email: string }>(
+    request<{ access_token: string; token_type: string; user_id: number; name: string; email: string; is_admin: boolean }>(
       "/api/v1/auth/login-json",
       { method: "POST", body: JSON.stringify({ email, password }) }
     ),
@@ -80,8 +111,8 @@ export const api = {
     ),
 
   // Dashboard
-  dashboardStats: () => request<any>("/api/v1/dashboard/stats"),
-  activityLog: (limit = 20) => request<any[]>(`/api/v1/dashboard/activity?limit=${limit}`),
+  dashboardStats: () => request<DashboardStats>("/api/v1/dashboard/stats"),
+  activityLog: (limit = 20) => request<ActivityEvent[]>(`/api/v1/dashboard/activity?limit=${limit}`),
   credits: () =>
     request<{
       credits_remaining: number;
@@ -91,7 +122,7 @@ export const api = {
     }>("/api/v1/dashboard/credits"),
 
   // Sessions
-  sessions: (userId: number) => request<any[]>(`/api/v1/sessions?user_id=${userId}`),
+  sessions: () => request<SearchSession[]>("/api/v1/sessions"),
   createSession: (data: any) =>
     request<any>("/api/v1/search", { method: "POST", body: JSON.stringify(data) }),
 
@@ -131,9 +162,10 @@ export const api = {
     ),
 
   // Relevancy
-  runRelevancy: (business: any, searchId: number, contextId: number | null) =>
+  runRelevancy: (business: any, searchId: number, contextId: number | null, signal?: AbortSignal) =>
     request<any>("/api/relevancy/v2/run", {
       method: "POST",
+      signal,
       body: JSON.stringify({
         business_id: Number(business.result_id || business.id),
         website: business.website || "",
@@ -152,9 +184,12 @@ export const api = {
   generateEmail: (businessId: number, userId: number, exporterProfileId: number, userInstructions?: string) =>
     request<any>(`/api/v1/email/generate/${businessId}`,
       { method: "POST", body: JSON.stringify({ user_id: userId, exporter_profile_id: exporterProfileId, sequence_position: 1, user_instructions: userInstructions }) }),
-  generateBatch: (searchId: number, userId: number) =>
+  generateBatch: (searchId: number, userId: number, userInstructions?: string) =>
     request<any>("/api/v1/email/generate-batch",
-      { method: "POST", body: JSON.stringify({ search_id: searchId, user_id: userId, sequence_position: 1 }) }),
+      { method: "POST", body: JSON.stringify({ search_id: searchId, user_id: userId, sequence_position: 1, user_instructions: userInstructions ?? "" }) }),
+  updateDraft: (draftId: number, payload: { subject: string; body: string }) =>
+    request<any>(`/api/v1/email/drafts/detail/${draftId}`,
+      { method: "PATCH", body: JSON.stringify(payload) }),
   approveDraft: (draftId: number) =>
     request<any>(`/api/v1/email/drafts/${draftId}/approve`, { method: "PATCH" }),
   sendDraft: (draftId: number) =>

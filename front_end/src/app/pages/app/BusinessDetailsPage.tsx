@@ -21,18 +21,38 @@ export default function BusinessDetailsPage() {
   const { user } = useAuth();
   const [business, setBusiness] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [exporterProfileId, setExporterProfileId] = useState<number | null>(null);
+  
+  const formatUrl = (url: string) => url.startsWith('http') ? url : `https://${url}`;
+
+  const displayRelevanceScore = business
+    ? Math.round(business.relevance_score || 0)
+    : 0;
 
   useEffect(() => {
     if (!id) return;
     api.leadDetail(Number(id))
       .then(data => setBusiness(data))
-      .catch(() => navigate(-1))
+      .catch((err: any) => setError(err.message || "Failed to load business details"))
       .finally(() => setLoading(false));
+      
+    api.getMyProfile().then(p => setExporterProfileId(p.id)).catch(() => {});
   }, [id]);
 
   if (loading) return (
     <div className="flex h-full items-center justify-center">
       <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+  if (error) return (
+    <div className="flex flex-col h-[50vh] items-center justify-center p-6 text-center">
+      <AlertCircle className="h-12 w-12 text-red-500 mb-4" />
+      <h2 className="text-xl font-bold mb-2 text-white">Error Loading Business</h2>
+      <p className="text-muted-foreground mb-6">{error}</p>
+      <Button onClick={() => navigate(-1)} variant="outline">
+        <ArrowLeft className="mr-2 h-4 w-4" /> Go Back
+      </Button>
     </div>
   );
   if (!business) return null;
@@ -47,22 +67,29 @@ export default function BusinessDetailsPage() {
   };
 
   const handleReVerify = async () => {
-    toast.loading("Re-running verification...");
+    const toastId = toast.loading("Re-running verification...");
     try {
       await api.verifyBusiness(Number(id));
       const updated = await api.leadDetail(Number(id));
       setBusiness(updated);
-      toast.success("Verification updated");
+      toast.success("Verification updated", { id: toastId });
     } catch (err: any) {
-      toast.error(err.message || "Verification failed");
+      toast.error(err.message || "Verification failed", { id: toastId });
     }
   };
 
   const handleGenerateEmail = async () => {
-    if (!user) return;
+    if (!user) {
+      toast.error("User session not found");
+      return;
+    }
+    if (!exporterProfileId) {
+      toast.error("Set up your exporter profile in Settings first");
+      return;
+    }
     try {
-      await api.generateEmail(Number(id), user.user_id);
-      navigate("/app/email");
+      await api.generateEmail(Number(id), user.user_id, exporterProfileId);
+      navigate(`/app/email?clientIds=${id}`);
       toast.success("Email draft generated");
     } catch (err: any) {
       toast.error(err.message || "Failed to generate email");
@@ -81,12 +108,12 @@ export default function BusinessDetailsPage() {
             <h1 className="text-3xl font-bold">{business.business_name}</h1>
             <Badge variant="outline">{business.business_type}</Badge>
           </div>
-          <div className="flex items-center gap-4 mt-2 text-[#8a95a8]">
+          <div className="flex items-center gap-4 mt-2 text-muted-foreground">
             <span className="flex items-center gap-1">
               <MapPin className="h-4 w-4" />
               {business.address}
             </span>
-            <a href={`https://${business.website}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-blue-600 hover:text-blue-700">
+            <a href={formatUrl(business.website)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-blue-600 hover:text-blue-700">
               <ExternalLink className="h-4 w-4" />
               {business.website}
             </a>
@@ -110,7 +137,7 @@ export default function BusinessDetailsPage() {
 
       {/* Score Summary Cards */}
       <div className="grid md:grid-cols-2 gap-6">
-        <Card className="border-purple-200 bg-[#151a22]">
+        <Card className="border-purple-200 bg-muted">
           <CardContent className="p-6">
               <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
@@ -120,14 +147,14 @@ export default function BusinessDetailsPage() {
               <Badge className="bg-green-600">{business.relevance_decision === "relevant" ? "Passed" : "Failed"}</Badge>
             </div>
             <div className="flex items-center gap-4 mb-2">
-              <Progress value={Math.round(business.relevance_score || 0)} className="flex-1" />
-              <span className="text-3xl font-bold text-purple-600">{Math.round(business.relevance_score || 0)}%</span>
+              <Progress value={displayRelevanceScore} className="flex-1" />
+              <span className="text-3xl font-bold text-purple-600">{displayRelevanceScore}%</span>
             </div>
-            <div className="text-sm text-[#8a95a8]">Confidence: {business.confidence ? `${Math.round(business.confidence * 100)}%` : "—"}</div>
+            <div className="text-sm text-muted-foreground">Confidence: {business.confidence ? `${Math.round(business.confidence * 100)}%` : "—"}</div>
           </CardContent>
         </Card>
 
-        <Card className="border-green-200 bg-[#151a22]">
+        <Card className="border-green-200 bg-muted">
           <CardContent className="p-6">
               <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
@@ -140,7 +167,7 @@ export default function BusinessDetailsPage() {
               <Progress value={business.verification_score || 0} className="flex-1" />
               <span className="text-3xl font-bold text-green-600">{business.verification_score || 0}%</span>
             </div>
-            <div className="text-sm text-[#8a95a8]">Trust Level: {business.verification_score >= 70 ? "High Trust" : "Moderate"}</div>
+            <div className="text-sm text-muted-foreground">Trust Level: {business.verification_score >= 70 ? "High Trust" : "Moderate"}</div>
           </CardContent>
         </Card>
       </div>
@@ -152,7 +179,6 @@ export default function BusinessDetailsPage() {
           <TabsTrigger value="relevance">AI Relevance</TabsTrigger>
           <TabsTrigger value="verification">Verification</TabsTrigger>
           <TabsTrigger value="contacts">Contacts</TabsTrigger>
-          <TabsTrigger value="activity">Activity</TabsTrigger>
           <TabsTrigger value="outreach">Outreach</TabsTrigger>
         </TabsList>
 
@@ -164,7 +190,7 @@ export default function BusinessDetailsPage() {
             <CardContent className="space-y-6">
               <div>
                 <h3 className="font-semibold mb-2">Description</h3>
-                <p className="text-[#8a95a8]">{business.email_context?.company_description || "No description available"}</p>
+                <p className="text-muted-foreground">{business.email_context?.company_description || "No description available"}</p>
               </div>
 
               <Separator />
@@ -177,15 +203,15 @@ export default function BusinessDetailsPage() {
                   </h3>
                   <dl className="space-y-2">
                     <div>
-                      <dt className="text-sm text-[#8a95a8]">Category</dt>
+                      <dt className="text-sm text-muted-foreground">Category</dt>
                       <dd className="font-medium">{business.business_type}</dd>
                     </div>
                     <div>
-                      <dt className="text-sm text-[#8a95a8]">Location</dt>
+                      <dt className="text-sm text-muted-foreground">Location</dt>
                       <dd className="font-medium">{business.address}</dd>
                     </div>
                     <div>
-                      <dt className="text-sm text-[#8a95a8]">Website Status</dt>
+                      <dt className="text-sm text-muted-foreground">Website Status</dt>
                       <dd>
                         <Badge className="bg-green-600">
                           <CheckCircle className="h-3 w-3 mr-1" />
@@ -203,17 +229,17 @@ export default function BusinessDetailsPage() {
                   </h3>
                   <dl className="space-y-2">
                     <div>
-                      <dt className="text-sm text-[#8a95a8]">Email</dt>
+                      <dt className="text-sm text-muted-foreground">Email</dt>
                       <dd className="font-medium">{business.email_found}</dd>
                     </div>
                     <div>
-                      <dt className="text-sm text-[#8a95a8]">Phone</dt>
+                      <dt className="text-sm text-muted-foreground">Phone</dt>
                       <dd className="font-medium">{business.phone_number}</dd>
                     </div>
                     <div>
-                      <dt className="text-sm text-[#8a95a8]">Website</dt>
+                      <dt className="text-sm text-muted-foreground">Website</dt>
                       <dd>
-                        <a href={`https://${business.website}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700">
+                        <a href={formatUrl(business.website)} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700">
                           {business.website}
                         </a>
                       </dd>
@@ -231,13 +257,13 @@ export default function BusinessDetailsPage() {
               <CardTitle>AI Relevance Analysis</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="p-4 bg-[#151a22] rounded-lg border border-[rgba(255,255,255,0.07)]">
+              <div className="p-4 bg-muted rounded-lg border border-[var(--border)]">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="font-semibold">Score: {Math.round(business.relevance_score || 0)}%</span>
+                  <span className="font-semibold">Score: {displayRelevanceScore}%</span>
                   <Badge className="bg-green-600">{business.relevance_decision === "relevant" ? "Passed" : "Failed"}</Badge>
                 </div>
-                <Progress value={Math.round(business.relevance_score || 0)} className="mb-2" />
-                <div className="text-sm text-[#8a95a8]">
+                <Progress value={displayRelevanceScore} className="mb-2" />
+                <div className="text-sm text-muted-foreground">
                   Context Used: <span className="font-medium">{business.context_name || "No context recorded"}</span>
                 </div>
               </div>
@@ -254,7 +280,7 @@ export default function BusinessDetailsPage() {
                         return Object.entries(parsed).map(([key, value]) => (
                           <div key={key} className="mb-3">
                             <p className="font-bold">{key.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}</p>
-                            <p className="text-[#8a95a8]">{String(value)}</p>
+                            <p className="text-muted-foreground">{String(value)}</p>
                           </div>
                         ));
                       }
@@ -262,7 +288,7 @@ export default function BusinessDetailsPage() {
                       // Fall through to default rendering
                     }
                     
-                    return <p className="whitespace-pre-line text-[#8a95a8]">{business.relevance_reason}</p>;
+                    return <p className="whitespace-pre-line text-muted-foreground">{business.relevance_reason}</p>;
                   })()}
                 </div>
               </div>
@@ -270,22 +296,24 @@ export default function BusinessDetailsPage() {
               <div>
                 <h3 className="font-semibold mb-3">Match Factors</h3>
                 <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-sm">
-                    <CheckCircle className="h-4 w-4 text-green-600" />
-                    <span>Business model alignment: Excellent</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <CheckCircle className="h-4 w-4 text-green-600" />
-                    <span>Geographic focus: Strong match</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <CheckCircle className="h-4 w-4 text-green-600" />
-                    <span>Product/service alignment: High relevance</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <CheckCircle className="h-4 w-4 text-green-600" />
-                    <span>Company maturity: Appropriate</span>
-                  </div>
+                  {(business.match_reasons || []).length === 0 && (business.mismatch_reasons || []).length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No factors recorded.</p>
+                  ) : (
+                    <>
+                      {(business.match_reasons || []).map((r: string, i: number) => (
+                        <div key={`match-${i}`} className="flex items-center gap-2 text-sm">
+                          <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />
+                          <span>{r}</span>
+                        </div>
+                      ))}
+                      {(business.mismatch_reasons || []).map((r: string, i: number) => (
+                        <div key={`mismatch-${i}`} className="flex items-center gap-2 text-sm">
+                          <XCircle className="h-4 w-4 text-red-500 shrink-0" />
+                          <span>{r}</span>
+                        </div>
+                      ))}
+                    </>
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -298,7 +326,7 @@ export default function BusinessDetailsPage() {
               <CardTitle>Verification Results</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="p-4 bg-[#151a22] rounded-lg border border-[rgba(255,255,255,0.07)]">
+              <div className="p-4 bg-muted rounded-lg border border-[var(--border)]">
                 <div className="flex items-center justify-between mb-3">
                   <span className="font-semibold flex items-center gap-2">
                     <ShieldCheck className="h-5 w-5 text-green-600" />
@@ -307,7 +335,7 @@ export default function BusinessDetailsPage() {
                   <Badge className="bg-green-600">{business.verification_result || "pending"}</Badge>
                 </div>
                 <Progress value={business.verification_score || 0} className="mb-2" />
-                <div className="text-sm text-[#8a95a8]">Trust Level: {business.verification_score >= 70 ? "High Trust" : "Moderate"}</div>
+                <div className="text-sm text-muted-foreground">Trust Level: {business.verification_score >= 70 ? "High Trust" : "Moderate"}</div>
               </div>
 
               <div className="grid md:grid-cols-2 gap-6">
@@ -320,7 +348,9 @@ export default function BusinessDetailsPage() {
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-sm">SSL Certificate</span>
-                      <Badge className="bg-green-600"><CheckCircle className="h-3 w-3 mr-1" />{business.verification_artifacts?.accessibility?.ssl_valid ? "Valid" : "Unknown"}</Badge>
+                      {business.verification_artifacts?.accessibility?.ssl_valid
+                        ? <Badge className="bg-green-600"><CheckCircle className="h-3 w-3 mr-1" />Valid</Badge>
+                        : <Badge variant="outline"><XCircle className="h-3 w-3 mr-1" />Unknown</Badge>}
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-sm">Domain Age</span>
@@ -328,11 +358,15 @@ export default function BusinessDetailsPage() {
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-sm">Privacy Policy</span>
-                      <Badge className="bg-green-600"><CheckCircle className="h-3 w-3 mr-1" />{business.has_policy_pages ? "Present" : "Not found"}</Badge>
+                      {business.has_policy_pages
+                        ? <Badge className="bg-green-600"><CheckCircle className="h-3 w-3 mr-1" />Present</Badge>
+                        : <Badge variant="outline"><XCircle className="h-3 w-3 mr-1" />Not found</Badge>}
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-sm">Terms of Service</span>
-                      <Badge className="bg-green-600"><CheckCircle className="h-3 w-3 mr-1" />{business.has_policy_pages ? "Present" : "Not found"}</Badge>
+                      {business.has_policy_pages
+                        ? <Badge className="bg-green-600"><CheckCircle className="h-3 w-3 mr-1" />Present</Badge>
+                        : <Badge variant="outline"><XCircle className="h-3 w-3 mr-1" />Not found</Badge>}
                     </div>
                   </div>
                 </div>
@@ -342,11 +376,15 @@ export default function BusinessDetailsPage() {
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="text-sm">Email Validation</span>
-                      <Badge className="bg-green-600"><CheckCircle className="h-3 w-3 mr-1" />{business.email_found ? "Verified" : "Not found"}</Badge>
+                      {business.email_found
+                        ? <Badge className="bg-green-600"><CheckCircle className="h-3 w-3 mr-1" />Verified</Badge>
+                        : <Badge variant="outline"><XCircle className="h-3 w-3 mr-1" />Not found</Badge>}
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-sm">Phone Validation</span>
-                      <Badge className="bg-green-600"><CheckCircle className="h-3 w-3 mr-1" />Verified</Badge>
+                      {business.phone_number
+                        ? <Badge className="bg-green-600"><CheckCircle className="h-3 w-3 mr-1" />{business.phone_number}</Badge>
+                        : <Badge variant="outline"><XCircle className="h-3 w-3 mr-1" />Not found</Badge>}
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-sm">LinkedIn Presence</span>
@@ -358,14 +396,14 @@ export default function BusinessDetailsPage() {
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-sm">Business Registration</span>
-                      <Badge className="bg-green-600"><CheckCircle className="h-3 w-3 mr-1" />Verified</Badge>
+                      <Badge variant="outline"><AlertCircle className="h-3 w-3 mr-1" />Unknown</Badge>
                     </div>
                   </div>
                 </div>
               </div>
 
               {(!business.risk_flags || business.risk_flags.length === 0) && (
-                <div className="p-4 bg-[#151a22] border border-[rgba(255,255,255,0.07)] rounded-lg">
+                <div className="p-4 bg-muted border border-[var(--border)] rounded-lg">
                   <div className="flex items-start gap-2">
                     <CheckCircle className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
                     <div>
@@ -386,9 +424,9 @@ export default function BusinessDetailsPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-4">
-                <div className="p-4 bg-[#151a22] rounded-lg">
+                <div className="p-4 bg-muted rounded-lg">
                   <div className="flex items-center gap-3 mb-2">
-                    <Mail className="h-5 w-5 text-[#8a95a8]" />
+                    <Mail className="h-5 w-5 text-muted-foreground" />
                     <span className="font-semibold">Email</span>
                   </div>
                   <div className="pl-8">
@@ -397,24 +435,26 @@ export default function BusinessDetailsPage() {
                   </div>
                 </div>
 
-                <div className="p-4 bg-[#151a22] rounded-lg">
+                <div className="p-4 bg-muted rounded-lg">
                   <div className="flex items-center gap-3 mb-2">
-                    <Phone className="h-5 w-5 text-[#8a95a8]" />
+                    <Phone className="h-5 w-5 text-muted-foreground" />
                     <span className="font-semibold">Phone</span>
                   </div>
                   <div className="pl-8">
-                    <div className="font-medium">{business.phone_number}</div>
-                    <Badge className="bg-green-600 mt-2"><CheckCircle className="h-3 w-3 mr-1" />Verified</Badge>
+                    <div className="font-medium">{business.phone_number || "Not found"}</div>
+                    {business.phone_number
+                      ? <Badge className="bg-green-600 mt-2"><CheckCircle className="h-3 w-3 mr-1" />Found</Badge>
+                      : <Badge variant="outline" className="mt-2"><XCircle className="h-3 w-3 mr-1" />Not found</Badge>}
                   </div>
                 </div>
 
-                <div className="p-4 bg-[#151a22] rounded-lg">
+                <div className="p-4 bg-muted rounded-lg">
                   <div className="flex items-center gap-3 mb-2">
-                    <Globe className="h-5 w-5 text-[#8a95a8]" />
+                    <Globe className="h-5 w-5 text-muted-foreground" />
                     <span className="font-semibold">Website</span>
                   </div>
                   <div className="pl-8">
-                    <a href={`https://${business.website}`} target="_blank" rel="noopener noreferrer" className="font-medium text-blue-600 hover:text-blue-700">
+                    <a href={formatUrl(business.website)} target="_blank" rel="noopener noreferrer" className="font-medium text-blue-600 hover:text-blue-700">
                       {business.website}
                     </a>
                   </div>
@@ -424,30 +464,7 @@ export default function BusinessDetailsPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="activity">
-          <Card>
-            <CardHeader>
-              <CardTitle>Activity History</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {(business.activities || []).map((activity: any, i: number) => (
-                  <div key={i} className="flex items-start gap-4 pb-4 border-b last:border-0">
-                    <div className="bg-[#151a22] p-2 rounded-lg">
-                      <Activity className="h-4 w-4 text-blue-600" />
-                    </div>
-                    <div className="flex-1">
-                      <div className="font-medium">{activity.action}</div>
-                      <div className="text-sm text-[#8a95a8] mt-1">
-                        by {activity.user} • {new Date(activity.date).toLocaleDateString()}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+
 
         <TabsContent value="outreach">
           <Card>
@@ -458,9 +475,9 @@ export default function BusinessDetailsPage() {
               {(business.email_drafts || []).length > 0 ? (
                 <div className="space-y-4">
                   {business.email_drafts.map((draft: any, i: number) => (
-                    <div key={i} className="p-4 bg-[#151a22] rounded-lg border">
+                    <div key={i} className="p-4 bg-muted rounded-lg border">
                       <div className="font-medium mb-2">{draft.subject || "Email Draft"}</div>
-                      <div className="text-sm text-[#8a95a8] whitespace-pre-line">{draft.body}</div>
+                      <div className="text-sm text-muted-foreground whitespace-pre-line">{draft.body}</div>
                     </div>
                   ))}
                 </div>

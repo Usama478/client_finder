@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 _MODEL = "gpt-4o-mini"
 _TEMPERATURE = 0.4
 _MAX_TOKENS_STRATEGY = 600
-_MAX_TOKENS_EMAIL = 800
+_MAX_TOKENS_EMAIL = 1000
 
 _VALID_TONES = {"casual_professional", "formal", "warm_direct"}
 _VALID_RECIPIENT_TITLES = {
@@ -81,13 +81,15 @@ Rules:
 
 _EMAIL_SYSTEM_PROMPT = """\
 You are writing a cold outreach email from a textile manufacturer
-to a fashion brand buyer. Follow ALL rules. No exceptions.
+to a fashion brand buyer. Follow ALL rules below. If USER INSTRUCTIONS
+are provided at the end of the prompt, they take priority and override
+any conflicting default rules.
 
-STRICT RULES:
+DEFAULT RULES (overridable by USER INSTRUCTIONS):
 - Never write "we are a leading manufacturer" or any variation
 - Never mention Pakistan as a selling point — factual mention only
 - Never use the buyer's personal name — use recipient_title only
-- Body must be 120-160 words. Count carefully before outputting.
+- Body must be 150-250 words. Count carefully before outputting.
 - Open with personalization_hook — must be specific to this buyer
 - Include exactly 3 bullet points using capability_highlights
 - Each bullet point must be one line only
@@ -417,13 +419,13 @@ def generate_email_draft(
 
     # Post-generation validation: word count check
     words = body.split()
-    if len(words) > 250:
+    if len(words) > 350:
         logging.warning(
             "email body too long (%s words) — truncating", len(words))
         sentences = body.split(". ")
         truncated = ""
         for sentence in sentences:
-            if len((truncated + sentence).split()) <= 200:
+            if len((truncated + sentence).split()) <= 300:
                 truncated += sentence + ". "
             else:
                 break
