@@ -24,12 +24,15 @@ class SearchRequest(BaseModel):
 class ClientStatusUpdate(BaseModel):
     is_saved_client: bool
 
+class GenerateQueriesRequest(BaseModel):
+    session_id: int
+
 @router.get("/health")
 def api_health_check():
     return {"status": "Backend API is healthy"}
 
 @router.post("/search")
-def search_endpoint(request: SearchRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def search_endpoint(request: SearchRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """
     Triggers a Google Maps Search and saves results to DB.
     """
@@ -51,6 +54,24 @@ def search_endpoint(request: SearchRequest, db: Session = Depends(get_db), curre
         )
         if "error" in result:
             raise HTTPException(status_code=400, detail=result["error"])
+        
+        # Run SERP discovery if approved_queries exist on the session
+        session_id_used = result.get("search_id")
+        if session_id_used:
+            search_sess = db.query(SearchSession).filter(
+                SearchSession.search_id == session_id_used
+            ).first()
+            if search_sess and search_sess.approved_queries:
+                web_queries = search_sess.approved_queries.get("web_queries") or []
+                if web_queries:
+                    from app.services.serp_discovery_service import discover_via_serp
+                    serp_results = await discover_via_serp(
+                        web_queries=web_queries,
+                        session_id=session_id_used,
+                        user_id=current_user.user_id,
+                        db=db,
+                    )
+                    result["serp_results_added"] = len(serp_results)
         
         deduct_credits(db, current_user.user_id, 10, "search_session", reference_id=str(result.get("search_id")), reference_type="session")
         db.commit()
@@ -131,6 +152,47 @@ def list_search_sessions(db: Session = Depends(get_db), current_user: User = Dep
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/sessions/{session_id}/generate-queries")
+async def generate_search_queries_endpoint(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Generate search queries for a session based on exporter profile and AI context."""
+    # Fetch session and verify ownership
+    session = db.query(SearchSession).filter(
+        SearchSession.search_id == session_id,
+        SearchSession.user_id == current_user.user_id
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    # Fetch exporter profile
+    from app.models.exporter_profile import ExporterProfile
+    profile = db.query(ExporterProfile).filter(
+        ExporterProfile.user_id == current_user.user_id
+    ).first()
+    
+    if not profile:
+        user_profile = {}
+    else:
+        user_profile = {k: str(v) for k, v in profile.__dict__.items() if k != "_sa_instance_state"}.copy()
+        user_profile.pop('_sa_instance_state', None)
+    
+    # Get AI context
+    ai_context = session.ai_context or session.search_query
+    
+    # Generate queries
+    from app.services.query_generator_service import generate_search_queries
+    suggestions = await generate_search_queries(user_profile=user_profile, ai_context=ai_context)
+    
+    # Save to session
+    session.approved_queries = suggestions
+    db.commit()
+    
+    return suggestions
 
 
 @router.get("/results/{search_id}")

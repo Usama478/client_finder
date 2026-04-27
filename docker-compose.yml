@@ -12,6 +12,7 @@ services:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/clientfinder
       - MAPS_API_KEY=${MAPS_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - VALUESERP_API_KEY=${VALUESERP_API_KEY}
       - SENDGRID_API_KEY=${SENDGRID_API_KEY}        
       - SENDGRID_FROM_EMAIL=${SENDGRID_FROM_EMAIL}  
       - SENDGRID_FROM_NAME=${SENDGRID_FROM_NAME}

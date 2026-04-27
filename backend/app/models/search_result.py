@@ -10,7 +10,8 @@ class SearchResult(Base):
     __tablename__ = "search_results"
 
     result_id = Column(Integer, primary_key=True, index=True)
-    place_id = Column(String, index=True, nullable=False)
+    place_id = Column(String, index=True, nullable=True)
+    source = Column(String, nullable=False, server_default="maps")
 
     user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
     search_id = Column(Integer, ForeignKey("search_sessions.search_id"), nullable=False)

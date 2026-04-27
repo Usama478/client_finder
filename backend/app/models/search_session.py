@@ -1,4 +1,5 @@
 from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, JSON
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.db.base import Base
@@ -25,5 +26,8 @@ class SearchSession(Base):
         ForeignKey("exporter_profiles.id"),
         nullable=True
     )
+
+    ai_context = Column(String, nullable=True)
+    approved_queries = Column(JSONB, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
