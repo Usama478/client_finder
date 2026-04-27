@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 import threading
 from html import unescape
@@ -473,6 +474,15 @@ def _collect_page_with_browser(page: Page, requested_url: str, timeout_s: int) -
         page_diagnostics.append(f"status={status_code}")
     if blocked and block_reason:
         page_diagnostics.append(f"blocked={block_reason}")
+        logger.info(
+            "page_collect blocked url=%s status=%s reason=%s",
+            requested_url, status_code, block_reason,
+        )
+    else:
+        logger.info(
+            "page_collect success url=%s status=%s text_len=%s",
+            requested_url, status_code, len(text_excerpt or ""),
+        )
 
     return {
         "requested_url": requested_url,
@@ -501,10 +511,83 @@ def collect_with_playwright(
         raise RuntimeError("playwright is not installed")
 
     diagnostics: List[str] = ["path=browser", "session=reused"]
+    logger.info("browser_collect start url=%s include_internal=%s", url, include_internal_pages)
     logger.info("browser_collect waiting for concurrency lock business_url=%s", url)
     with BROWSER_SEMAPHORE:
         logger.info("browser_collect lock acquired business_url=%s", url)
-        return _run_playwright_session(url, timeout_s, user_agent, include_internal_pages, max_internal_pages, diagnostics)
+
+        # --- Attempt 1: direct connection ---
+        logger.info("browser_collect attempt=direct url=%s", url)
+        result = _run_playwright_session(
+            url, timeout_s, user_agent, include_internal_pages, max_internal_pages, diagnostics
+        )
+        homepage = result.get("homepage") or {}
+        blocked = homepage.get("blocked", False)
+        block_reason = homepage.get("block_reason") or "unknown"
+
+        logger.info(
+            "browser_collect direct_result url=%s blocked=%s reason=%s",
+            url, blocked, block_reason if blocked else "none",
+        )
+
+        if not blocked:
+            # Direct worked — no proxy needed
+            result["proxy_used"] = False
+            result["proxy_retry_reason"] = None
+            logger.info("browser_collect complete url=%s mode=direct pages=%s", url, len(result.get("visited_pages") or []))
+            return result
+
+        # --- Homepage was blocked — check if proxy is configured ---
+        proxy_config = _build_proxy_config()
+        if not proxy_config:
+            logger.warning(
+                "browser_collect blocked but no proxy configured url=%s reason=%s — returning blocked result",
+                url, block_reason,
+            )
+            result["proxy_used"] = False
+            result["proxy_retry_reason"] = block_reason
+            return result
+
+        # --- Attempt 2: retry via proxy ---
+        logger.info(
+            "browser_collect attempt=proxy url=%s retry_reason=%s",
+            url, block_reason,
+        )
+        proxy_diagnostics: List[str] = ["path=browser", "session=proxy_retry", f"retry_reason={block_reason}"]
+        proxy_result = _run_playwright_session(
+            url, timeout_s, user_agent, include_internal_pages, max_internal_pages,
+            proxy_diagnostics, proxy=proxy_config,
+        )
+        proxy_homepage = proxy_result.get("homepage") or {}
+        proxy_blocked = proxy_homepage.get("blocked", False)
+        proxy_block_reason = proxy_homepage.get("block_reason") or "unknown"
+
+        if proxy_blocked:
+            logger.warning(
+                "browser_collect proxy_retry also blocked url=%s reason=%s — returning proxy result anyway",
+                url, proxy_block_reason,
+            )
+        else:
+            logger.info(
+                "browser_collect proxy_retry success url=%s pages=%s",
+                url, len(proxy_result.get("visited_pages") or []),
+            )
+
+        proxy_result["proxy_used"] = True
+        proxy_result["proxy_retry_reason"] = block_reason
+        return proxy_result
+
+
+def _build_proxy_config() -> Optional[Dict[str, str]]:
+    """Return ScraperAPI proxy dict if SCRAPER_API_KEY is set, else None."""
+    key = os.environ.get("SCRAPER_API_KEY", "").strip()
+    if not key:
+        return None
+    return {
+        "server": "http://proxy-server.scraperapi.com:8001",
+        "username": "scraperapi",
+        "password": key,
+    }
 
 
 def _run_playwright_session(
@@ -514,12 +597,15 @@ def _run_playwright_session(
     include_internal_pages: bool,
     max_internal_pages: int,
     diagnostics: List[str],
+    proxy: Optional[Dict[str, str]] = None,
 ) -> Dict[str, object]:
     """Inner helper: called only while BROWSER_SEMAPHORE is held."""
+    proxy_mode = "proxy" if proxy else "direct"
+    logger.info("playwright_session starting url=%s mode=%s", url, proxy_mode)
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(
-            headless=True,
-            args=[
+        _launch_kwargs: Dict[str, object] = {
+            "headless": True,
+            "args": [
                 "--disable-blink-features=AutomationControlled",
                 "--disable-infobars",
                 "--window-size=1920,1080",
@@ -527,7 +613,11 @@ def _run_playwright_session(
                 "--disable-setuid-sandbox",
                 "--disable-dev-shm-usage",
             ],
-        )
+        }
+        if proxy:
+            _launch_kwargs["proxy"] = proxy
+            logger.info("playwright_session proxy_configured server=%s url=%s", proxy["server"], url)
+        browser = playwright.chromium.launch(**_launch_kwargs)
         context = browser.new_context(
             user_agent=user_agent,
             locale="en-US",
