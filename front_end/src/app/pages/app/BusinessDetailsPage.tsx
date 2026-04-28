@@ -23,6 +23,8 @@ export default function BusinessDetailsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [exporterProfileId, setExporterProfileId] = useState<number | null>(null);
+  const [hunterEmails, setHunterEmails] = useState<any[]>([]);
+  const [hunterLoading, setHunterLoading] = useState(false);
   
   const formatUrl = (url: string) => url.startsWith('http') ? url : `https://${url}`;
 
@@ -33,7 +35,10 @@ export default function BusinessDetailsPage() {
   useEffect(() => {
     if (!id) return;
     api.leadDetail(Number(id))
-      .then(data => setBusiness(data))
+      .then(data => {
+        setBusiness(data);
+        setHunterEmails(data.hunter_emails || []);
+      })
       .catch((err: any) => setError(err.message || "Failed to load business details"))
       .finally(() => setLoading(false));
       
@@ -75,6 +80,23 @@ export default function BusinessDetailsPage() {
       toast.success("Verification updated", { id: toastId });
     } catch (err: any) {
       toast.error(err.message || "Verification failed", { id: toastId });
+    }
+  };
+
+  const handleFindEmail = async () => {
+    setHunterLoading(true);
+    try {
+      const result = await api.findEmail(Number(id));
+      setHunterEmails(result.emails || []);
+      if (result.cached) {
+        toast.info("Showing cached email results");
+      } else {
+        toast.success(result.message || "Email lookup complete");
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Email lookup failed");
+    } finally {
+      setHunterLoading(false);
     }
   };
 
@@ -432,6 +454,47 @@ export default function BusinessDetailsPage() {
                   <div className="pl-8">
                     <div className="font-medium">{business.email_found}</div>
                     <Badge className="bg-green-600 mt-2"><CheckCircle className="h-3 w-3 mr-1" />{business.email_found ? "Verified" : "Not found"}</Badge>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-muted rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-3">
+                      <Mail className="h-5 w-5 text-muted-foreground" />
+                      <span className="font-semibold">Verified Contacts (Hunter.io)</span>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleFindEmail}
+                      disabled={hunterLoading}
+                    >
+                      {hunterLoading ? (
+                        <RefreshCw className="mr-2 h-3 w-3 animate-spin" />
+                      ) : (
+                        <Mail className="mr-2 h-3 w-3" />
+                      )}
+                      {hunterLoading ? "Looking up..." : "Find verified email (1 credit)"}
+                    </Button>
+                  </div>
+                  <div className="pl-8 space-y-2">
+                    {hunterEmails.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">Click to search for verified contact emails</p>
+                    ) : (
+                      hunterEmails.map((e: any, i: number) => (
+                        <div key={i} className="text-sm border rounded p-2 bg-background">
+                          <div className="font-medium">{e.email}</div>
+                          <div className="text-muted-foreground">
+                            {[e.first_name, e.last_name].filter(Boolean).join(" ")}
+                            {e.position ? ` — ${e.position}` : ""}
+                          </div>
+                          <div className="flex items-center gap-2 mt-1">
+                            <Badge variant="outline" className="text-xs">Confidence: {e.confidence}%</Badge>
+                            {e.verified && <Badge className="bg-green-600 text-xs"><CheckCircle className="h-2 w-2 mr-1" />Verified</Badge>}
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
 

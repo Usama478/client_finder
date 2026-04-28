@@ -1,3 +1,4 @@
+import re
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -313,3 +314,76 @@ def delete_clients(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/leads/{search_result_id}/find-email")
+async def find_email_for_lead(
+    search_result_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.services.hunter_service import find_emails_for_domain
+
+    lead = (
+        db.query(SearchResult)
+        .join(SearchSession, SearchResult.search_id == SearchSession.search_id)
+        .filter(
+            SearchResult.result_id == search_result_id,
+            SearchSession.user_id == current_user.user_id,
+        )
+        .first()
+    )
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    if lead.hunter_emails is not None:
+        return {
+            "cached": True,
+            "emails": lead.hunter_emails,
+            "primary_contact_email": lead.primary_contact_email,
+        }
+
+    website = lead.website or ""
+    domain_match = re.search(r"(?:https?://)?(?:www\.)?([^/\s]+)", website)
+    if not domain_match:
+        raise HTTPException(
+            status_code=400,
+            detail="This lead has no website URL to extract a domain from",
+        )
+    domain = domain_match.group(1)
+
+    check_credits(db, current_user.user_id, 1)
+
+    try:
+        emails = await find_emails_for_domain(domain)
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=f"Hunter.io lookup failed: {exc}")
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Hunter.io lookup failed: {exc}")
+
+    lead.hunter_emails = emails
+    lead.primary_contact_email = emails[0]["email"] if emails else None
+
+    deduct_credits(
+        db,
+        current_user.user_id,
+        1,
+        "hunter_lookup",
+        reference_id=str(search_result_id),
+        reference_type="search_result",
+    )
+
+    db.commit()
+
+    return {
+        "cached": False,
+        "emails": lead.hunter_emails,
+        "primary_contact_email": lead.primary_contact_email,
+        "message": (
+            f"Found {len(emails)} verified contact email(s)"
+            if emails
+            else "No emails above confidence threshold were found for this domain. 1 credit was used."
+        ),
+    }

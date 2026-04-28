@@ -10,6 +10,8 @@ from urllib.parse import urlparse
 
 from pydantic import ValidationError
 
+from app.services.serp_enrichment_service import enrich_lead_via_serp
+
 logger = logging.getLogger(__name__)
 
 # Hard ceiling on total graph execution time.  The collection node already
@@ -122,6 +124,7 @@ def _build_initial_state(business_id: int) -> VerificationAgentState:
             # Relevancy Agent classification — read from DB columns, not artifact blob
             "business_type": lead.business_type,
             "primary_niche": lead.primary_niche,
+            "serp_enrichment": lead.serp_enrichment,
             # ---- Collection ----
             "website_alive": None,
             "accessibility_status": None,
@@ -178,6 +181,7 @@ def _build_initial_state(business_id: int) -> VerificationAgentState:
             "brand_tone": None,
             "markets_served": [],
             "ecommerce_enabled": None,
+            "verified_product_catalog": None,
             # ---- Size ----
             "employee_range": None,
             "revenue_band": None,
@@ -324,6 +328,9 @@ def _persist_verification_to_db(
         # ---- Size fields ----
         lead.employee_range = final_state.get("employee_range")
         lead.revenue_band = final_state.get("revenue_band")
+
+        # ---- Product catalog (Phase 3 enrichment) ----
+        lead.verified_product_catalog = final_state.get("verified_product_catalog")
 
         # ---- Email context (for Email Agent) ----
         lead.email_context = final_state.get("email_context")
@@ -549,6 +556,7 @@ def run_verification_for_business(business_id: int) -> Dict[str, object]:
         lead.employee_range = None
         lead.revenue_band = None
         lead.email_context = None
+        lead.verified_product_catalog = None
         lock_db.commit()
         logger.info("verification_service LOCK_ACQUIRED business_id=%s", business_id)
     except ValueError as exc:
@@ -569,6 +577,27 @@ def run_verification_for_business(business_id: int) -> Dict[str, object]:
         raise
     finally:
         lock_db.close()
+
+    # ------------------------------------------------------------------ #
+    # Task 1.5 – SERP enrichment (between lock release and graph exec)    #
+    # ------------------------------------------------------------------ #
+    _enrich_db = SessionLocal()
+    try:
+        _lead_for_enrich = _enrich_db.query(SearchResult).filter(SearchResult.result_id == business_id).first()
+        if _lead_for_enrich and _lead_for_enrich.serp_enrichment is None:
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            loop.run_until_complete(
+                enrich_lead_via_serp(business_id, _enrich_db)
+            )
+    except Exception as _enrich_exc:
+        logger.warning("serp_enrichment FAILED business_id=%s error=%s", business_id, _enrich_exc)
+    finally:
+        _enrich_db.close()
 
     # ------------------------------------------------------------------ #
     # Task 2 – Outer crash net around graph execution                     #

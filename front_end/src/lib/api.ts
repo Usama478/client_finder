@@ -197,6 +197,12 @@ export const api = {
   deleteDraft: (draftId: number) =>
     request<any>(`/api/v1/email/drafts/${draftId}`, { method: "DELETE" }),
 
+  findEmail: (resultId: number) =>
+    request<{ cached: boolean; emails: any[]; primary_contact_email: string | null; message?: string }>(
+      `/api/v1/leads/${resultId}/find-email`,
+      { method: "POST" }
+    ),
+
   // Exporter profile
   getMyProfile: () => request<any>("/api/v1/exporter-profiles/me"),
   createProfile: (data: any) =>

@@ -649,6 +649,63 @@ def legitimacy_analyzer(state: VerificationAgentState) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Node 7.5 — product_catalog_extractor
+# ---------------------------------------------------------------------------
+
+def product_catalog_extractor(state: VerificationAgentState) -> dict:
+    """
+    LLM call to extract product catalog details using both scraped content and SERP enrichment.
+    """
+    try:
+        text = state.get("full_site_text") or state.get("scraped_text_content") or ""
+        product_snippets = (state.get("serp_enrichment") or {}).get("product_snippets") or []
+        
+        from langchain_openai import ChatOpenAI
+        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+        
+        prompt = f"""You are analyzing a business website to identify what products this company sells.
+
+Scraped content: {text}
+Additional context from web search: {product_snippets}
+
+Return ONLY a JSON object with this exact shape, no other text:
+{{
+  "product_categories": ["category 1", "category 2"],
+  "sells_wholesale": true,
+  "primary_customer_type": "B2B",
+  "confidence": "high"
+}}
+
+Rules:
+- product_categories: up to 8 specific plain English categories
+- sells_wholesale: true/false
+- primary_customer_type: exactly one of "B2B", "B2C", or "Both"
+- confidence: exactly one of "high", "medium", or "low"
+"""
+        
+        response = llm.invoke(prompt)
+        content = response.content
+        
+        # Strip markdown fences if present
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0].strip()
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0].strip()
+        
+        import json
+        try:
+            parsed_dict = json.loads(content)
+            return {"verified_product_catalog": parsed_dict}
+        except json.JSONDecodeError as json_exc:
+            logger.error("product_catalog_extractor JSON_PARSE_FAILED error=%s", json_exc)
+            return {"verified_product_catalog": None}
+            
+    except Exception as exc:
+        logger.error("product_catalog_extractor FAILED error=%s", exc, exc_info=True)
+        return _system_failure_payload("product_catalog_extractor", f"exception:{type(exc).__name__}")
+
+
+# ---------------------------------------------------------------------------
 # Node 8 — size_estimator
 # ---------------------------------------------------------------------------
 

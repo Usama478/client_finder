@@ -57,6 +57,15 @@ class SearchResult(Base):
     # Verification agent — structured artifact blob
     verification_artifacts = Column(JSONB, nullable=True)
 
+    # Enrichment fields
+    serp_enrichment = Column(JSONB, nullable=True)
+    linkedin_url = Column(String(500), nullable=True)
+    verified_product_catalog = Column(JSONB, nullable=True)
+
+    # Hunter.io email lookup
+    hunter_emails = Column(JSONB, nullable=True)
+    primary_contact_email = Column(String(255), nullable=True)
+
     # Verification agent — identity
     company_name_confirmed = Column(String(255), nullable=True)
     domain_match_confidence = Column(Float, nullable=True)

@@ -132,9 +132,20 @@ def generate_draft_for_lead(
             }
 
         # ------------------------------------------------------------------ #
-        # Step 5 – Read email context                                         #
+        # Step 5 – Read email context and inject enrichment data              #
         # ------------------------------------------------------------------ #
-        email_context = lead.email_context or {}
+        email_context = dict(lead.email_context or {})
+
+        catalog = lead.verified_product_catalog or {}
+        if catalog.get("product_categories"):
+            email_context["product_categories"] = catalog["product_categories"]
+        if catalog.get("sells_wholesale") is not None:
+            email_context["sells_wholesale"] = catalog["sells_wholesale"]
+        if catalog.get("primary_customer_type"):
+            email_context["primary_customer_type"] = catalog["primary_customer_type"]
+
+        if lead.linkedin_url and not email_context.get("linkedin_url"):
+            email_context["linkedin_url"] = lead.linkedin_url
 
         # ------------------------------------------------------------------ #
         # Step 6 – LLM generation (strategy → draft)                         #

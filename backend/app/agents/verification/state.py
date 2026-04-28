@@ -34,6 +34,7 @@ class VerificationAgentState(TypedDict):
     # Relevancy Agent classification — direct DB columns, not read from artifact blob
     business_type: Optional[str]          # e.g. "B2B supplier", "Retailer / DTC"
     primary_niche: Optional[str]          # e.g. "Leather", "Streetwear"
+    serp_enrichment: Optional[Dict[str, Any]]   # populated by serp_enrichment_service before agent runs
 
     # ------------------------------------------------------------------ #
     # Collection Fields (written by gatekeeper / collector nodes)         #
@@ -105,6 +106,7 @@ class VerificationAgentState(TypedDict):
     brand_tone: Optional[str]
     markets_served: List[str]
     ecommerce_enabled: Optional[bool]
+    verified_product_catalog: Optional[Dict[str, Any]]  # extracted by product_catalog_extractor node
 
     # ------------------------------------------------------------------ #
     # Size Fields (written by LLM analyst)                                #

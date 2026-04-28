@@ -103,6 +103,13 @@ DEFAULT RULES (overridable by USER INSTRUCTIONS):
 - Sign off: "Best regards," then new line with contact_person_name,
   then company_name
 
+PRODUCT CATALOG INSTRUCTIONS (apply when product_categories are present in BUYER data):
+- If the buyer's product_categories are provided, name at least one specific category in the opening line
+- Match those categories to the sender's manufacturing capabilities explicitly
+- If certifications are present and relevant to the product type, mention one by name
+- Never use generic phrases like "your esteemed company", "I came across your website", or "I hope this email finds you well"
+- Write as if you have personally researched this specific buyer's catalog
+
 OUTPUT (JSON only, no markdown):
 {"subject": "...", "body": "..."}\
 """
