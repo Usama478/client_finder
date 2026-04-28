@@ -210,6 +210,11 @@ def get_result_detail(result_id: int, db: Session = Depends(get_db), current_use
         "is_saved_client": lead.is_saved_client,
         "created_at": lead.created_at.isoformat() if lead.created_at else None,
         "context_name": context_name,
+        "serp_enrichment": lead.serp_enrichment or {},
+        "linkedin_url": lead.linkedin_url,
+        "verified_product_catalog": lead.verified_product_catalog or {},
+        "hunter_emails": lead.hunter_emails or [],
+        "primary_contact_email": lead.primary_contact_email,
         "email_drafts": [
             {
                 "id": d.id,

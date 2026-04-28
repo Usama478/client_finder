@@ -9,7 +9,7 @@ import { Separator } from "../../components/ui/separator";
 import { 
   ArrowLeft, ExternalLink, MapPin, Mail, Phone, Globe,
   Target, ShieldCheck, CheckCircle, AlertCircle, XCircle,
-  Save, Send, RefreshCw, Building, Calendar, Activity
+  Save, Send, RefreshCw, Building, Calendar, Activity, Linkedin, Package, Brain
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../../../lib/api";
@@ -24,6 +24,7 @@ export default function BusinessDetailsPage() {
   const [error, setError] = useState<string | null>(null);
   const [exporterProfileId, setExporterProfileId] = useState<number | null>(null);
   const [hunterEmails, setHunterEmails] = useState<any[]>([]);
+  const [primaryContactEmail, setPrimaryContactEmail] = useState<string | null>(null);
   const [hunterLoading, setHunterLoading] = useState(false);
   
   const formatUrl = (url: string) => url.startsWith('http') ? url : `https://${url}`;
@@ -38,6 +39,7 @@ export default function BusinessDetailsPage() {
       .then(data => {
         setBusiness(data);
         setHunterEmails(data.hunter_emails || []);
+        setPrimaryContactEmail(data.primary_contact_email || null);
       })
       .catch((err: any) => setError(err.message || "Failed to load business details"))
       .finally(() => setLoading(false));
@@ -88,6 +90,7 @@ export default function BusinessDetailsPage() {
     try {
       const result = await api.findEmail(Number(id));
       setHunterEmails(result.emails || []);
+      if (result.primary_contact_email) setPrimaryContactEmail(result.primary_contact_email);
       if (result.cached) {
         toast.info("Showing cached email results");
       } else {
@@ -200,6 +203,8 @@ export default function BusinessDetailsPage() {
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="relevance">AI Relevance</TabsTrigger>
           <TabsTrigger value="verification">Verification</TabsTrigger>
+          <TabsTrigger value="products">Products</TabsTrigger>
+          <TabsTrigger value="intelligence">Intelligence</TabsTrigger>
           <TabsTrigger value="contacts">Contacts</TabsTrigger>
           <TabsTrigger value="outreach">Outreach</TabsTrigger>
         </TabsList>
@@ -439,6 +444,151 @@ export default function BusinessDetailsPage() {
           </Card>
         </TabsContent>
 
+        <TabsContent value="products">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Package className="h-5 w-5 text-blue-500" />
+                Product Catalog
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {!business.verified_product_catalog || Object.keys(business.verified_product_catalog).length === 0 ? (
+                <p className="text-sm" style={{ color: '#5a6478' }}>Product catalog not yet extracted.</p>
+              ) : (
+                <>
+                  {Array.isArray(business.verified_product_catalog.product_categories) && business.verified_product_catalog.product_categories.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-semibold mb-2" style={{ color: '#e8edf5' }}>Product Categories</h3>
+                      <div className="flex flex-wrap gap-2">
+                        {business.verified_product_catalog.product_categories.map((cat: string, i: number) => (
+                          <span
+                            key={i}
+                            style={{
+                              background: '#1c2837',
+                              border: '1px solid #2d3748',
+                              color: '#e8edf5',
+                              fontSize: '0.75rem',
+                              borderRadius: '9999px',
+                              padding: '2px 10px',
+                            }}
+                          >
+                            {cat}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-3 gap-4">
+                    <div style={{ background: '#1c2837', border: '1px solid #2d3748', borderRadius: '8px', padding: '12px' }}>
+                      <div className="text-xs mb-1" style={{ color: '#5a6478' }}>Sells Wholesale</div>
+                      <div className="font-semibold text-sm" style={{
+                        color: business.verified_product_catalog.sells_wholesale ? '#22c55e' : '#5a6478'
+                      }}>
+                        {business.verified_product_catalog.sells_wholesale === true ? 'Yes' :
+                         business.verified_product_catalog.sells_wholesale === false ? 'No' : '—'}
+                      </div>
+                    </div>
+
+                    <div style={{ background: '#1c2837', border: '1px solid #2d3748', borderRadius: '8px', padding: '12px' }}>
+                      <div className="text-xs mb-1" style={{ color: '#5a6478' }}>Customer Type</div>
+                      <div className="font-semibold text-sm" style={{ color: '#e8edf5' }}>
+                        {business.verified_product_catalog.primary_customer_type || '—'}
+                      </div>
+                    </div>
+
+                    <div style={{ background: '#1c2837', border: '1px solid #2d3748', borderRadius: '8px', padding: '12px' }}>
+                      <div className="text-xs mb-1" style={{ color: '#5a6478' }}>Catalog Confidence</div>
+                      <div className="font-semibold text-sm" style={{
+                        color: business.verified_product_catalog.confidence === 'high' ? '#22c55e' :
+                               business.verified_product_catalog.confidence === 'medium' ? '#f59e0b' :
+                               business.verified_product_catalog.confidence === 'low' ? '#ef4444' : '#5a6478'
+                      }}>
+                        {business.verified_product_catalog.confidence
+                          ? business.verified_product_catalog.confidence.charAt(0).toUpperCase() + business.verified_product_catalog.confidence.slice(1)
+                          : '—'}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="intelligence">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Brain className="h-5 w-5 text-purple-500" />
+                Company Intelligence
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {(business.linkedin_url || business.serp_enrichment?.linkedin_url) && (
+                <div>
+                  <h3 className="text-sm font-semibold mb-2" style={{ color: '#e8edf5' }}>LinkedIn</h3>
+                  <a
+                    href={business.linkedin_url || business.serp_enrichment?.linkedin_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      background: '#1c2837',
+                      border: '1px solid #2d3748',
+                      color: '#e8edf5',
+                      borderRadius: '6px',
+                      padding: '6px 14px',
+                      fontSize: '0.875rem',
+                      textDecoration: 'none',
+                    }}
+                  >
+                    <Linkedin className="h-4 w-4" style={{ color: '#0a66c2' }} />
+                    View on LinkedIn
+                  </a>
+                </div>
+              )}
+
+              {Array.isArray(business.serp_enrichment?.company_snippets) && business.serp_enrichment.company_snippets.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold mb-2" style={{ color: '#e8edf5' }}>Company Insights</h3>
+                  <ul className="space-y-1">
+                    {business.serp_enrichment.company_snippets.map((snippet: string, i: number) => (
+                      <li key={i} className="flex items-start gap-2 text-sm" style={{ color: '#5a6478' }}>
+                        <span style={{ color: '#3b82f6', marginTop: '2px', flexShrink: 0 }}>•</span>
+                        {snippet}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {Array.isArray(business.serp_enrichment?.product_snippets) && business.serp_enrichment.product_snippets.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold mb-2" style={{ color: '#e8edf5' }}>Product Insights</h3>
+                  <ul className="space-y-1">
+                    {business.serp_enrichment.product_snippets.map((snippet: string, i: number) => (
+                      <li key={i} className="flex items-start gap-2 text-sm" style={{ color: '#5a6478' }}>
+                        <span style={{ color: '#8b5cf6', marginTop: '2px', flexShrink: 0 }}>•</span>
+                        {snippet}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {!business.linkedin_url && !business.serp_enrichment?.linkedin_url &&
+               (!Array.isArray(business.serp_enrichment?.company_snippets) || business.serp_enrichment.company_snippets.length === 0) &&
+               (!Array.isArray(business.serp_enrichment?.product_snippets) || business.serp_enrichment.product_snippets.length === 0) && (
+                <p className="text-sm" style={{ color: '#5a6478' }}>No intelligence data available for this lead.</p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         <TabsContent value="contacts">
           <Card>
             <CardHeader>
@@ -456,6 +606,19 @@ export default function BusinessDetailsPage() {
                     <Badge className="bg-green-600 mt-2"><CheckCircle className="h-3 w-3 mr-1" />{business.email_found ? "Verified" : "Not found"}</Badge>
                   </div>
                 </div>
+
+              {primaryContactEmail && (
+                <div className="p-4 rounded-lg" style={{ background: '#1c2837', border: '1px solid #22c55e33' }}>
+                  <div className="flex items-center gap-3 mb-1">
+                    <CheckCircle className="h-4 w-4" style={{ color: '#22c55e' }} />
+                    <span className="text-sm font-semibold" style={{ color: '#e8edf5' }}>Primary Contact Email</span>
+                  </div>
+                  <div className="pl-7 font-medium" style={{ color: '#e8edf5' }}>{primaryContactEmail}</div>
+                  <div className="pl-7 mt-1">
+                    <Badge className="bg-green-600 text-xs"><CheckCircle className="h-2 w-2 mr-1" />Highest confidence</Badge>
+                  </div>
+                </div>
+              )}
 
                 <div className="p-4 bg-muted rounded-lg">
                   <div className="flex items-center justify-between mb-2">
