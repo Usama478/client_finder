@@ -1,0 +1,20 @@
+cat > ~/.cursor/mcp.json << 'EOF'
+{
+  "mcpServers": {
+    "code-review-graph": {
+      "command": "/Users/usama/.local/bin/uvx",
+      "args": ["code-review-graph", "serve"]
+    },
+    "ast-grep": {
+      "command": "/Users/usama/.local/bin/uv",
+      "args": [
+        "--directory",
+        "/Users/usama/ast-grep-mcp",
+        "run",
+        "main.py"
+      ],
+      "env": {}
+    }
+  }
+}
+EOF

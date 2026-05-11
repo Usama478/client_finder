@@ -125,6 +125,21 @@ export const api = {
   sessions: () => request<SearchSession[]>("/api/v1/sessions"),
   createSession: (data: any) =>
     request<any>("/api/v1/search", { method: "POST", body: JSON.stringify(data) }),
+  generateQueries: (sessionId: number) =>
+    request<{ maps_queries: string[]; web_queries: string[] }>(
+      `/api/v1/sessions/${sessionId}/generate-queries`,
+      { method: "POST" }
+    ),
+  updateApprovedQueries: (sessionId: number, queries: { maps_queries: string[]; web_queries: string[] }) =>
+    request<{ status: string }>(
+      `/api/v1/sessions/${sessionId}/approved-queries`,
+      { method: "PATCH", body: JSON.stringify(queries) }
+    ),
+  triggerDiscovery: (sessionId: number, platform: string) =>
+    request<any>("/api/v1/search", {
+      method: "POST",
+      body: JSON.stringify({ session_id: sessionId, user_id: 0, query: "", discovery_platform: platform, skip_discovery: false })
+    }),
 
   // Results
   results: (searchId: number) => request<any[]>(`/api/v1/results/${searchId}`),

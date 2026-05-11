@@ -29,5 +29,6 @@ class SearchSession(Base):
 
     ai_context = Column(String, nullable=True)
     approved_queries = Column(JSONB, nullable=True)
+    discovery_platform = Column(String(10), nullable=True, default="both")
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

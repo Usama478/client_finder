@@ -51,8 +51,15 @@ def _is_domain_email(email_found: Optional[str]) -> bool:
     return domain not in _FREE_EMAIL_DOMAINS
 
 
+_CITY_STATE_RE = re.compile(
+    r'\b([A-Z][a-zA-Z\s]{2,25}),\s*([A-Z]{2})\b'
+)
+
 def _has_physical_address(text: str) -> bool:
-    return bool(_STREET_RE.search(text) or _SCHEMA_STREET_RE.search(text))
+    if _STREET_RE.search(text) or _SCHEMA_STREET_RE.search(text):
+        return True
+    # Fallback: city + US state abbreviation (e.g. "Houston, TX")
+    return bool(_CITY_STATE_RE.search(text))
 
 
 # ---------------------------------------------------------------------------
@@ -69,6 +76,7 @@ def compute_legitimacy(
     ssl_valid: bool = False,
     website_live: bool = False,
     domain_age_years: Optional[int] = None,
+    contact_form_present: Optional[bool] = None,
 ) -> dict:
     """
     Score 11 legitimacy signals deterministically.
@@ -115,21 +123,25 @@ def compute_legitimacy(
     if has_contact_page:
         score += 8
 
-    # ---- Signal 5: Domain email (+15) ----
+    # ---- Signal 5: Domain email (+10) ----
     has_domain_email = _is_domain_email(email_found)
     if has_domain_email:
-        score += 15
+        score += 10
     else:
         risk_flags.append("no domain email found")
+
+    # ---- Signal 5b: Contact form present (+5, only if no domain email) ----
+    if not has_domain_email and contact_form_present:
+        score += 5
 
     # ---- Signal 6: Phone present (+8) ----
     if phone_found:
         score += 8
 
-    # ---- Signal 7: Physical address (+12) ----
+    # ---- Signal 7: Physical address (+8) ----
     physical_present = _has_physical_address(text)
     if physical_present:
-        score += 12
+        score += 8
     else:
         risk_flags.append("no physical address confirmed")
 

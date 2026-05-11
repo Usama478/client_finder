@@ -22,6 +22,7 @@ interface BusinessResult {
   business_type: string;
   address: string;
   website: string;
+  source: "maps" | "serp" | null;
   email_found: string | null;
   all_phones_found: string[];
   relevance_decision: "relevant" | "irrelevant" | "unknown" | "skipped" | "error" | null;
@@ -84,6 +85,17 @@ export default function SearchBusinessesPage() {
   const [apiContexts, setApiContexts]       = useState<ApiContext[]>([]);
   const [nextPageToken, setNextPageToken]   = useState<string | null>(null);
   const [pollingIds, setPollingIds]         = useState<Set<string>>(new Set());
+  const [aiContextInput, setAiContextInput] = useState("");
+  const [discoveryPlatform, setDiscoveryPlatform] = useState<"maps" | "serp" | "both">("both");
+  const [queryPanelVisible, setQueryPanelVisible] = useState(false);
+  const [generatingQueries, setGeneratingQueries] = useState(false);
+  const [queryGenerationError, setQueryGenerationError] = useState<string | null>(null);
+  const [mapsQueries, setMapsQueries] = useState<string[]>([]);
+  const [webQueries, setWebQueries]   = useState<string[]>([]);
+  const [selectedMapsQuery, setSelectedMapsQuery] = useState<number>(0);
+  const [selectedWebQuery, setSelectedWebQuery] = useState<number>(0);
+  const [pendingSessionId, setPendingSessionId] = useState<number | null>(null);
+  const [triggeringDiscovery, setTriggeringDiscovery] = useState(false);
   const pollingIntervalsRef          = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
   const isMountedRef                 = useRef(true);
   const cancelAIRef                  = useRef(false);
@@ -238,7 +250,104 @@ export default function SearchBusinessesPage() {
   const contexts = apiContexts.length > 0
     ? apiContexts.map(c => ({ id: (c.id ?? c.context_id) as number, name: c.name, desc: c.prompt_text || "" }))
     : [];
-  const contextLocked = selectedSessionId !== null;
+  const contextLocked = selectedSessionId !== null && !queryPanelVisible && pendingSessionId === null;
+
+  const handleGenerateQueries = async () => {
+    if (!searchQuery.trim()) { toast.error("Enter a search query"); return; }
+    if (!user) return;
+    if (selectedContext === null) { toast.error("Please select an AI context before continuing"); return; }
+    if (credits && credits.empty) { toast.error("Credits exhausted — contact your team to top up."); return; }
+    if (credits && credits.credits_remaining < 10) {
+      toast.error(`Insufficient credits. Search costs 10 credits. You have ${credits.credits_remaining}.`);
+      return;
+    }
+
+    setGeneratingQueries(true);
+    setQueryPanelVisible(false);
+    setQueryGenerationError(null);
+    setMapsQueries([]);
+    setWebQueries([]);
+
+    try {
+      const finalIndustry = showOtherIndustry ? otherIndustry : industry;
+      const parts = [searchQuery, finalIndustry, location].filter(Boolean);
+      const finalQuery = parts.join(" ");
+
+      // Step 1: Create session without running discovery
+      const sessionResp = await api.createSession({
+        user_id: user.user_id,
+        query: finalQuery,
+        search_location: location || "",
+        context_id: selectedContext ?? null,
+        ai_context: (apiContexts.find(c => (c.id ?? c.context_id) === selectedContext))?.prompt_text || null,
+        discovery_platform: discoveryPlatform,
+        skip_discovery: true,
+      });
+
+      const createdSessionId = sessionResp?.search_id;
+      if (!createdSessionId) throw new Error("Session creation failed");
+      setPendingSessionId(createdSessionId);
+
+      // Step 2: Generate queries
+      const suggestions = await api.generateQueries(createdSessionId);
+      setMapsQueries(suggestions.maps_queries || []);
+      setWebQueries(suggestions.web_queries || []);
+      setSelectedMapsQuery(0);
+      setSelectedWebQuery(0);
+      setQueryPanelVisible(true);
+    } catch (err: unknown) {
+      setQueryGenerationError((err as Error).message || "Failed to generate queries");
+    } finally {
+      setGeneratingQueries(false);
+    }
+  };
+
+  const handleStartDiscovery = async () => {
+    if (!pendingSessionId || !user) return;
+    setTriggeringDiscovery(true);
+    const toastId = toast.loading("Starting discovery…");
+    try {
+      // Save user-edited queries back to session
+      const queriesToSave: { maps_queries: string[]; web_queries: string[] } = { maps_queries: [], web_queries: [] };
+      if (discoveryPlatform === "maps" || discoveryPlatform === "both") queriesToSave.maps_queries = mapsQueries[selectedMapsQuery]?.trim() ? [mapsQueries[selectedMapsQuery]] : mapsQueries.filter(q => q.trim()).slice(0, 1);
+      if (discoveryPlatform === "serp" || discoveryPlatform === "both") queriesToSave.web_queries = webQueries[selectedWebQuery]?.trim() ? [webQueries[selectedWebQuery]] : webQueries.filter(q => q.trim()).slice(0, 1);
+      await api.updateApprovedQueries(pendingSessionId, queriesToSave);
+
+      // Trigger actual discovery
+      const finalIndustry = showOtherIndustry ? otherIndustry : industry;
+      const parts = [searchQuery, finalIndustry, location].filter(Boolean);
+      const finalQuery = parts.join(" ");
+      await api.createSession({
+        user_id: user.user_id,
+        query: finalQuery,
+        search_location: location || "",
+        context_id: selectedContext ?? null,
+        ai_context: (apiContexts.find(c => (c.id ?? c.context_id) === selectedContext))?.prompt_text || null,
+        discovery_platform: discoveryPlatform,
+        skip_discovery: false,
+        session_id: pendingSessionId,
+      });
+
+      toast.dismiss(toastId);
+      toast.success("Discovery complete!");
+      await refreshCredits();
+      const newSessions = await api.sessions(user.user_id);
+      if (!isMountedRef.current) return;
+      setSessions((newSessions || []) as SearchSession[]);
+      const targetSession = (newSessions || []).find((s: SearchSession) => s.search_id === pendingSessionId);
+      if (targetSession) {
+        setSelectedSessionId(targetSession.search_id);
+        localStorage.setItem("cf_last_session_id", String(targetSession.search_id));
+      }
+      setQueryPanelVisible(false);
+      setPendingSessionId(null);
+    } catch (err: unknown) {
+      toast.dismiss(toastId);
+      toast.error((err as Error).message || "Discovery failed");
+    } finally {
+      if (isMountedRef.current) setTriggeringDiscovery(false);
+    }
+  };
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) { toast.error("Enter a search query"); return; }
@@ -548,6 +657,7 @@ export default function SearchBusinessesPage() {
     category: r.business_type || "—",
     location: r.address || "—",
     website: r.website || "",
+    source: r.source || "maps",
     email: r.email_found || null,
     phone: (r.all_phones_found || [])[0] || null,
     relevanceScore: r.relevance_decision === "irrelevant" ? 0 : Math.round(r.relevance_score || 0),
@@ -609,7 +719,7 @@ export default function SearchBusinessesPage() {
             <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest block mb-1.5">Keywords / Business Type</label>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <input style={{ ...inputStyle, paddingLeft: 32 }} placeholder="e.g. textile exporters, wholesale distributors…" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSearch()} />
+              <input style={{ ...inputStyle, paddingLeft: 32 }} placeholder="e.g. textile exporters, wholesale distributors…" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} onKeyDown={e => e.key === "Enter" && handleGenerateQueries()} />
             </div>
           </div>
           <div className="min-w-[160px]">
@@ -655,15 +765,137 @@ export default function SearchBusinessesPage() {
               />
             </div>
           )}
-          <button style={btnPrimary} onClick={handleSearch}
-            disabled={searching || selectedContext === null || !!(credits && credits.empty)}>
-            {searching && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
-            {!searching && <Search className="h-3.5 w-3.5" />}
-            {searching ? "Searching…" : "Search"}
+        </div>
+
+        {/* AI Context free-text + Discovery Platform */}
+        <div className="mt-3 flex flex-wrap gap-3 items-end">
+          <div>
+            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest block mb-1.5">Discovery Source</label>
+            <div className="flex gap-1.5">
+              {(["maps", "serp", "both"] as const).map(opt => (
+                <button
+                  key={opt}
+                  disabled={queryPanelVisible}
+                  onClick={() => setDiscoveryPlatform(opt)}
+                  style={{
+                    background: discoveryPlatform === opt ? "rgba(59,130,246,0.12)" : "var(--muted)",
+                    border: discoveryPlatform === opt ? "1px solid #3b82f6" : "1px solid var(--border)",
+                    color: discoveryPlatform === opt ? "#60a5fa" : "var(--muted-foreground)",
+                    borderRadius: 6,
+                    padding: "7px 14px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: queryPanelVisible ? "not-allowed" : "pointer",
+                    fontFamily: "DM Sans, sans-serif",
+                    opacity: queryPanelVisible ? 0.5 : 1,
+                  }}>
+                  {opt === "maps" ? "Google Maps" : opt === "serp" ? "Web Search" : "Both"}
+                </button>
+              ))}
+            </div>
+          </div>
+          <button
+            style={btnPrimary}
+            onClick={handleGenerateQueries}
+            disabled={generatingQueries || queryPanelVisible || selectedContext === null || !!(credits && credits.empty)}>
+            {generatingQueries ? <><RefreshCw className="h-3.5 w-3.5 animate-spin" />Generating…</> : <><Sparkles className="h-3.5 w-3.5" />Generate Queries</>}
           </button>
         </div>
+
         {selectedContext === null && (
           <span className="text-[11px] text-red-400 mt-1 block">Please select an AI context before searching</span>
+        )}
+
+        {/* Query review panel */}
+        {queryPanelVisible && (
+          <div className="mt-4 pt-4" style={{ borderTop: "1px solid var(--border)" }}>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-[12px] font-bold text-foreground" style={{ fontFamily: "Syne, sans-serif" }}>Review &amp; Edit Queries</span>
+              <button
+                style={{ ...btnGhost, fontSize: 11 }}
+                onClick={() => { setQueryPanelVisible(false); setPendingSessionId(null); }}>
+                ✕ Cancel
+              </button>
+            </div>
+            <div className="space-y-4" style={{ background: "var(--muted)", borderRadius: 8, padding: "16px" }}>
+              {(discoveryPlatform === "maps" || discoveryPlatform === "both") && (
+                <div>
+                  <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-2">Google Maps Queries</div>
+                  <div className="space-y-1.5">
+                    {mapsQueries.map((q, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center gap-2"
+                        onClick={() => setSelectedMapsQuery(i)}
+                        style={{ cursor: "pointer", borderRadius: 6, padding: "2px 0", background: selectedMapsQuery === i ? "rgba(99,102,241,0.10)" : "transparent", border: selectedMapsQuery === i ? "1px solid rgba(99,102,241,0.35)" : "1px solid transparent" }}
+                      >
+                        <span style={{ width: 14, height: 14, borderRadius: "50%", border: `2px solid ${selectedMapsQuery === i ? "#818cf8" : "var(--muted-foreground)"}`, background: selectedMapsQuery === i ? "#818cf8" : "transparent", display: "inline-block", flexShrink: 0, marginLeft: 6 }} />
+                        <input
+                          style={{ ...inputStyle, flex: 1, fontSize: 12 }}
+                          value={q}
+                          onChange={e => setMapsQueries(prev => prev.map((v, idx) => idx === i ? e.target.value : v))}
+                        />
+                        <button
+                          onClick={() => setMapsQueries(prev => prev.filter((_, idx) => idx !== i))}
+                          style={{ background: "transparent", border: "none", color: "var(--muted-foreground)", cursor: "pointer", fontSize: 14, padding: "0 4px" }}>
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      onClick={() => setMapsQueries(prev => [...prev, ""])}
+                      style={{ background: "transparent", border: "1px dashed var(--border)", borderRadius: 6, color: "var(--muted-foreground)", fontSize: 11, padding: "4px 12px", cursor: "pointer", marginTop: 4 }}>
+                      + Add query
+                    </button>
+                  </div>
+                </div>
+              )}
+              {(discoveryPlatform === "serp" || discoveryPlatform === "both") && (
+                <div>
+                  <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-2">Web Search Queries</div>
+                  <div className="space-y-1.5">
+                    {webQueries.map((q, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center gap-2"
+                        onClick={() => setSelectedWebQuery(i)}
+                        style={{ cursor: "pointer", borderRadius: 6, padding: "2px 0", background: selectedWebQuery === i ? "rgba(99,102,241,0.10)" : "transparent", border: selectedWebQuery === i ? "1px solid rgba(99,102,241,0.35)" : "1px solid transparent" }}
+                      >
+                        <span style={{ width: 14, height: 14, borderRadius: "50%", border: `2px solid ${selectedWebQuery === i ? "#818cf8" : "var(--muted-foreground)"}`, background: selectedWebQuery === i ? "#818cf8" : "transparent", display: "inline-block", flexShrink: 0, marginLeft: 6 }} />
+                        <input
+                          style={{ ...inputStyle, flex: 1, fontSize: 12 }}
+                          value={q}
+                          onChange={e => setWebQueries(prev => prev.map((v, idx) => idx === i ? e.target.value : v))}
+                        />
+                        <button
+                          onClick={() => setWebQueries(prev => prev.filter((_, idx) => idx !== i))}
+                          style={{ background: "transparent", border: "none", color: "var(--muted-foreground)", cursor: "pointer", fontSize: 14, padding: "0 4px" }}>
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      onClick={() => setWebQueries(prev => [...prev, ""])}
+                      style={{ background: "transparent", border: "1px dashed var(--border)", borderRadius: 6, color: "var(--muted-foreground)", fontSize: 11, padding: "4px 12px", cursor: "pointer", marginTop: 4 }}>
+                      + Add query
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end mt-3">
+              <button style={btnPrimary} onClick={handleStartDiscovery} disabled={triggeringDiscovery}>
+                {triggeringDiscovery ? <><RefreshCw className="h-3.5 w-3.5 animate-spin" />Starting…</> : <><Search className="h-3.5 w-3.5" />Start Discovery</>}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {queryGenerationError && !queryPanelVisible && (
+          <div className="mt-3 flex items-center gap-3 p-3 rounded-lg" style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)" }}>
+            <span className="text-[12px] text-red-400 flex-1">{queryGenerationError}</span>
+            <button style={{ ...btnGhost, fontSize: 11 }} onClick={handleGenerateQueries}>Retry</button>
+          </div>
         )}
 
         {/* Context selector */}
@@ -910,8 +1142,24 @@ export default function SearchBusinessesPage() {
               </div>
 
               <div style={{ minWidth: 0 }}>
-                <span className="inline-flex px-2 py-0.5 rounded text-[11px] font-medium"
-                  style={{ background: "var(--border)", color: "var(--muted-foreground)" }}>{r.category}</span>
+                <div>
+                  <span style={{
+                    fontSize: 9,
+                    fontWeight: 700,
+                    padding: "1px 6px",
+                    borderRadius: 4,
+                    letterSpacing: "0.04em",
+                    marginBottom: 3,
+                    display: "inline-block",
+                    background: r.source === "serp" ? "rgba(99,102,241,0.15)" : "rgba(34,197,94,0.12)",
+                    color: r.source === "serp" ? "#818cf8" : "#4ade80",
+                    border: `1px solid ${r.source === "serp" ? "rgba(99,102,241,0.3)" : "rgba(34,197,94,0.25)"}`
+                  }}>
+                    {r.source === "serp" ? "WEB" : "MAPS"}
+                  </span>
+                  <span className="inline-flex px-2 py-0.5 rounded text-[11px] font-medium"
+                    style={{ background: "var(--border)", color: "var(--muted-foreground)" }}>{r.category}</span>
+                </div>
               </div>
 
               <div className="text-[12px] text-muted-foreground flex items-center gap-1" style={{ minWidth: 0, overflow: "hidden" }}>

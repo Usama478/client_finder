@@ -67,12 +67,27 @@ def _try_mark_verification_failed(business_id: int, reason: str) -> None:
 
 
 def _normalize_url(url: str) -> str:
+    from urllib.parse import urlparse, urlunparse
     value = (url or "").strip()
     if not value:
         return ""
-    if value.startswith(("http://", "https://")):
-        return value
-    return f"https://{value}"
+    if not value.startswith(("http://", "https://")):
+        value = f"https://{value}"
+    parsed = urlparse(value)
+    # Strip UTM tracking parameters entirely
+    has_utm = any(
+        p in (parsed.query or "")
+        for p in ("utm_source", "utm_medium", "utm_content", "utm_campaign", "utm_term")
+    )
+    # Strip tracking-style paths (store locator endpoints, redirect paths)
+    path_looks_like_tracking = any(
+        seg in parsed.path
+        for seg in ("/store/get/", "/kg/", "/redirect", "/track", "/click")
+    )
+    if has_utm or path_looks_like_tracking:
+        # Reduce to root domain only
+        return urlunparse((parsed.scheme, parsed.netloc, "", "", "", ""))
+    return value
 
 
 def _hostname(url: str) -> str:
@@ -586,14 +601,17 @@ def run_verification_for_business(business_id: int) -> Dict[str, object]:
         _lead_for_enrich = _enrich_db.query(SearchResult).filter(SearchResult.result_id == business_id).first()
         if _lead_for_enrich and _lead_for_enrich.serp_enrichment is None:
             import asyncio
-            try:
-                loop = asyncio.get_event_loop()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-            loop.run_until_complete(
-                enrich_lead_via_serp(business_id, _enrich_db)
-            )
+            import concurrent.futures
+            def _run_enrich():
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                try:
+                    new_loop.run_until_complete(enrich_lead_via_serp(business_id, _enrich_db))
+                finally:
+                    new_loop.close()
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _pool:
+                future = _pool.submit(_run_enrich)
+                future.result(timeout=30)
     except Exception as _enrich_exc:
         logger.warning("serp_enrichment FAILED business_id=%s error=%s", business_id, _enrich_exc)
     finally:

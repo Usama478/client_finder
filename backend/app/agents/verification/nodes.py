@@ -336,9 +336,12 @@ def targeted_page_collector(state: VerificationAgentState) -> dict:
         result = collect_pages(url, already_collected)
 
         merged = result.get("merged_text") or ""
-        # Append homepage scrape from Relevancy Agent if collector got nothing
         if not merged:
-            merged = state.get("scraped_text_content") or ""
+            return {
+                "full_site_text": "",
+                "collection_blocked": True,
+                **_system_failure_payload("collection", "collector returned no text content"),
+            }
 
         collection_blocked = (
             len(result.get("pages_collected") or {}) == 0
@@ -630,6 +633,7 @@ def legitimacy_analyzer(state: VerificationAgentState) -> dict:
             ssl_valid=state.get("ssl_valid") or False,
             website_live=state.get("website_alive") or False,
             domain_age_years=state.get("domain_age_years"),
+            contact_form_present=state.get("contact_form_present"),
         )
         return {
             "legitimacy_score": result.get("legitimacy_score", 0),

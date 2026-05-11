@@ -23,7 +23,7 @@ def _route_after_gatekeeper(state: VerificationAgentState) -> str:
       because final_contract_builder runs before it on every path.
     """
     if state.get("website_alive") is False and state.get("collection_blocked") is not True:
-        return "final_contract_builder"
+        return "dead_site_handler"
     return "site_collector"
 
 
@@ -45,20 +45,29 @@ workflow.add_node("size_estimator",            lambda s: _nodes.size_estimator(s
 workflow.add_node("llm_analyst",               lambda s: _nodes.business_intelligence_extractor(s))
 workflow.add_node("metric_analyst",            lambda s: _nodes.email_context_compiler(s))
 workflow.add_node("final_contract_builder",    lambda s: _nodes.final_contract_builder(s))
+workflow.add_node("dead_site_handler", lambda s: {
+    "verification_result": "manual_review",
+    "verification_score": 0,
+    "verification_confidence": 0.0,
+    "verification_reason": "Website unreachable — manual review required",
+    "manual_review": True,
+    "is_finalized": True,
+})
 
 # --- Entry ---
 workflow.set_entry_point("input_preparation")
 
 # --- Linear: input_preparation → gatekeeper ---
 workflow.add_edge("input_preparation", "gatekeeper")
+workflow.add_edge("dead_site_handler", "final_contract_builder")
 
 # --- Branch: alive sites → full pipeline; dead sites → email_context_compiler ---
 workflow.add_conditional_edges(
     "gatekeeper",
     _route_after_gatekeeper,
     {
-        "site_collector":         "site_collector",
-        "final_contract_builder": "final_contract_builder",
+        "site_collector":    "site_collector",
+        "dead_site_handler": "dead_site_handler",
     },
 )
 

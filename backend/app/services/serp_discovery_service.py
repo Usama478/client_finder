@@ -9,13 +9,30 @@ from app.models.search_result import SearchResult
 logger = logging.getLogger(__name__)
 
 BLOCKED_DOMAINS = {
-    "facebook.com", "instagram.com", "twitter.com", "linkedin.com",
-    "youtube.com", "tiktok.com", "pinterest.com",
-    "wikipedia.org", "reddit.com",
-    "amazon.com", "amazon.com.au", "ebay.com", "etsy.com",
-    "alibaba.com", "aliexpress.com",
-    "yelp.com", "trustpilot.com", "glassdoor.com",
+    # Social media
+    "facebook.com", "instagram.com", "twitter.com", "x.com", "linkedin.com",
+    "youtube.com", "tiktok.com", "pinterest.com", "snapchat.com",
+    # Reference/community
+    "wikipedia.org", "reddit.com", "quora.com", "medium.com",
+    # Marketplaces
+    "amazon.com", "amazon.com.au", "amazon.co.uk", "ebay.com", "etsy.com",
+    "alibaba.com", "aliexpress.com", "asos.com", "shein.com", "wish.com",
+    "depop.com", "poshmark.com", "thredup.com", "vinted.com",
+    # Directories & review sites
+    "yelp.com", "trustpilot.com", "glassdoor.com", "tripadvisor.com",
+    "yellowpages.com", "bbb.org", "manta.com", "chamberofcommerce.com",
+    # News & media
     "bloomberg.com", "reuters.com", "forbes.com", "bbc.com",
+    "vogue.com", "elle.com", "harpersbazaar.com", "gq.com",
+    "businessinsider.com", "techcrunch.com", "wwd.com", "fashionista.com",
+    "whowhatwear.com", "refinery29.com", "byrdie.com", "popsugar.com",
+    # Search & tech
+    "google.com", "google.com.au", "maps.google.com", "bing.com",
+    "yahoo.com", "apple.com", "shopify.com", "wordpress.com", "wix.com",
+    # Fashion aggregators & directories
+    "stylight.com", "lyst.com", "farfetch.com", "net-a-porter.com",
+    "matchesfashion.com", "ssense.com", "revolve.com", "nordstrom.com",
+    "macys.com", "bloomingdales.com", "zappos.com",
 }
 
 
@@ -58,7 +75,7 @@ async def discover_via_serp(web_queries: list[str], session_id: int, user_id: in
                 params = {
                     "api_key": api_key,
                     "q": query,
-                    "num": 10,
+                    "num": 30,
                     "output": "json"
                 }
                 response = await client.get("https://api.valueserp.com/search", params=params)

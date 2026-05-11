@@ -552,35 +552,55 @@ export default function BusinessDetailsPage() {
                 </div>
               )}
 
-              {Array.isArray(business.serp_enrichment?.company_snippets) && business.serp_enrichment.company_snippets.length > 0 && (
+              {(business.serp_enrichment?.company_summary || (Array.isArray(business.serp_enrichment?.company_snippets) && business.serp_enrichment.company_snippets.length > 0)) && (
                 <div>
                   <h3 className="text-sm font-semibold mb-2" style={{ color: '#e8edf5' }}>Company Insights</h3>
-                  <ul className="space-y-1">
-                    {business.serp_enrichment.company_snippets.map((snippet: string, i: number) => (
-                      <li key={i} className="flex items-start gap-2 text-sm" style={{ color: '#5a6478' }}>
-                        <span style={{ color: '#3b82f6', marginTop: '2px', flexShrink: 0 }}>•</span>
-                        {snippet}
-                      </li>
-                    ))}
-                  </ul>
+                  {business.serp_enrichment?.company_summary ? (
+                    <p className="text-sm leading-relaxed" style={{ color: '#9aa3b0' }}>
+                      {business.serp_enrichment.company_summary}
+                    </p>
+                  ) : (
+                    <ul className="space-y-1">
+                      {business.serp_enrichment.company_snippets
+                        .map((s: string) => s.replace(/\.\.\.Read more/gi, "").replace(/…\s*Read more/gi, "").replace(/\.\.\.$/, "").replace(/…$/, "").trim())
+                        .filter((s: string) => s.length >= 40 && (s.match(/·/g) || []).length < 2)
+                        .map((snippet: string, i: number) => (
+                          <li key={i} className="flex items-start gap-2 text-sm" style={{ color: '#5a6478' }}>
+                            <span style={{ color: '#3b82f6', marginTop: '2px', flexShrink: 0 }}>•</span>
+                            {snippet}
+                          </li>
+                        ))}
+                    </ul>
+                  )}
                 </div>
               )}
 
-              {Array.isArray(business.serp_enrichment?.product_snippets) && business.serp_enrichment.product_snippets.length > 0 && (
+              {(business.serp_enrichment?.product_summary || (Array.isArray(business.serp_enrichment?.product_snippets) && business.serp_enrichment.product_snippets.length > 0)) && (
                 <div>
                   <h3 className="text-sm font-semibold mb-2" style={{ color: '#e8edf5' }}>Product Insights</h3>
-                  <ul className="space-y-1">
-                    {business.serp_enrichment.product_snippets.map((snippet: string, i: number) => (
-                      <li key={i} className="flex items-start gap-2 text-sm" style={{ color: '#5a6478' }}>
-                        <span style={{ color: '#8b5cf6', marginTop: '2px', flexShrink: 0 }}>•</span>
-                        {snippet}
-                      </li>
-                    ))}
-                  </ul>
+                  {business.serp_enrichment?.product_summary ? (
+                    <p className="text-sm leading-relaxed" style={{ color: '#9aa3b0' }}>
+                      {business.serp_enrichment.product_summary}
+                    </p>
+                  ) : (
+                    <ul className="space-y-1">
+                      {business.serp_enrichment.product_snippets
+                        .map((s: string) => s.replace(/\.\.\.Read more/gi, "").replace(/…\s*Read more/gi, "").replace(/\.\.\.$/, "").replace(/…$/, "").trim())
+                        .filter((s: string) => s.length >= 40 && (s.match(/·/g) || []).length < 2)
+                        .map((snippet: string, i: number) => (
+                          <li key={i} className="flex items-start gap-2 text-sm" style={{ color: '#5a6478' }}>
+                            <span style={{ color: '#8b5cf6', marginTop: '2px', flexShrink: 0 }}>•</span>
+                            {snippet}
+                          </li>
+                        ))}
+                    </ul>
+                  )}
                 </div>
               )}
 
               {!business.linkedin_url && !business.serp_enrichment?.linkedin_url &&
+               !business.serp_enrichment?.company_summary &&
+               !business.serp_enrichment?.product_summary &&
                (!Array.isArray(business.serp_enrichment?.company_snippets) || business.serp_enrichment.company_snippets.length === 0) &&
                (!Array.isArray(business.serp_enrichment?.product_snippets) || business.serp_enrichment.product_snippets.length === 0) && (
                 <p className="text-sm" style={{ color: '#5a6478' }}>No intelligence data available for this lead.</p>

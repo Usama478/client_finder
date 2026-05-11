@@ -6,7 +6,7 @@ from langchain_openai import ChatOpenAI
 logger = logging.getLogger(__name__)
 
 
-async def generate_search_queries(user_profile: dict, ai_context: str) -> dict:
+async def generate_search_queries(user_profile: dict, ai_context: str, search_intent: str = "") -> dict:
     """
     Generate structured search queries for Google Maps and web search.
     
@@ -17,12 +17,21 @@ async def generate_search_queries(user_profile: dict, ai_context: str) -> dict:
     Returns:
         Dictionary with 'maps_queries' and 'web_queries' keys, each containing a list of strings
     """
-    system_prompt = """You are a search query generator. Return ONLY a valid JSON object with no preamble, no markdown fences, and no explanation.
+    system_prompt = """You are a B2B lead discovery query generator. Your ONLY job is to find BUYERS and CLIENTS for a manufacturer/exporter.
 
+CRITICAL RULES:
+- Your goal is to find clothing brand and retailer WEBSITES in the target location
+- Web queries must be BROAD DISCOVERY queries — find clothing company websites, brand pages, retailer sites
+- Good web query patterns: "clothing brands [city]", "fashion boutiques [city]", "streetwear label [city]", "activewear brand [city] shop"
+- BAD web queries: anything with "wholesale buyers", "sourcing", "B2B", "suppliers" — these return too few Google results
+- Maps queries: find physical retail stores, boutiques, clothing shops in the target city
+- The relevancy agent will filter results for fit — your job is just to find clothing company websites
+- NEVER generate queries that find Pakistani suppliers, manufacturers, or exporters
+- The search intent is your most important signal — extract the location and niche from it
+
+Return ONLY a valid JSON object with no preamble, no markdown fences, and no explanation.
 The JSON object must have exactly this structure:
-{"maps_queries": ["query1", "query2", "query3"], "web_queries": ["query1", "query2", "query3", "query4"]}
-
-Generate 3-5 Google Maps queries (short, location+business-type focused, suitable for the Maps text search API) and 4-6 web search queries (richer, intent-driven, B2B focused)."""
+{"maps_queries": ["query1", "query2", "query3"], "web_queries": ["query1", "query2", "query3", "query4"]}"""
 
     user_prompt = f"""User Profile:
 {json.dumps(user_profile, indent=2)}
@@ -30,8 +39,10 @@ Generate 3-5 Google Maps queries (short, location+business-type focused, suitabl
 AI Context:
 {ai_context}
 
-Generate 3-5 Google Maps queries (short, location+business-type focused, suitable for the Maps text search API) and 4-6 web search queries (richer, intent-driven, B2B focused).
+Search Intent (CRITICAL — build all queries around this location and niche):
+{search_intent}
 
+Generate queries that find BUYERS matching the search intent above.
 Return ONLY the JSON object with no additional text."""
 
     llm = ChatOpenAI(

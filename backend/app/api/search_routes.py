@@ -21,6 +21,9 @@ class SearchRequest(BaseModel):
     page_token: Optional[str] = None
     context_id: Optional[int] = None
     session_id: Optional[int] = None
+    ai_context: Optional[str] = None
+    discovery_platform: Optional[str] = "both"
+    skip_discovery: Optional[bool] = False
 
 class ClientStatusUpdate(BaseModel):
     is_saved_client: bool
@@ -45,35 +48,61 @@ async def search_endpoint(request: SearchRequest, db: Session = Depends(get_db),
     check_credits(db, current_user.user_id, 10)
 
     try:
-        result = search_google_maps(
-            db=db,
-            user_id=request.user_id,
-            query=request.query,
-            page_token=request.page_token,
-            context_id=request.context_id,
-            session_id=request.session_id,
-        )
-        if "error" in result:
-            raise HTTPException(status_code=400, detail=result["error"])
-        
-        # Run SERP discovery if approved_queries exist on the session
-        session_id_used = result.get("search_id")
-        if session_id_used:
-            search_sess = db.query(SearchSession).filter(
-                SearchSession.search_id == session_id_used
-            ).first()
-            if search_sess and search_sess.approved_queries:
-                web_queries = search_sess.approved_queries.get("web_queries") or []
-                if web_queries:
-                    from app.services.serp_discovery_service import discover_via_serp
-                    serp_results = await discover_via_serp(
-                        web_queries=web_queries,
-                        session_id=session_id_used,
-                        user_id=current_user.user_id,
-                        db=db,
-                    )
-                    result["serp_results_added"] = len(serp_results)
-        
+        # If skip_discovery is True, create the session record only (no Maps/SERP calls)
+        if request.skip_discovery:
+            from app.models.search_session import SearchSession as SS
+            from datetime import datetime
+            new_session = SS(
+                user_id=request.user_id,
+                search_query=request.query,
+                created_at=datetime.utcnow(),
+                context_id=request.context_id,
+                ai_context=request.ai_context,
+                discovery_platform=request.discovery_platform or "both",
+            )
+            db.add(new_session)
+            db.commit()
+            db.refresh(new_session)
+            result = {
+                "status": "session_created",
+                "search_id": new_session.search_id,
+                "results_added": 0,
+                "next_page_token": None,
+            }
+        else:
+            result = search_google_maps(
+                db=db,
+                user_id=request.user_id,
+                query=request.query,
+                page_token=request.page_token,
+                context_id=request.context_id,
+                session_id=request.session_id,
+                ai_context=request.ai_context,
+                discovery_platform=request.discovery_platform or "both",
+            )
+            if "error" in result:
+                raise HTTPException(status_code=400, detail=result["error"])
+
+            session_id_used = result.get("search_id")
+            if session_id_used:
+                search_sess = db.query(SearchSession).filter(
+                    SearchSession.search_id == session_id_used
+                ).first()
+                platform = (search_sess.discovery_platform or "both") if search_sess else "both"
+
+                if search_sess and search_sess.approved_queries:
+                    if platform in ("serp", "both"):
+                        web_queries = search_sess.approved_queries.get("web_queries") or []
+                        if web_queries:
+                            from app.services.serp_discovery_service import discover_via_serp
+                            serp_results = await discover_via_serp(
+                                web_queries=web_queries,
+                                session_id=session_id_used,
+                                user_id=current_user.user_id,
+                                db=db,
+                            )
+                            result["serp_results_added"] = len(serp_results)
+
         deduct_credits(db, current_user.user_id, 10, "search_session", reference_id=str(result.get("search_id")), reference_type="session")
         db.commit()
         try:
@@ -155,6 +184,25 @@ def list_search_sessions(db: Session = Depends(get_db), current_user: User = Dep
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.patch("/sessions/{session_id}/approved-queries")
+async def update_approved_queries(
+    session_id: int,
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Save user-edited approved queries back to the session before triggering discovery."""
+    session = db.query(SearchSession).filter(
+        SearchSession.search_id == session_id,
+        SearchSession.user_id == current_user.user_id
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    session.approved_queries = payload
+    db.commit()
+    return {"status": "updated"}
+
+
 @router.post("/sessions/{session_id}/generate-queries")
 async def generate_search_queries_endpoint(
     session_id: int,
@@ -187,7 +235,7 @@ async def generate_search_queries_endpoint(
     
     # Generate queries
     from app.services.query_generator_service import generate_search_queries
-    suggestions = await generate_search_queries(user_profile=user_profile, ai_context=ai_context)
+    suggestions = await generate_search_queries(user_profile=user_profile, ai_context=ai_context, search_intent=session.search_query or "")
     
     # Save to session
     session.approved_queries = suggestions
