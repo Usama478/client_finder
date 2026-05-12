@@ -24,6 +24,7 @@ import AdminDashboardPage from "./pages/admin/AdminDashboardPage";
 import UserManagementPage from "./pages/admin/UserManagementPage";
 import ApiKeyManagementPage from "./pages/admin/ApiKeyManagementPage";
 import ThresholdConfigPage from "./pages/admin/ThresholdConfigPage";
+import CampaignEnginePage from "./pages/app/CampaignEnginePage"
 
 export const router = createBrowserRouter([
   {
@@ -61,6 +62,7 @@ export const router = createBrowserRouter([
       { path: "email", Component: EmailWorkspacePage },
       { path: "activity", Component: ActivityPage },
       { path: "contexts", Component: ContextsPage },
+      { path: "campaigns", Component: CampaignEnginePage },
       { path: "billing", Component: BillingPage },
       { path: "settings", Component: SettingsPage },
       { path: "admin", element: <ProtectedRoute requireAdmin={true}><AdminDashboardPage /></ProtectedRoute> },

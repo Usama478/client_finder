@@ -12,3 +12,4 @@ from app.models.email_draft import EmailDraft
 from app.models.user_credit import UserCredit
 from app.models.credit_transaction import CreditTransaction
 from app.models.activity_log import ActivityLog
+from app.models.campaign import Campaign

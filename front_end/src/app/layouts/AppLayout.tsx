@@ -44,6 +44,7 @@ export default function AppLayout() {
   const navItems = [
     { icon: LayoutDashboard, label: "Dashboard", path: "/app", badge: null },
     { icon: Search, label: "Search Businesses", path: "/app/search", badge: "3" },
+    { icon: Zap, label: "Campaign Engine", path: "/app/campaigns", badge: null },
     { icon: Users, label: "Clients", path: "/app/clients", badge: "47", badgeGreen: true },
     { icon: UserCircle, label: "Contacts", path: "/app/contacts", badge: null },
     { icon: Activity, label: "Activity", path: "/app/activity", badge: null },
@@ -74,6 +75,7 @@ export default function AppLayout() {
     "/app/activity": { title: "Activity", sub: "Operational timeline" },
     "/app/email": { title: "Email Workspace", sub: "Outreach generation & analytics" },
     "/app/contexts": { title: "AI Contexts", sub: "Relevance configuration" },
+    "/app/campaigns": { title: "Campaign Engine", sub: "Automated discovery → relevance → verification" },
     "/app/billing": { title: "Billing", sub: "Plan & usage" },
     "/app/settings": { title: "Settings", sub: "Profile & preferences" },
     "/app/admin": { title: "Admin Panel", sub: "Platform management" },

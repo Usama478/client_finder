@@ -72,6 +72,8 @@ app.include_router(auth_routes.router)
 app.include_router(exporter_profile_routes.router)
 app.include_router(contacts_routes.router)
 app.include_router(admin_routes.router)
+from app.api.routes import campaign_routes
+app.include_router(campaign_routes.router)
 
 
 @app.get("/")
