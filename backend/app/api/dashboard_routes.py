@@ -161,6 +161,13 @@ def get_result_detail(result_id: int, db: Session = Depends(get_db), current_use
         ctx = db.query(SearchContext).filter(SearchContext.id == session_row.context_id).first()
         if ctx:
             context_name = ctx.name
+    if context_name is None and lead.campaign_id:
+        from app.models.campaign import Campaign
+        campaign_row = db.query(Campaign).filter(Campaign.id == lead.campaign_id).first()
+        if campaign_row and campaign_row.context_id:
+            ctx = db.query(SearchContext).filter(SearchContext.id == campaign_row.context_id).first()
+            if ctx:
+                context_name = ctx.name
     drafts = db.query(EmailDraft).filter(
         EmailDraft.business_id == result_id
     ).order_by(EmailDraft.created_at.desc()).all()

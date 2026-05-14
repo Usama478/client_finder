@@ -57,7 +57,8 @@ def run_relevancy_v2(request: RelevancyV2RunRequest, db: Session = Depends(get_d
     # Fast-path: if the lead already has completed scraped content, skip the
     # expensive full-crawl graph and run only the LLM judge (rescore path).
     lead = db.query(SearchResult).filter(
-        SearchResult.result_id == request.business_id
+        SearchResult.result_id == request.business_id,
+        SearchResult.user_id == current_user.user_id
     ).first()
     use_fast_path = (
         lead is not None

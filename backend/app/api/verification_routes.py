@@ -58,9 +58,8 @@ async def verify_batch_debug(request: RawRequest, current_user = Depends(get_cur
         return {"status": "error", "raw": body_str, "error": str(e)}
 
 @router.post("/verify/batch")
-async def verify_batch(
+def verify_batch(
     batch_request: BatchVerifyRequest,
-    raw_request: FastAPIRequest,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ) -> Dict[str, Any]:
@@ -70,28 +69,34 @@ async def verify_batch(
     Returns a summary dict with per-business outcomes.
     Individual failures are captured and reported without aborting the batch.
     """
-    # Log the raw body
-    body = await raw_request.json()
-    logger.info(f"[VERIFICATION_BATCH] Raw body received: {body}")
     logger.info(f"[VERIFICATION_BATCH] Parsed business_ids: {batch_request.business_ids}")
 
     if not batch_request.business_ids:
         raise HTTPException(status_code=400, detail="No business_ids provided.")
 
-    cost = len(batch_request.business_ids) * 2
+    owned_ids = [
+        r.result_id for r in db.query(SearchResult).filter(
+            SearchResult.result_id.in_(batch_request.business_ids),
+            SearchResult.user_id == current_user.user_id
+        ).all()
+    ]
+    if not owned_ids:
+        raise HTTPException(status_code=404, detail="No matching business IDs found.")
+
+    cost = len(owned_ids) * 2
     check_credits(db, current_user.user_id, cost)
 
-    results = run_verification_batch(batch_request.business_ids)
+    results = run_verification_batch(owned_ids)
 
-    deduct_credits(db, current_user.user_id, cost, "verification", reference_type="batch")
+    deduct_credits(db, current_user.user_id, len(owned_ids) * 2, "verification", reference_type="batch")
     db.commit()
     try:
-        log_activity(db, current_user.user_id, "verification_run", metadata={"count": len(batch_request.business_ids)}, credits_consumed=cost)
+        log_activity(db, current_user.user_id, "verification_run", metadata={"count": len(owned_ids)}, credits_consumed=len(owned_ids) * 2)
         db.commit()
     except Exception:
         pass
 
-    total = len(batch_request.business_ids)
+    total = len(owned_ids)
     succeeded = sum(1 for r in results if r["status"] == "ok")
     skipped = sum(1 for r in results if r.get("result", {}).get("status") == "skipped")
 
@@ -114,6 +119,13 @@ def verify_single(business_id: int, db: Session = Depends(get_db), current_user 
     Returns HTTP 500 for any other unexpected failure.
     """
     check_credits(db, current_user.user_id, 2)
+    
+    lead = db.query(SearchResult).filter(
+        SearchResult.result_id == business_id,
+        SearchResult.user_id == current_user.user_id
+    ).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail=f"Business ID {business_id} not found.")
     
     try:
         result = run_verification_for_business(business_id)
@@ -176,7 +188,7 @@ def get_verification_status(business_id: int, current_user = Depends(get_current
     try:
         lead = (
             db.query(SearchResult)
-            .filter(SearchResult.result_id == business_id)
+            .filter(SearchResult.result_id == business_id, SearchResult.user_id == current_user.user_id)
             .first()
         )
         if not lead:

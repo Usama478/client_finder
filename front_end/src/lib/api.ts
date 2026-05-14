@@ -36,6 +36,62 @@ export interface ActivityEvent {
   color: string
 }
 
+export interface UserCredit {
+  credits_remaining: number
+  allocated_total: number
+  low_credits: boolean
+  empty: boolean
+}
+
+export interface SearchResult {
+  result_id: number
+  session_id: number
+  business_name: string
+  website: string | null
+  source: string
+  relevance_decision: string | null
+  relevance_score: number | null
+  relevance_reason: string | null
+  verification_score: number | null
+  verification_result: string | null
+  legitimacy_score: number | null
+  verified_product_catalog: Record<string, unknown> | null
+  serp_enrichment: Record<string, unknown> | null
+  linkedin_url: string | null
+  primary_contact_email: string | null
+  hunter_emails: unknown[] | null
+  campaign_status: string | null
+  is_saved_client: boolean
+}
+
+export interface EmailDraft {
+  id: number
+  business_id: number
+  subject: string
+  body: string
+  status: string
+  created_at: string
+}
+
+export interface ExporterProfile {
+  id: number
+  user_id: number
+  company_name: string
+  products: string
+  target_markets: string
+  certifications: string
+  business_type: string
+  location: string
+}
+
+export interface SearchContext {
+  id: number
+  user_id: number
+  name: string
+  description: string
+  created_at: string
+}
+
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000"
 
 function getToken(): string | null {
@@ -61,7 +117,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, { ...options, headers })
   if (res.status === 401) {
     clearToken()
-    window.location.href = "/auth/login"
+    window.location.href = "/auth/login?reason=session_expired"
     throw new Error("Unauthorized")
   }
   if (res.status === 402) {
@@ -113,18 +169,12 @@ export const api = {
   // Dashboard
   dashboardStats: () => request<DashboardStats>("/api/v1/dashboard/stats"),
   activityLog: (limit = 20) => request<ActivityEvent[]>(`/api/v1/dashboard/activity?limit=${limit}`),
-  credits: () =>
-    request<{
-      credits_remaining: number;
-      allocated_total: number;
-      low_credits: boolean;
-      empty: boolean;
-    }>("/api/v1/dashboard/credits"),
+  credits: () => request<UserCredit>("/api/v1/dashboard/credits"),
 
   // Sessions
   sessions: () => request<SearchSession[]>("/api/v1/sessions"),
-  createSession: (data: any) =>
-    request<any>("/api/v1/search", { method: "POST", body: JSON.stringify(data) }),
+  createSession: (data: { search_query: string; context_id?: number | null; discovery_platform?: string }) =>
+    request<SearchSession>("/api/v1/sessions", { method: "POST", body: JSON.stringify(data) }),
   generateQueries: (sessionId: number) =>
     request<{ maps_queries: string[]; web_queries: string[] }>(
       `/api/v1/sessions/${sessionId}/generate-queries`,
@@ -136,20 +186,20 @@ export const api = {
       { method: "PATCH", body: JSON.stringify(queries) }
     ),
   triggerDiscovery: (sessionId: number, platform: string) =>
-    request<any>("/api/v1/search", {
+    request<{ status: string; message: string }>("/api/v1/search", {
       method: "POST",
-      body: JSON.stringify({ session_id: sessionId, user_id: 0, query: "", discovery_platform: platform, skip_discovery: false })
+      body: JSON.stringify({ session_id: sessionId, query: "", discovery_platform: platform, skip_discovery: false })
     }),
 
   // Results
-  results: (searchId: number) => request<any[]>(`/api/v1/results/${searchId}`),
-  leadDetail: (resultId: number) => request<any>(`/api/v1/dashboard/result/${resultId}`),
+  results: (searchId: number) => request<SearchResult[]>(`/api/v1/results/${searchId}`),
+  leadDetail: (resultId: number) => request<SearchResult>(`/api/v1/results/${resultId}`),
   updateClientStatus: (resultId: number, isSaved: boolean) =>
     request(`/api/v1/results/${resultId}/client-status`,
       { method: "PUT", body: JSON.stringify({ is_saved_client: isSaved }) }),
 
   // Clients
-  clients: () => request<any[]>("/api/v1/clients"),
+  clients: () => request<SearchResult[]>("/api/v1/clients"),
   deleteClients: (resultIds: number[]) =>
     request<{ status: string; updated_count: number }>(
       "/api/v1/clients",
@@ -157,19 +207,19 @@ export const api = {
     ),
 
   // Contexts
-  contexts: () => request<any[]>("/api/v1/contexts"),
+  contexts: () => request<SearchContext[]>("/api/v1/contexts"),
   createContext: (data: any) =>
-    request<any>("/api/v1/contexts", { method: "POST", body: JSON.stringify(data) }),
+    request<SearchContext>("/api/v1/contexts", { method: "POST", body: JSON.stringify(data) }),
   deleteContext: (id: number) =>
-    request<any>(`/api/v1/contexts/${id}`, { method: "DELETE" }),
+    request<{ status: string }>(`/api/v1/contexts/${id}`, { method: "DELETE" }),
   updateContext: (id: number, data: any) =>
-    request<any>(`/api/v1/contexts/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    request<SearchContext>(`/api/v1/contexts/${id}`, { method: "PUT", body: JSON.stringify(data) }),
 
   // Verification
   verifyBusiness: (businessId: number) =>
-    request<any>(`/api/v1/verification/verify/${businessId}`, { method: "POST" }),
+    request<{ status: string; message: string }>(`/api/v1/verification/verify/${businessId}`, { method: "POST" }),
   verifyBatch: (businessIds: number[]) =>
-    request<any>("/api/v1/verification/verify/batch",
+    request<{ status: string; results: unknown[] }>("/api/v1/verification/verify/batch",
       { method: "POST", body: JSON.stringify({ business_ids: businessIds }) }),
   verificationStatus: (businessId: number) =>
     request<{ business_id: number; verification_status: string | null; verification_result: string | null; verification_score: number | null }>(
@@ -178,7 +228,7 @@ export const api = {
 
   // Relevancy
   runRelevancy: (business: any, searchId: number, contextId: number | null, signal?: AbortSignal) =>
-    request<any>("/api/relevancy/v2/run", {
+    request<{ status: string; decision: string | null; score: number | null; reason: string | null }>("/api/v1/relevancy/run", {
       method: "POST",
       signal,
       body: JSON.stringify({
@@ -194,23 +244,23 @@ export const api = {
     }),
 
   // Email drafts
-  emailDrafts: (businessId: number) => request<any[]>(`/api/v1/email/drafts/${businessId}?t=${Date.now()}`),
-  emailDraftDetail: (draftId: number) => request<any>(`/api/v1/email/drafts/detail/${draftId}?t=${Date.now()}`),
+  emailDrafts: (businessId: number) => request<EmailDraft[]>(`/api/v1/email/drafts/${businessId}?t=${Date.now()}`),
+  emailDraftDetail: (draftId: number) => request<EmailDraft>(`/api/v1/email/drafts/detail/${draftId}?t=${Date.now()}`),
   generateEmail: (businessId: number, userId: number, exporterProfileId: number, userInstructions?: string) =>
-    request<any>(`/api/v1/email/generate/${businessId}`,
+    request<EmailDraft>(`/api/v1/email/generate/${businessId}`,
       { method: "POST", body: JSON.stringify({ user_id: userId, exporter_profile_id: exporterProfileId, sequence_position: 1, user_instructions: userInstructions }) }),
   generateBatch: (searchId: number, userId: number, userInstructions?: string) =>
-    request<any>("/api/v1/email/generate-batch",
+    request<{ status: string; drafted: number }>("/api/v1/email/generate-batch",
       { method: "POST", body: JSON.stringify({ search_id: searchId, user_id: userId, sequence_position: 1, user_instructions: userInstructions ?? "" }) }),
   updateDraft: (draftId: number, payload: { subject: string; body: string }) =>
-    request<any>(`/api/v1/email/drafts/detail/${draftId}`,
+    request<EmailDraft>(`/api/v1/email/drafts/detail/${draftId}`,
       { method: "PATCH", body: JSON.stringify(payload) }),
   approveDraft: (draftId: number) =>
-    request<any>(`/api/v1/email/drafts/${draftId}/approve`, { method: "PATCH" }),
+    request<{ status: string }>(`/api/v1/email/drafts/${draftId}/approve`, { method: "PATCH" }),
   sendDraft: (draftId: number) =>
-    request<any>(`/api/v1/email/drafts/${draftId}/send`, { method: "PATCH" }),
+    request<{ status: string }>(`/api/v1/email/drafts/${draftId}/send`, { method: "PATCH" }),
   deleteDraft: (draftId: number) =>
-    request<any>(`/api/v1/email/drafts/${draftId}`, { method: "DELETE" }),
+    request<{ status: string }>(`/api/v1/email/drafts/${draftId}`, { method: "DELETE" }),
 
   findEmail: (resultId: number) =>
     request<{ cached: boolean; emails: any[]; primary_contact_email: string | null; message?: string }>(
@@ -219,31 +269,31 @@ export const api = {
     ),
 
   // Exporter profile
-  getMyProfile: () => request<any>("/api/v1/exporter-profiles/me"),
+  getMyProfile: () => request<ExporterProfile>("/api/v1/profile/me"),
   createProfile: (data: any) =>
-    request<any>("/api/v1/exporter-profiles/",
+    request<ExporterProfile>("/api/v1/profile/",
       { method: "POST", body: JSON.stringify(data) }),
   updateProfile2: (profileId: number, data: any) =>
-    request<any>(`/api/v1/exporter-profiles/${profileId}`,
+    request<ExporterProfile>(`/api/v1/profile/${profileId}`,
       { method: "PUT", body: JSON.stringify(data) }),
 
   // Contacts
-  contacts: () => request<any[]>("/api/v1/contacts"),
+  contacts: () => request<SearchResult[]>("/api/v1/contacts"),
 
   // Export
   exportResults: (searchId: number) =>
-    request<any>("/api/v1/export",
+    request<{ status: string }>("/api/v1/export",
       { method: "POST", body: JSON.stringify({ search_id: searchId }) }),
 
   // Admin
-  adminUsers: () => request<any[]>("/api/v1/admin/users"),
+  adminUsers: () => request<{ user_id: number; name: string; email: string; is_admin: boolean; is_active: boolean }[]>("/api/v1/admin/users"),
   adminManageCredits: (userId: number, action: string, amount: number) =>
-    request<any>(`/api/v1/admin/users/${userId}/credits`,
+    request<{ status: string }>(`/api/v1/admin/users/${userId}/credits`,
       { method: "POST", body: JSON.stringify({ action, amount }) }),
   adminToggleActive: (userId: number) =>
-    request<any>(`/api/v1/admin/users/${userId}/toggle-active`,
+    request<{ status: string }>(`/api/v1/admin/users/${userId}/toggle-active`,
       { method: "POST" }),
-  adminHealth: () => request<any>("/api/v1/admin/health"),
+  adminHealth: () => request<Record<string, unknown>>("/api/v1/admin/health"),
 }
 
 export async function exportClients(params: {
@@ -255,17 +305,25 @@ export async function exportClients(params: {
   const queryParams = new URLSearchParams({ format: params.format })
   if (params.status) queryParams.set("status", params.status)
 
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  }
+
   const res = await fetch(`${BASE_URL}/api/v1/export?${queryParams.toString()}`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
+    headers,
     body: JSON.stringify(params.ids ?? null),
   })
 
+  if (res.status === 401) {
+    clearToken()
+    window.location.href = "/auth/login?reason=session_expired"
+    throw new Error("Unauthorized")
+  }
+
   if (!res.ok) {
-    throw new Error(`${res.status}`)
+    throw new Error(`Export failed: ${res.status}`)
   }
 
   const blob = await res.blob()
@@ -277,19 +335,6 @@ export async function exportClients(params: {
   URL.revokeObjectURL(url)
 }
 
-export async function reverifyClient(resultId: number): Promise<void> {
-  const token = getToken()
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  }
-  if (token) headers["Authorization"] = `Bearer ${token}`
-  
-  const res = await fetch(`${BASE_URL}/api/v1/verification/verify/${resultId}`, {
-    method: "POST",
-    headers,
-  })
-  
-  if (!res.ok) {
-    throw new Error(`Re-verification failed: ${res.status}`)
-  }
+export async function reverifyClient(resultId: number): Promise<{ status: string }> {
+  return request<{ status: string }>(`/api/v1/verification/verify/${resultId}`, { method: "POST" })
 }

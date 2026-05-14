@@ -23,11 +23,15 @@ export default function BusinessDetailsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [exporterProfileId, setExporterProfileId] = useState<number | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [hunterEmails, setHunterEmails] = useState<any[]>([]);
   const [primaryContactEmail, setPrimaryContactEmail] = useState<string | null>(null);
   const [hunterLoading, setHunterLoading] = useState(false);
   
-  const formatUrl = (url: string) => url.startsWith('http') ? url : `https://${url}`;
+  const formatUrl = (url: string | null | undefined) => {
+    if (!url) return '';
+    return url.startsWith('http') ? url : `https://${url}`;
+  };
 
   const displayRelevanceScore = business
     ? Math.round(business.relevance_score || 0)
@@ -112,12 +116,15 @@ export default function BusinessDetailsPage() {
       toast.error("Set up your exporter profile in Settings first");
       return;
     }
+    setIsGenerating(true);
     try {
       await api.generateEmail(Number(id), user.user_id, exporterProfileId);
       navigate(`/app/email?clientIds=${id}`);
       toast.success("Email draft generated");
     } catch (err: any) {
       toast.error(err.message || "Failed to generate email");
+    } finally {
+      setIsGenerating(false);
     }
   };
 
@@ -153,9 +160,9 @@ export default function BusinessDetailsPage() {
             <Save className="mr-2 h-4 w-4" />
             Save to Clients
           </Button>
-          <Button onClick={handleGenerateEmail}>
+          <Button onClick={handleGenerateEmail} disabled={isGenerating}>
             <Send className="mr-2 h-4 w-4" />
-            Generate Email
+            {isGenerating ? "Generating..." : "Generate Email"}
           </Button>
         </div>
       </div>

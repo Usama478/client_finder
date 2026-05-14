@@ -7,6 +7,18 @@ from app.models.user import User
 from pydantic import BaseModel
 from typing import Optional, List
 
+class ExporterProfileUpdate(BaseModel):
+    company_name: Optional[str] = None
+    company_website: Optional[str] = None
+    company_description: Optional[str] = None
+    target_market: Optional[str] = None
+    product_categories: Optional[str] = None
+    export_experience: Optional[str] = None
+    preferred_regions: Optional[str] = None
+    annual_revenue: Optional[str] = None
+    employee_count: Optional[str] = None
+    certifications: Optional[str] = None
+
 router = APIRouter(prefix="/api/v1/exporter-profiles", tags=["exporter-profiles"])
 
 @router.get("/me")
@@ -21,7 +33,7 @@ def get_my_profile(current_user: User = Depends(get_current_user),
     return profile.__dict__
 
 @router.post("")
-def create_profile(data: dict,
+def create_profile(data: ExporterProfileUpdate,
                    current_user: User = Depends(get_current_user),
                    db: Session = Depends(get_db)):
     existing = db.query(ExporterProfile).filter(
@@ -29,16 +41,16 @@ def create_profile(data: dict,
         ExporterProfile.is_default == True
     ).first()
     if existing:
-        for key, value in data.items():
-            if hasattr(existing, key):
-                setattr(existing, key, value)
+        update_data = data.model_dump(exclude_none=True)
+        for key, value in update_data.items():
+            setattr(existing, key, value)
         db.commit()
         db.refresh(existing)
         return existing.__dict__
     profile = ExporterProfile(
         user_id=current_user.user_id,
         is_default=True,
-        **{k: v for k, v in data.items() if hasattr(ExporterProfile, k) and k not in ("is_default", "user_id")}
+        **data.model_dump(exclude_none=True)
     )
     db.add(profile)
     db.commit()
@@ -46,7 +58,7 @@ def create_profile(data: dict,
     return profile.__dict__
 
 @router.put("/{profile_id}")
-def update_profile(profile_id: int, data: dict,
+def update_profile(profile_id: int, data: ExporterProfileUpdate,
                    current_user: User = Depends(get_current_user),
                    db: Session = Depends(get_db)):
     profile = db.query(ExporterProfile).filter(
@@ -55,8 +67,9 @@ def update_profile(profile_id: int, data: dict,
     ).first()
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
-    for key, value in data.items():
-        if hasattr(profile, key) and key not in ("id", "user_id"):
+    update_data = data.model_dump(exclude_none=True)
+    for key, value in update_data.items():
+        if key not in ("id", "user_id", "is_default"):
             setattr(profile, key, value)
     db.commit()
     db.refresh(profile)

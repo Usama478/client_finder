@@ -20,7 +20,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 class SignupRequest(BaseModel):
     name: str
-    email: str
+    email: EmailStr
     password: str
 
 class LoginResponse(BaseModel):
@@ -163,7 +163,7 @@ def get_me(current_user: User = Depends(get_current_user)):
     )
 
 @router.post("/logout")
-def logout():
+def logout(current_user: User = Depends(get_current_user)):
     return {"message": "Logged out successfully"}
 
 @router.post("/verify-email")

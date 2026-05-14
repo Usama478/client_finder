@@ -41,7 +41,7 @@ async def search_endpoint(request: SearchRequest, db: Session = Depends(get_db),
     Triggers a Google Maps Search and saves results to DB.
     """
     # Quick Check: Does user exist? (For MVP testing)
-    user = db.query(User).filter(User.user_id == request.user_id).first()
+    user = db.query(User).filter(User.user_id == current_user.user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -53,7 +53,7 @@ async def search_endpoint(request: SearchRequest, db: Session = Depends(get_db),
             from app.models.search_session import SearchSession as SS
             from datetime import datetime
             new_session = SS(
-                user_id=request.user_id,
+                user_id=current_user.user_id,
                 search_query=request.query,
                 created_at=datetime.utcnow(),
                 context_id=request.context_id,
@@ -72,7 +72,7 @@ async def search_endpoint(request: SearchRequest, db: Session = Depends(get_db),
         else:
             result = search_google_maps(
                 db=db,
-                user_id=request.user_id,
+                user_id=current_user.user_id,
                 query=request.query,
                 page_token=request.page_token,
                 context_id=request.context_id,
@@ -292,6 +292,8 @@ def get_lead_details(place_id: str, db: Session = Depends(get_db), current_user:
     """Fetch the full details of a single lead by place_id."""
     try:
         lead = db.query(SearchResult).join(SearchSession, SearchResult.search_id == SearchSession.search_id).filter(SearchResult.place_id == place_id).filter(SearchSession.user_id == current_user.user_id).first()
+        if not lead:
+            raise HTTPException(status_code=404, detail="Lead not found")
         
         return lead
     except HTTPException:

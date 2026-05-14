@@ -3,6 +3,7 @@ import { Zap, Target, ShieldCheck, Search, ChevronDown, ChevronUp, Play, StopCir
 import { useSearchParams, useNavigate, Link } from "react-router"
 import { api } from "../../../lib/api"
 import { campaignsApi, Campaign, CampaignResult, CostEstimate } from "../../../lib/campaigns-api"
+import { toast } from "sonner"
 
 // ── tiny helpers ────────────────────────────────────────────────────────────
 const S = {
@@ -68,7 +69,7 @@ export default function CampaignEnginePage() {
   // ── init: load contexts + credits + campaign from URL or active ─────────
   useEffect(() => {
     api.contexts().then((c: any[]) => setContexts(c || [])).catch(() => {})
-    api.credits().then(c => setCredits(c.credits_remaining)).catch(() => {})
+    api.credits().then(c => setCredits(c?.credits_remaining ?? 0)).catch(() => setCredits(0))
 
     const urlParams = new URLSearchParams(window.location.search)
     const campaignIdFromUrl = urlParams.get("campaign")
@@ -120,7 +121,7 @@ export default function CampaignEnginePage() {
         const updated = await campaignsApi.get(campaign.id)
         setCampaign(updated)
         const r = await campaignsApi.getResults(campaign.id)
-        setResults(r)
+        setResults(r ?? [])
       } catch {}
     }, 4000)
     return () => clearInterval(iv)
@@ -159,8 +160,13 @@ export default function CampaignEnginePage() {
   // ── cancel ────────────────────────────────────────────────────────────────
   async function handleCancel() {
     if (!campaign) return
-    await campaignsApi.cancel(campaign.id).catch(() => {})
-    setCampaign(prev => prev ? { ...prev, status: "failed" } : null)
+    try {
+      await campaignsApi.cancel(campaign.id)
+      setCampaign(prev => prev ? { ...prev, status: "failed" } : null)
+      toast.success("Campaign stopped")
+    } catch {
+      toast.error("Failed to stop campaign")
+    }
   }
 
   // ── reset (new campaign) ──────────────────────────────────────────────────
@@ -180,7 +186,10 @@ export default function CampaignEnginePage() {
     try {
       await campaignsApi.saveClient(campaign.id, result.result_id)
       setResults(prev => prev.map(r => r.result_id === result.result_id ? { ...r, is_saved_client: true } : r))
-    } catch {}
+      toast.success("Client saved")
+    } catch {
+      toast.error("Failed to save client")
+    }
     setSavingId(null)
   }
 
@@ -206,7 +215,10 @@ export default function CampaignEnginePage() {
     try {
       const updated = await campaignsApi.resume(campaign.id)
       setCampaign(updated)
-    } catch {}
+      toast.success("Campaign resumed")
+    } catch {
+      toast.error("Failed to resume campaign")
+    }
   }
 
   // ── derived ───────────────────────────────────────────────────────────────

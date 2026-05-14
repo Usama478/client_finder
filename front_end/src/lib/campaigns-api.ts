@@ -14,6 +14,12 @@ async function req<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
   if (token) headers["Authorization"] = `Bearer ${token}`
   const res = await fetch(`${BASE_URL}${path}`, { ...options, headers })
+  if (res.status === 401) {
+    localStorage.removeItem("cf_token")
+    localStorage.removeItem("cf_user")
+    window.location.href = "/auth/login?reason=session_expired"
+    throw new Error("Unauthorized")
+  }
   if (!res.ok) {
     const error = await res.json().catch(() => ({ detail: "Request failed" }))
     throw new Error(error.detail || "Request failed")
@@ -91,5 +97,5 @@ export const campaignsApi = {
   saveClient: (campaignId: number, resultId: number) =>
     req<{ status: string }>(`/api/v1/campaigns/${campaignId}/save-client/${resultId}`, { method: "POST" }),
   resume: (id: number) => req<Campaign>(`/api/v1/campaigns/${id}/resume`, { method: "POST" }),
-  getPendingCount: (id: number) => req<number>(`/api/v1/campaigns/${id}/results`).then(r => r.filter((x: any) => x.campaign_status === "pending_relevance").length),
+  getPendingCount: (id: number) => req<CampaignResult[]>(`/api/v1/campaigns/${id}/results`).then(r => r.filter((x: CampaignResult) => x.campaign_status === "pending_relevance").length).catch(err => { console.error(err); return 0; }),
 }

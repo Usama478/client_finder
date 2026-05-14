@@ -1040,6 +1040,8 @@ export default function SearchBusinessesPage() {
                   try {
                     /* Minor cleanup: api.results always returns an array — no need for fallback destructuring */
                     const r = await api.results(s.search_id);
+                    pollingIntervalsRef.current.forEach(clearInterval);
+                    pollingIntervalsRef.current.clear();
                     setResults((r || []) as BusinessResult[]);
                     setSelectedSessionId(s.search_id);
                     setSearchQuery(s.search_query || "");

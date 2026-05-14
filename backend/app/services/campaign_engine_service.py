@@ -176,7 +176,7 @@ async def _run_discovery_pass(
     return result_ids
 
 
-def _run_relevance_sync(result_id: int, context_text: str, search_intent: str) -> dict:
+def _run_relevance_sync(result_id: int, context_text: str, search_intent: str, context_id: Optional[int] = None) -> dict:
     from app.agents.relevancy.service_v2 import run_relevancy_v2_for_business
     db = SessionLocal()
     try:
@@ -193,7 +193,7 @@ def _run_relevance_sync(result_id: int, context_text: str, search_intent: str) -
             business_id=result_id,
             website=lead.website or "",
             exporter_profile=combined_profile,
-            search_id=0,
+            search_id=lead.search_id or 0,
             business_name=lead.business_name or "",
             category=lead.business_type or "",
             address=lead.address or "",
@@ -207,13 +207,19 @@ def _run_verification_sync(result_id: int) -> dict:
     return run_verification_for_business(result_id)
 
 
-async def run_campaign_resume(campaign_id: int) -> None:
+def run_campaign_resume(campaign_id: int) -> None:
     """Process remaining pending_relevance candidates without new discovery."""
     db = SessionLocal()
     try:
         campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
         if not campaign:
             return
+
+        db.query(SearchResult).filter(
+            SearchResult.campaign_id == campaign_id,
+            SearchResult.campaign_status.in_(["running_relevance", "running_verification"]),
+        ).update({"campaign_status": "pending_relevance"}, synchronize_session=False)
+        db.commit()
 
         campaign.status = "running"
         db.commit()
@@ -240,19 +246,19 @@ async def run_campaign_resume(campaign_id: int) -> None:
             if campaign.credits_used >= campaign.credit_budget:
                 _append_log(db, campaign, "Credit budget reached.", "warn")
                 break
+            if campaign.verified_count >= campaign.target_count:
+                _append_log(db, campaign, "Target count reached.", "info")
+                break
 
             # Relevance
             lead.campaign_status = "running_relevance"
-            campaign.credits_used += CREDIT_COSTS["relevance_agent"]
             db.commit()
             _append_log(db, campaign, f"Checking relevance: {lead.business_name or lead.website}")
 
             try:
-                loop = asyncio.get_event_loop()
-                output = await loop.run_in_executor(
-                    None, _run_relevance_sync, lead.result_id,
-                    context_text, campaign.search_intent
-                )
+                output = _run_relevance_sync(lead.result_id, context_text, campaign.search_intent, campaign.context_id)
+                campaign.credits_used += CREDIT_COSTS["relevance_agent"]
+                deduct_credits(db, campaign.user_id, CREDIT_COSTS["relevance_agent"], "campaign_relevance", reference_id=str(campaign_id), reference_type="campaign")
                 decision = output.get("relevance_decision", "irrelevant")
                 score_raw = output.get("confidence", 0)
                 score = int(float(score_raw) * 100) if float(score_raw) <= 1 else int(float(score_raw))
@@ -279,13 +285,13 @@ async def run_campaign_resume(campaign_id: int) -> None:
                 break
 
             lead.campaign_status = "running_verification"
-            campaign.credits_used += CREDIT_COSTS["verification_agent"] + CREDIT_COSTS["serp_enrichment"]
             db.commit()
             _append_log(db, campaign, f"Verifying: {lead.business_name or lead.website}")
 
             try:
-                loop = asyncio.get_event_loop()
-                v_output = await loop.run_in_executor(None, _run_verification_sync, lead.result_id)
+                v_output = _run_verification_sync(lead.result_id)
+                campaign.credits_used += CREDIT_COSTS["verification_agent"] + CREDIT_COSTS["serp_enrichment"]
+                deduct_credits(db, campaign.user_id, CREDIT_COSTS["verification_agent"] + CREDIT_COSTS["serp_enrichment"], "campaign_verification", reference_id=str(campaign_id), reference_type="campaign")
                 v_result = v_output.get("verification_result", "")
                 v_score = v_output.get("verification_score", 0) or 0
 
@@ -325,6 +331,7 @@ async def run_campaign_resume(campaign_id: int) -> None:
     except Exception as e:
         logger.error(f"[CAMPAIGN_RESUME {campaign_id}] Fatal error: {e}", exc_info=True)
         try:
+            db.rollback()
             campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
             if campaign:
                 campaign.status = "failed"
@@ -336,12 +343,21 @@ async def run_campaign_resume(campaign_id: int) -> None:
         db.close()
 
 
-async def run_campaign_engine(campaign_id: int) -> None:
+def run_campaign_engine(campaign_id: int) -> None:
     db = SessionLocal()
     try:
         campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
         if not campaign:
             return
+
+        db.query(SearchResult).filter(
+            SearchResult.campaign_id == campaign_id,
+            SearchResult.campaign_status.in_(["running_relevance", "running_verification"]),
+        ).update({"campaign_status": "pending_relevance"}, synchronize_session=False)
+        db.commit()
+
+        from app.services.credit_service import check_credits, deduct_credits
+        check_credits(db, campaign.user_id, CREDIT_COSTS["discovery_pass"])
 
         campaign.status = "running"
         campaign.started_at = datetime.now(timezone.utc)
@@ -398,17 +414,22 @@ async def run_campaign_engine(campaign_id: int) -> None:
                 _append_log(db, campaign, f"Pass {pass_number} queries — Maps: '{maps_query}' | Web: '{web_query}'")
             except Exception as e:
                 _append_log(db, campaign, f"Query generation failed: {e}", "error")
-                break
+                campaign.status = "failed"
+                campaign.error_message = f"Query generation failed: {str(e)}"
+                campaign.completed_at = datetime.now(timezone.utc)
+                db.commit()
+                return
 
             # Discovery
             campaign.credits_used += CREDIT_COSTS["discovery_pass"]
+            deduct_credits(db, campaign.user_id, CREDIT_COSTS["discovery_pass"], "campaign_discovery", reference_id=str(campaign_id), reference_type="campaign")
             db.commit()
             if campaign.credits_used >= campaign.credit_budget:
                 _append_log(db, campaign, "Credit budget reached before discovery.", "warn")
                 break
 
             try:
-                new_result_ids = await _run_discovery_pass(campaign, db, pass_number, maps_query, web_query, seen_domains, campaign.user_id)
+                new_result_ids = asyncio.run(_run_discovery_pass(campaign, db, pass_number, maps_query, web_query, seen_domains, campaign.user_id))
                 campaign.total_discovered += len(new_result_ids)
                 db.commit()
                 _append_log(db, campaign, f"Pass {pass_number} discovered {len(new_result_ids)} new candidates.")
@@ -417,8 +438,8 @@ async def run_campaign_engine(campaign_id: int) -> None:
                 break
 
             if not new_result_ids:
-                _append_log(db, campaign, f"Pass {pass_number} found no new candidates. Stopping.")
-                break
+                _append_log(db, campaign, f"Pass {pass_number} found no new candidates. Trying next query variation.")
+                continue
 
             # Combined relevance → verification loop (one candidate at a time)
             for result_id in new_result_ids:
@@ -434,16 +455,13 @@ async def run_campaign_engine(campaign_id: int) -> None:
 
                 # ── Relevance ──────────────────────────────────────────
                 lead.campaign_status = "running_relevance"
-                campaign.credits_used += CREDIT_COSTS["relevance_agent"]
                 db.commit()
                 _append_log(db, campaign, f"Checking relevance: {lead.business_name or lead.website}")
 
                 try:
-                    loop = asyncio.get_event_loop()
-                    output = await loop.run_in_executor(
-                        None, _run_relevance_sync, result_id,
-                        context_text, campaign.search_intent
-                    )
+                    output = _run_relevance_sync(result_id, context_text, campaign.search_intent, campaign.context_id)
+                    campaign.credits_used += CREDIT_COSTS["relevance_agent"]
+                    deduct_credits(db, campaign.user_id, CREDIT_COSTS["relevance_agent"], "campaign_relevance", reference_id=str(campaign_id), reference_type="campaign")
                     decision = output.get("relevance_decision", "irrelevant")
                     score_raw = output.get("confidence", 0)
                     score = int(float(score_raw) * 100) if float(score_raw) <= 1 else int(float(score_raw))
@@ -473,13 +491,13 @@ async def run_campaign_engine(campaign_id: int) -> None:
                     break
 
                 lead.campaign_status = "running_verification"
-                campaign.credits_used += CREDIT_COSTS["verification_agent"] + CREDIT_COSTS["serp_enrichment"]
                 db.commit()
                 _append_log(db, campaign, f"Verifying: {lead.business_name or lead.website}")
 
                 try:
-                    loop = asyncio.get_event_loop()
-                    v_output = await loop.run_in_executor(None, _run_verification_sync, lead.result_id)
+                    v_output = _run_verification_sync(lead.result_id)
+                    campaign.credits_used += CREDIT_COSTS["verification_agent"] + CREDIT_COSTS["serp_enrichment"]
+                    deduct_credits(db, campaign.user_id, CREDIT_COSTS["verification_agent"] + CREDIT_COSTS["serp_enrichment"], "campaign_verification", reference_id=str(campaign_id), reference_type="campaign")
                     v_result = v_output.get("verification_result", "")
                     v_score = v_output.get("verification_score", 0) or 0
 
@@ -516,6 +534,7 @@ async def run_campaign_engine(campaign_id: int) -> None:
     except Exception as e:
         logger.error(f"[CAMPAIGN {campaign_id}] Fatal error: {e}", exc_info=True)
         try:
+            db.rollback()
             campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
             if campaign:
                 campaign.status = "failed"

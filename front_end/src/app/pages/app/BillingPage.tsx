@@ -1,4 +1,5 @@
 import { Button } from "../../components/ui/button";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Badge } from "../../components/ui/badge";
 import { Progress } from "../../components/ui/progress";
@@ -26,7 +27,7 @@ export default function BillingPage() {
                 <div className="text-2xl font-bold">$149/month</div>
                 <div className="text-sm text-gray-600">Billed monthly • Next billing: April 15, 2026</div>
               </div>
-              <Button variant="outline">Change Plan</Button>
+              <Button variant="outline" onClick={() => toast.info("Coming soon — contact support to manage billing")}>Change Plan</Button>
             </div>
 
             <div className="space-y-4">
@@ -74,7 +75,7 @@ export default function BillingPage() {
                 <div className="text-xs text-muted-foreground">Expires 12/26</div>
               </div>
             </div>
-            <Button variant="outline" className="w-full">Update Payment</Button>
+            <Button variant="outline" className="w-full" onClick={() => toast.info("Coming soon — contact support to manage billing")}>Update Payment</Button>
           </CardContent>
         </Card>
       </div>
@@ -83,7 +84,7 @@ export default function BillingPage() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle>Billing History</CardTitle>
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={() => toast.info("Coming soon — contact support to manage billing")}>
               <Download className="mr-2 h-4 w-4" />
               Download All
             </Button>
@@ -103,7 +104,7 @@ export default function BillingPage() {
                 </div>
                 <div className="flex items-center gap-3">
                   <Badge className="bg-green-600">{invoice.status}</Badge>
-                  <Button variant="ghost" size="sm">
+                  <Button variant="ghost" size="sm" onClick={() => toast.info("Coming soon — contact support to manage billing")}>
                     <Download className="h-4 w-4" />
                   </Button>
                 </div>

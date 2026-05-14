@@ -43,9 +43,9 @@ export default function AppLayout() {
 
   const navItems = [
     { icon: LayoutDashboard, label: "Dashboard", path: "/app", badge: null },
-    { icon: Search, label: "Search Businesses", path: "/app/search", badge: "3" },
+    { icon: Search, label: "Search Businesses", path: "/app/search", badge: null },
     { icon: Zap, label: "Campaign Engine", path: "/app/campaigns", badge: null },
-    { icon: Users, label: "Clients", path: "/app/clients", badge: "47", badgeGreen: true },
+    { icon: Users, label: "Clients", path: "/app/clients", badge: null, badgeGreen: false },
     { icon: UserCircle, label: "Contacts", path: "/app/contacts", badge: null },
     { icon: Activity, label: "Activity", path: "/app/activity", badge: null },
     { icon: Mail, label: "Email Workspace", path: "/app/email", badge: null },
@@ -231,7 +231,7 @@ export default function AppLayout() {
             {sidebarOpen && (
               <div className="flex-1 min-w-0">
                 <div className="text-xs font-semibold text-[#e8edf5] truncate">{userName}</div>
-                <div className="text-[10px] text-[#5a6478]">Pro Plan</div>
+                <div className="text-[10px] text-[#5a6478]">{user?.plan || ""}</div>
               </div>
             )}
           </div>
@@ -291,7 +291,6 @@ export default function AppLayout() {
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="icon" className="relative h-8 w-8 text-[#8a95a8] hover:text-[#e8edf5] hover:bg-[#151a22]">
               <Bell className="h-4 w-4" />
-              <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-red-500 rounded-full"></span>
             </Button>
             <Button onClick={() => navigate("/app/search", { state: { fresh: true } })}
               className="text-xs h-8 px-3 bg-blue-600 hover:bg-blue-700 text-white">

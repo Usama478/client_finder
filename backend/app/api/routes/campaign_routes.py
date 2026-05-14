@@ -252,6 +252,9 @@ def save_client(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    if not campaign or campaign.user_id != current_user.user_id:
+        raise HTTPException(status_code=404, detail="Campaign not found")
     result = db.query(SearchResult).filter(
         SearchResult.result_id == result_id,
         SearchResult.campaign_id == campaign_id,

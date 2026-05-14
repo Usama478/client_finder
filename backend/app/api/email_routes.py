@@ -52,35 +52,6 @@ class UpdateDraftRequest(BaseModel):
 # Routes                                                                       #
 # --------------------------------------------------------------------------- #
 
-@router.post("/generate/{business_id}")
-def generate_draft(business_id: int, request: GenerateDraftRequest, current_user = Depends(get_current_user)) -> Dict[str, Any]:
-    """
-    Generate an email draft for a single lead.
-
-    Returns the generation result dict on success.
-    Returns HTTP 404 if the business_id does not exist.
-    Returns HTTP 500 for any other unexpected failure.
-    """
-    if not EMAIL_AGENT_ENABLED:
-        raise HTTPException(status_code=503, detail="Email agent temporarily disabled")
-    try:
-        result = generate_draft_for_lead(
-            business_id=business_id,
-            user_id=request.user_id,
-            sequence_position=request.sequence_position,
-            user_instructions=request.user_instructions,
-            exporter_profile_id=request.exporter_profile_id,
-        )
-        return result
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except Exception as exc:
-        logger.error(
-            "generate_draft FAILED business_id=%s error=%s", business_id, exc, exc_info=True
-        )
-        raise HTTPException(status_code=500, detail=f"Draft generation failed: {exc}")
-
-
 @router.post("/generate-batch")
 def generate_batch(request: GenerateBatchRequest, current_user = Depends(get_current_user)) -> Dict[str, Any]:
     """
@@ -93,7 +64,7 @@ def generate_batch(request: GenerateBatchRequest, current_user = Depends(get_cur
     try:
         result = generate_batch_for_session(
             search_id=request.search_id,
-            user_id=request.user_id,
+            user_id=current_user.user_id,
             sequence_position=request.sequence_position,
             user_instructions=request.user_instructions,
         )
@@ -106,6 +77,46 @@ def generate_batch(request: GenerateBatchRequest, current_user = Depends(get_cur
             exc_info=True,
         )
         raise HTTPException(status_code=500, detail=f"Batch generation failed: {exc}")
+
+
+@router.post("/generate/{business_id}")
+def generate_draft(business_id: int, request: GenerateDraftRequest, current_user = Depends(get_current_user)) -> Dict[str, Any]:
+    """
+    Generate an email draft for a single lead.
+
+    Returns the generation result dict on success.
+    Returns HTTP 404 if the business_id does not exist.
+    Returns HTTP 500 for any other unexpected failure.
+    """
+    if not EMAIL_AGENT_ENABLED:
+        raise HTTPException(status_code=503, detail="Email agent temporarily disabled")
+    try:
+        db = SessionLocal()
+        try:
+            lead = (
+                db.query(SearchResult)
+                .filter(SearchResult.result_id == business_id, SearchResult.user_id == current_user.user_id)
+                .first()
+            )
+            if not lead:
+                raise HTTPException(status_code=404, detail=f"Business ID {business_id} not found.")
+        finally:
+            db.close()
+        result = generate_draft_for_lead(
+            business_id=business_id,
+            user_id=current_user.user_id,
+            sequence_position=request.sequence_position,
+            user_instructions=request.user_instructions,
+            exporter_profile_id=request.exporter_profile_id,
+        )
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        logger.error(
+            "generate_draft FAILED business_id=%s error=%s", business_id, exc, exc_info=True
+        )
+        raise HTTPException(status_code=500, detail=f"Draft generation failed: {exc}")
 
 
 @router.get("/drafts/{business_id}")
@@ -299,6 +310,19 @@ def send_draft(draft_id: int, current_user = Depends(get_current_user)) -> Dict[
     if not EMAIL_AGENT_ENABLED:
         raise HTTPException(status_code=503, detail="Email agent temporarily disabled")
     try:
+        db = SessionLocal()
+        try:
+            draft = (
+                db.query(EmailDraft)
+                .join(SearchResult, EmailDraft.business_id == SearchResult.result_id)
+                .filter(EmailDraft.id == draft_id, SearchResult.user_id == current_user.user_id)
+                .first()
+            )
+            if not draft:
+                raise HTTPException(status_code=404, detail=f"Draft ID {draft_id} not found.")
+        finally:
+            db.close()
+        
         result = send_approved_draft(draft_id)
         
         if result["status"] == "failed":
