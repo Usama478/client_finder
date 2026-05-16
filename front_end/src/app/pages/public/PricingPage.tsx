@@ -110,89 +110,162 @@ export default function PricingPage() {
   ];
 
   return (
-    <div className="bg-white">
-      <section className="bg-gradient-to-b from-blue-50 to-white py-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center max-w-3xl mx-auto">
-            <h1 className="text-4xl lg:text-5xl font-bold mb-6">
-              Simple, transparent pricing
-            </h1>
-            <p className="text-xl text-gray-600 mb-4">
-              Choose the plan that fits your business. All plans include a 14-day free trial.
-            </p>
-            <p className="text-sm text-gray-500">
-              No credit card required • Cancel anytime • 30-day money-back guarantee
-            </p>
+    <div className="bg-background">
+      {/* HERO */}
+      <section
+        className="bg-background py-24"
+        style={{
+          backgroundImage: "radial-gradient(rgba(255,255,255,0.04) 1px, transparent 1px)",
+          backgroundSize: "32px 32px",
+        }}
+      >
+        <div className="max-w-2xl mx-auto px-4 text-center">
+          <div className="flex items-center justify-center gap-2 mb-4">
+            <div className="w-1 h-5 rounded-full bg-amber-400" />
+            <span className="text-xs uppercase tracking-widest text-amber-400">Pricing</span>
+          </div>
+          <h1 className="font-['Syne'] text-5xl font-bold text-foreground">
+            Simple, transparent pricing
+          </h1>
+          <p className="text-muted-foreground mt-3">
+            Choose the plan that fits your business. All plans include a 14-day free trial.
+          </p>
+          <div className="inline-flex items-center mt-6 rounded-lg border border-[rgba(255,255,255,0.08)] bg-[#0f1218] p-1">
+            <button className="rounded-md bg-blue-600 text-white text-sm px-4 py-1.5 font-medium">
+              Monthly
+            </button>
+            <button className="text-muted-foreground text-sm px-4 py-1.5">
+              Annual{" "}
+              <span className="ml-1.5 text-xs bg-amber-400/20 text-amber-400 rounded-full px-1.5">
+                Save 20%
+              </span>
+            </button>
           </div>
         </div>
       </section>
 
-      <section className="py-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
-            {plans.map((plan, i) => (
-              <Card 
-                key={i} 
-                className={`relative ${
-                  plan.highlight 
-                    ? 'border-blue-600 border-2 shadow-xl scale-105' 
-                    : 'border-2'
-                }`}
-              >
-                {plan.badge && (
-                  <div className="absolute -top-4 left-1/2 -translate-x-1/2">
-                    <Badge className="bg-blue-600 text-white">{plan.badge}</Badge>
+      {/* PRICING CARDS */}
+      <section className="pb-24 bg-background">
+        <div className="max-w-5xl mx-auto px-4">
+          <div className="grid lg:grid-cols-3 gap-8 pt-16">
+            {plans.map((plan, i) =>
+              plan.highlight ? (
+                <div
+                  key={i}
+                  className="rounded-xl border border-blue-500/50 bg-[#080e1a] p-8 relative"
+                  style={{
+                    boxShadow:
+                      "0 0 60px rgba(59,130,246,0.12), 0 0 0 1px rgba(59,130,246,0.2)",
+                  }}
+                >
+                  <div className="text-xs font-bold tracking-[0.15em] text-amber-400 uppercase mb-6 flex items-center gap-2">
+                    <div className="w-4 h-4 rounded-full bg-amber-400" />
+                    Most Popular
                   </div>
-                )}
-                <CardHeader className="text-center pb-8">
-                  <CardTitle className="text-2xl mb-2">{plan.name}</CardTitle>
-                  <p className="text-sm text-gray-600 mb-6 min-h-[40px]">{plan.description}</p>
-                  <div className="mb-2">
-                    <span className="text-5xl font-bold">{plan.price}</span>
-                    {plan.period && <span className="text-gray-600 text-lg">{plan.period}</span>}
+                  <p className="text-xl font-bold font-['Syne'] text-foreground">
+                    {plan.name}
+                  </p>
+                  <p className="text-sm text-muted-foreground mt-1 mb-6 min-h-[40px]">
+                    {plan.description}
+                  </p>
+                  <div>
+                    <span className="text-5xl font-bold font-['Syne'] text-foreground">
+                      {plan.price}
+                    </span>
+                    {plan.period && (
+                      <span className="text-muted-foreground text-base">{plan.period}</span>
+                    )}
                   </div>
-                </CardHeader>
-                <CardContent>
-                  <ul className="space-y-3 mb-8">
+                  <div className="border-t border-[rgba(255,255,255,0.06)] my-6" />
+                  <ul className="space-y-3">
                     {plan.features.map((feature, j) => (
-                      <li key={j} className="flex items-start gap-3">
-                        <CheckCircle2 className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
-                        <span className="text-sm text-gray-700">{feature}</span>
+                      <li key={j} className="flex items-start gap-3 text-sm text-foreground/80">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                        {feature}
                       </li>
                     ))}
                   </ul>
-                  <Link to={plan.name === "Enterprise" ? "#contact" : "/auth/signup"}>
-                    <Button 
-                      className="w-full" 
-                      variant={plan.highlight ? "default" : "outline"}
-                      size="lg"
-                    >
-                      {plan.cta} <ArrowRight className="ml-2 h-4 w-4" />
+                  <div className="mt-8">
+                    <div className="w-full h-11 rounded-lg bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white text-sm font-medium flex items-center justify-center gap-2 cursor-pointer transition-all">
+                      <Link to="/auth/signup" className="flex items-center gap-2">
+                        {plan.cta} <ArrowRight className="h-4 w-4" />
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  key={i}
+                  className="rounded-xl border border-[rgba(255,255,255,0.07)] bg-[#0f1218] p-8 relative"
+                >
+                  <p className="text-xl font-bold font-['Syne'] text-foreground">{plan.name}</p>
+                  <p className="text-sm text-muted-foreground mt-1 mb-6 min-h-[40px]">
+                    {plan.description}
+                  </p>
+                  <div>
+                    <span className="text-5xl font-bold font-['Syne'] text-foreground">
+                      {plan.price}
+                    </span>
+                    {plan.period && (
+                      <span className="text-muted-foreground text-base">{plan.period}</span>
+                    )}
+                  </div>
+                  <div className="border-t border-[rgba(255,255,255,0.06)] my-6" />
+                  <ul className="space-y-3">
+                    {plan.features.map((feature, j) => (
+                      <li key={j} className="flex items-start gap-3 text-sm text-foreground/80">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                        {feature}
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="mt-8">
+                    <Button variant="outline" className="w-full h-11">
+                      <Link
+                        to={plan.name === "Enterprise" ? "#contact" : "/auth/signup"}
+                        className="flex items-center gap-2"
+                      >
+                        {plan.name === "Enterprise" ? (
+                          "Talk to us →"
+                        ) : (
+                          <>
+                            {plan.cta} <ArrowRight className="h-4 w-4" />
+                          </>
+                        )}
+                      </Link>
                     </Button>
-                  </Link>
-                </CardContent>
-              </Card>
-            ))}
+                  </div>
+                </div>
+              )
+            )}
           </div>
         </div>
       </section>
 
-      <section className="py-20 bg-gray-50">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold mb-4">Frequently asked questions</h2>
-            <p className="text-gray-600">Everything you need to know about pricing and plans</p>
+      {/* FAQ */}
+      <section className="bg-background pt-0 pb-24">
+        <div className="max-w-3xl mx-auto px-4">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-1 h-5 rounded-full bg-amber-400" />
+            <span className="text-xs uppercase tracking-widest text-amber-400">FAQ</span>
           </div>
+          <h2 className="font-['Syne'] text-4xl font-bold text-foreground mb-10">
+            Frequently asked questions
+          </h2>
           <Accordion type="single" collapsible className="w-full">
             {faqs.map((faq, i) => (
-              <AccordionItem key={i} value={`item-${i}`}>
-                <AccordionTrigger className="text-left">
+              <AccordionItem
+                key={i}
+                value={`item-${i}`}
+                className="border border-[rgba(255,255,255,0.06)] bg-[#0f1218] rounded-xl mb-3 px-2 overflow-hidden border-b-0"
+              >
+                <AccordionTrigger className="text-left hover:no-underline">
                   <div className="flex items-start gap-3">
-                    <HelpCircle className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                    <span>{faq.question}</span>
+                    <HelpCircle className="h-5 w-5 text-blue-400 flex-shrink-0 mt-0.5" />
+                    <span className="text-foreground text-sm font-medium">{faq.question}</span>
                   </div>
                 </AccordionTrigger>
-                <AccordionContent className="text-gray-600 pl-8">
+                <AccordionContent className="text-muted-foreground text-sm pl-8 pb-4">
                   {faq.answer}
                 </AccordionContent>
               </AccordionItem>
@@ -201,33 +274,35 @@ export default function PricingPage() {
         </div>
       </section>
 
-      <section className="py-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <Card className="bg-gradient-to-br from-blue-600 to-blue-700 text-white border-0">
-            <CardContent className="p-12 text-center">
-              <h2 className="text-3xl font-bold mb-4">Ready to get started?</h2>
-              <p className="text-xl text-blue-100 mb-8 max-w-2xl mx-auto">
-                Join hundreds of exporters and B2B teams using Client Finder to discover, 
-                verify, and contact their ideal clients.
-              </p>
-              <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <Link to="/auth/signup">
-                  <Button size="lg" variant="secondary">
-                    Start Free Trial <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </Link>
-                <Link to="/features">
-                  <Button 
-                    size="lg" 
-                    variant="outline" 
-                    className="bg-transparent text-white border-white hover:bg-white/10"
-                  >
-                    View All Features
-                  </Button>
-                </Link>
+      {/* BOTTOM CTA */}
+      <section className="relative py-24">
+        <div
+          className="absolute inset-8 rounded-3xl pointer-events-none"
+          style={{
+            background:
+              "radial-gradient(ellipse at center, rgba(59,130,246,0.07) 0%, transparent 70%)",
+          }}
+        />
+        <div className="relative max-w-2xl mx-auto px-4 rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[#0f1218] p-12 text-center">
+          <h2 className="font-['Syne'] text-3xl font-bold text-foreground mb-4">
+            Ready to get started?
+          </h2>
+          <p className="text-muted-foreground mb-8 max-w-lg mx-auto">
+            Join hundreds of exporters and B2B teams using Client Finder to discover, verify, and
+            contact their ideal clients.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Link to="/auth/signup">
+              <div className="h-11 px-6 rounded-lg bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white text-sm font-medium flex items-center justify-center gap-2 cursor-pointer transition-all">
+                Start Free Trial <ArrowRight className="h-4 w-4" />
               </div>
-            </CardContent>
-          </Card>
+            </Link>
+            <Link to="/features">
+              <Button variant="outline" className="h-11 px-6">
+                View All Features
+              </Button>
+            </Link>
+          </div>
         </div>
       </section>
     </div>

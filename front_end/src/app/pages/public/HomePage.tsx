@@ -95,215 +95,337 @@ export default function HomePage() {
 
   return (
     <div className="bg-background text-foreground">
-      {/* Hero Section */}
-      <section className="relative overflow-hidden bg-gradient-to-b from-primary/5 to-background">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 lg:py-32">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
-            <div>
-              <Badge className="mb-4">AI-Powered Client Discovery</Badge>
-              <h1 className="text-4xl lg:text-6xl font-bold mb-6 leading-tight">
-                Find, Verify, and Contact Your Ideal Clients
+
+      {/* ── Hero ── */}
+      <section
+        className="relative min-h-screen flex items-center"
+        style={{
+          background: "#0a0c10",
+          backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px)",
+          backgroundSize: "32px 32px",
+        }}
+      >
+        <div
+          className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full pointer-events-none opacity-30"
+          style={{ background: "radial-gradient(circle, rgba(245,158,11,0.15) 0%, transparent 70%)" }}
+        />
+        <div
+          className="absolute bottom-0 left-0 w-[600px] h-[600px] rounded-full pointer-events-none opacity-30"
+          style={{ background: "radial-gradient(circle, rgba(59,130,246,0.15) 0%, transparent 70%)" }}
+        />
+
+        <div className="relative w-full max-w-7xl mx-auto px-6">
+          <div className="grid lg:grid-cols-[55%_45%] gap-12 items-center">
+
+            <div className="space-y-8">
+              <h1 style={{ fontFamily: "Syne, sans-serif", fontWeight: 800 }}>
+                <span
+                  className="block text-[48px] lg:text-[72px] leading-none"
+                  style={{ color: "#e8edf5" }}
+                >
+                  Turn any niche into
+                </span>
+                <span
+                  className="block text-[48px] lg:text-[72px] leading-none"
+                  style={{
+                    background: "linear-gradient(to right, #60a5fa, #34d399)",
+                    WebkitBackgroundClip: "text",
+                    WebkitTextFillColor: "transparent",
+                  }}
+                >
+                  a pipeline of buyers.
+                </span>
               </h1>
-              <p className="text-lg text-muted-foreground mb-8">
-                Stop wasting time on manual prospecting. Client Finder combines real-time business search, 
-                AI relevance scoring, and trust verification into one powerful workflow.
+
+              <p style={{ fontFamily: "DM Sans, sans-serif", fontSize: 18, color: "#8a95a8", maxWidth: 480 }}>
+                Describe the kind of buyer you want. Client Finder searches the web,
+                scores every result with AI, and verifies the best ones —
+                so your time goes to real prospects, not noise.
               </p>
-              <div className="flex flex-col sm:flex-row gap-4">
+
+              <div className="flex gap-4">
                 <Link to="/auth/signup">
-                  <Button size="lg" className="w-full sm:w-auto">
-                    Start Free Trial <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
+                  <button
+                    style={{
+                      background: "#3b82f6",
+                      color: "white",
+                      border: "none",
+                      borderRadius: 8,
+                      padding: "12px 24px",
+                      fontFamily: "DM Sans, sans-serif",
+                      fontWeight: 500,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Start for free →
+                  </button>
                 </Link>
                 <Link to="/features">
-                  <Button size="lg" variant="outline" className="w-full sm:w-auto">
-                    See How It Works
-                  </Button>
+                  <button
+                    style={{
+                      background: "transparent",
+                      color: "white",
+                      border: "1px solid rgba(255,255,255,0.2)",
+                      borderRadius: 8,
+                      padding: "12px 24px",
+                      fontFamily: "DM Sans, sans-serif",
+                      fontWeight: 500,
+                      cursor: "pointer",
+                    }}
+                  >
+                    See how it works
+                  </button>
                 </Link>
               </div>
-              <div className="mt-8 flex items-center gap-6 text-sm text-muted-foreground">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                  No credit card required
+
+              <div className="flex gap-4 text-sm" style={{ color: "#8a95a8" }}>
+                <span>✓ No credit card</span>
+                <span>·</span>
+                <span>✓ 14-day trial</span>
+                <span>·</span>
+                <span>✓ Cancel anytime</span>
+              </div>
+            </div>
+
+            <div style={{ transform: "rotate(2deg)" }}>
+              <div
+                style={{
+                  background: "#0f1218",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  borderRadius: 12,
+                  padding: 16,
+                  boxShadow: "0 20px 60px rgba(59,130,246,0.15)",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    paddingBottom: 12,
+                    borderBottom: "1px solid rgba(255,255,255,0.06)",
+                    marginBottom: 16,
+                  }}
+                >
+                  <div className="flex gap-2">
+                    <div className="w-3 h-3 rounded-full" style={{ background: "rgba(239,68,68,0.6)" }} />
+                    <div className="w-3 h-3 rounded-full" style={{ background: "rgba(245,158,11,0.6)" }} />
+                    <div className="w-3 h-3 rounded-full" style={{ background: "rgba(34,197,94,0.6)" }} />
+                  </div>
+                  <div className="flex items-center gap-2" style={{ fontFamily: "DM Sans, sans-serif", fontSize: 12, color: "#8a95a8" }}>
+                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    Searching: ethical fashion boutiques UK
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                  14-day free trial
+
+                <div className="space-y-3">
+                  {[
+                    { name: "Albaray London", score: "96%", status: "Verified", statusStyle: { background: "rgba(16,185,129,0.15)", color: "#10b981" } },
+                    { name: "Selected Femme DK", score: "91%", status: "Verified", statusStyle: { background: "rgba(16,185,129,0.15)", color: "#10b981" } },
+                    { name: "Thought Clothing UK", score: "78%", status: "Scoring...", statusStyle: { background: "rgba(245,158,11,0.15)", color: "#f59e0b" } },
+                  ].map((item, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        background: "#151a22",
+                        borderRadius: 8,
+                        padding: 12,
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                      }}
+                    >
+                      <span style={{ fontFamily: "DM Sans, sans-serif", fontSize: 14, color: "#e8edf5" }}>{item.name}</span>
+                      <div className="flex gap-2">
+                        <span style={{ fontSize: 12, padding: "4px 8px", borderRadius: 4, background: "rgba(59,130,246,0.15)", color: "#3b82f6" }}>{item.score}</span>
+                        <span style={{ fontSize: 12, padding: "4px 8px", borderRadius: 4, ...item.statusStyle }}>{item.status}</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
-            <div className="lg:pl-12">
-              <Card className="shadow-2xl">
-                <CardContent className="p-6">
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between pb-3 border-b">
-                      <span className="font-semibold">Search Results</span>
-                      <Badge variant="secondary">Live</Badge>
-                    </div>
-                    {[
-                      { name: "TechCorp Industries", score: 94, status: "Verified", color: "text-emerald-500" },
-                      { name: "Global Exports Ltd", score: 88, status: "Verified", color: "text-emerald-500" },
-                      { name: "Innovation Partners", score: 76, status: "Pending", color: "text-amber-500" }
-                    ].map((item, i) => (
-                      <div key={i} className="flex items-center justify-between p-3 bg-muted rounded-lg">
-                        <div>
-                          <div className="font-medium text-sm text-foreground">{item.name}</div>
-                          <div className="flex items-center gap-2 mt-1">
-                            <div className="text-xs text-muted-foreground">Match Score: {item.score}%</div>
-                            <Badge variant="outline" className={`text-xs ${item.color} border-current`}>
-                              {item.status}
-                            </Badge>
-                          </div>
-                        </div>
-                        <ShieldCheck className={`h-5 w-5 ${item.color}`} />
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+
           </div>
         </div>
       </section>
 
-      {/* Trust Strip */}
-      <section className="border-y border-border bg-muted py-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-6 text-sm text-muted-foreground">Trusted by exporters and B2B teams worldwide</div>
-          <div className="flex justify-center items-center gap-12 opacity-60">
-            {["Company A", "Company B", "Company C", "Company D"].map((company, i) => (
-              <div key={i} className="font-semibold text-muted-foreground">{company}</div>
+      {/* ── Positioning Banner ── */}
+      <section className="border-y border-[rgba(255,255,255,0.06)] py-12 bg-[#0f1218]">
+        <div className="max-w-3xl mx-auto px-4 text-center">
+          <p className="text-xs uppercase tracking-widest text-amber-400">Who this is built for</p>
+          <p className="text-xl font-semibold text-foreground font-['Syne'] mt-2">
+            Pakistani textile exporters who want to find fashion brands, boutiques, and retailers abroad — without spending weeks on Google.
+          </p>
+          <div className="flex flex-wrap justify-center gap-3 mt-6">
+            {["🇬🇧 UK buyers", "🇩🇪 European retailers", "🇦🇺 AU/NZ boutiques"].map((chip, i) => (
+              <span
+                key={i}
+                className="text-xs px-3 py-1.5 rounded-full border border-[rgba(255,255,255,0.08)] bg-[#151a22] text-muted-foreground"
+              >
+                {chip}
+              </span>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Features Grid */}
+      {/* ── Features ── */}
       <section className="py-24 bg-background">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl lg:text-4xl font-bold mb-4">Everything you need in one platform</h2>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              Replace fragmented tools with a single, integrated workflow that takes you from search to signed client.
-            </p>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-1 h-6 rounded-full bg-amber-400" />
+            <span className="text-xs uppercase tracking-widest text-amber-400 font-medium">What it does</span>
           </div>
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <h2 className="text-3xl font-bold font-['Syne'] text-foreground">Everything you need in one platform</h2>
+          <p className="text-muted-foreground max-w-xl mt-2 mb-12">
+            Replace fragmented tools with a single, integrated workflow that takes you from search to signed client.
+          </p>
+
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {features.map((feature, i) => {
               const Icon = feature.icon;
               return (
-                <Card key={i} className="border bg-card hover:border-primary/50 transition-colors">
-                  <CardContent className="p-6">
-                    <div className="h-12 w-12 bg-primary/10 rounded-lg flex items-center justify-center mb-4">
-                      <Icon className="h-6 w-6 text-primary" />
-                    </div>
-                    <h3 className="font-semibold text-lg mb-2 text-foreground">{feature.title}</h3>
-                    <p className="text-muted-foreground text-sm">{feature.description}</p>
-                  </CardContent>
-                </Card>
+                <div
+                  key={i}
+                  className="group p-6 rounded-xl border border-[rgba(255,255,255,0.06)] bg-[#0f1218] hover:border-blue-500/40 hover:bg-[#0f1420] transition-all duration-300 cursor-default"
+                >
+                  <div className="w-11 h-11 rounded-lg bg-blue-500/10 flex items-center justify-center mb-4 group-hover:bg-blue-500/15 transition-colors">
+                    <Icon className="h-5 w-5 text-blue-400" />
+                  </div>
+                  <h3 className="text-base font-semibold text-foreground mb-2 font-['Syne']">{feature.title}</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">{feature.description}</p>
+                </div>
               );
             })}
           </div>
         </div>
       </section>
 
-      {/* How It Works */}
-      <section className="py-24 bg-muted border-y border-border">
+      {/* ── How It Works ── */}
+      <section className="py-24 bg-background border-t border-[rgba(255,255,255,0.04)]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl lg:text-4xl font-bold mb-4 text-foreground">Your complete client discovery pipeline</h2>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              A guided, step-by-step workflow that ensures you only contact qualified, verified prospects.
-            </p>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-1 h-6 rounded-full bg-amber-400" />
+            <span className="text-xs uppercase tracking-widest text-amber-400 font-medium">How It Works</span>
           </div>
-          <div className="space-y-6">
+          <h2 className="text-3xl font-bold font-['Syne'] text-foreground">Your complete pipeline</h2>
+
+          <div className="mt-16 max-w-2xl">
             {steps.map((step, i) => (
-              <Card key={i} className="overflow-hidden">
-                <CardContent className="p-6">
-                  <div className="flex items-start gap-6">
-                    <div className="flex-shrink-0">
-                      <div className="h-16 w-16 bg-blue-600 text-white rounded-lg flex items-center justify-center font-bold text-xl">
-                        {step.number}
-                      </div>
-                    </div>
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-xl mb-2 text-foreground">{step.title}</h3>
-                      <p className="text-muted-foreground">{step.description}</p>
-                    </div>
-                    {i < steps.length - 1 && (
-                      <ArrowRight className="h-6 w-6 text-muted-foreground hidden lg:block" />
-                    )}
+              <div key={i}>
+                <div className="flex items-start gap-6">
+                  <div className="w-16 h-16 rounded-full flex-shrink-0 flex items-center justify-center font-bold font-['Syne'] text-lg bg-[#0f1218] border-2 border-blue-500/40 text-blue-400">
+                    {step.number}
                   </div>
-                </CardContent>
-              </Card>
+                  <div className="flex-1 pt-3">
+                    <h3 className="font-semibold text-foreground font-['Syne']">{step.title}</h3>
+                    <p className="text-sm text-muted-foreground mt-1">{step.description}</p>
+                  </div>
+                </div>
+                {i < steps.length - 1 && (
+                  <div className="ml-8 w-px h-8 bg-[rgba(255,255,255,0.06)]" />
+                )}
+              </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Pricing Preview */}
+      {/* ── Pricing ── */}
       <section className="py-24 bg-background">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl lg:text-4xl font-bold mb-4">Simple, transparent pricing</h2>
-            <p className="text-lg text-muted-foreground">Choose the plan that fits your business needs</p>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-1 h-6 rounded-full bg-amber-400" />
+            <span className="text-xs uppercase tracking-widest text-amber-400 font-medium">Pricing</span>
           </div>
+          <h2 className="text-3xl font-bold font-['Syne'] text-foreground mb-2">Simple, transparent pricing</h2>
+          <p className="text-muted-foreground mb-12">Choose the plan that fits your business needs</p>
+
           <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
             {pricingPlans.map((plan, i) => (
-              <Card key={i} className={`relative ${plan.popular ? 'border-blue-600 border-2 shadow-lg' : ''}`}>
+              <div
+                key={i}
+                className="rounded-xl p-6 flex flex-col"
+                style={
+                  plan.popular
+                    ? {
+                        border: "1px solid rgba(59,130,246,0.5)",
+                        background: "#0a0f1a",
+                        boxShadow: "0 0 40px rgba(59,130,246,0.1)",
+                      }
+                    : {
+                        border: "1px solid rgba(255,255,255,0.07)",
+                        background: "#0f1218",
+                      }
+                }
+              >
                 {plan.popular && (
-                  <div className="absolute -top-4 left-1/2 -translate-x-1/2">
-                    <Badge className="bg-blue-600">Most Popular</Badge>
-                  </div>
+                  <span className="inline-block mb-3 text-[10px] font-bold tracking-widest uppercase px-3 py-1 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/25">
+                    Most popular
+                  </span>
                 )}
-                <CardContent className="p-6">
-                  <h3 className="font-semibold text-xl mb-2 text-foreground">{plan.name}</h3>
-                  <p className="text-sm text-muted-foreground mb-4">{plan.description}</p>
-                  <div className="mb-6">
-                    <span className="text-4xl font-bold text-foreground">{plan.price}</span>
-                    <span className="text-muted-foreground">{plan.period}</span>
-                  </div>
-                  <ul className="space-y-3 mb-6">
-                    {plan.features.map((feature, j) => (
-                      <li key={j} className="flex items-start gap-2 text-sm text-muted-foreground">
-                        <CheckCircle2 className="h-5 w-5 text-emerald-500 flex-shrink-0 mt-0.5" />
-                        <span>{feature}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <Link to="/auth/signup">
-                    <Button className="w-full" variant={plan.popular ? "default" : "outline"}>
+                <h3 className="font-semibold text-xl text-foreground font-['Syne']">{plan.name}</h3>
+                <p className="text-sm text-muted-foreground mt-1 mb-4">{plan.description}</p>
+                <div className="mb-6">
+                  <span className="text-4xl font-bold font-['Syne'] text-foreground">{plan.price}</span>
+                  <span className="text-muted-foreground">{plan.period}</span>
+                </div>
+                <ul className="space-y-3 mb-6 flex-1">
+                  {plan.features.map((feature, j) => (
+                    <li key={j} className="flex items-start gap-2 text-sm text-muted-foreground">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                      <span>{feature}</span>
+                    </li>
+                  ))}
+                </ul>
+                <Link to="/auth/signup">
+                  {plan.popular ? (
+                    <button className="w-full h-10 rounded-lg bg-gradient-to-r from-blue-600 to-blue-500 text-white text-sm font-medium hover:from-blue-500 hover:to-blue-400 transition-all">
                       Get Started
-                    </Button>
-                  </Link>
-                </CardContent>
-              </Card>
+                    </button>
+                  ) : (
+                    <Button variant="outline" className="w-full">Get Started</Button>
+                  )}
+                </Link>
+              </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Final CTA */}
-      <section className="py-24 bg-gradient-to-br from-primary to-blue-700 text-primary-foreground">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="text-3xl lg:text-5xl font-bold mb-6">
-            Ready to transform your client discovery?
-          </h2>
-          <p className="text-xl mb-8 opacity-90">
-            Join hundreds of exporters and B2B teams who've replaced manual prospecting with intelligent automation.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link to="/auth/signup">
-              <Button size="lg" variant="secondary" className="w-full sm:w-auto">
-                Start Free Trial <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-            </Link>
-            <Link to="/pricing">
-              <Button size="lg" variant="outline" className="w-full sm:w-auto bg-transparent text-white border-white hover:bg-white/10">
-                View Pricing
-              </Button>
-            </Link>
+      {/* ── Final CTA ── */}
+      <section className="py-24 bg-background">
+        <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="relative">
+            <div
+              className="absolute inset-0 rounded-2xl pointer-events-none"
+              style={{ background: "radial-gradient(ellipse at center, rgba(59,130,246,0.08) 0%, transparent 70%)" }}
+            />
+            <div className="relative rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[#0f1218] p-12 text-center">
+              <h2 className="font-['Syne'] text-3xl font-bold text-foreground mb-4">
+                Ready to find your first overseas buyer?
+              </h2>
+              <p className="text-muted-foreground mb-8">
+                Set up takes 2 minutes. Describe the kind of business you want to reach, and the AI does the rest.
+              </p>
+              <div className="flex gap-4 justify-center flex-wrap">
+                <Link to="/auth/signup">
+                  <Button className="bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white border-0 h-12 px-8 text-base font-medium rounded-lg transition-all">
+                    Start for free →
+                  </Button>
+                </Link>
+                <Link to="/pricing">
+                  <Button variant="outline" className="h-12 px-8 text-base rounded-lg">
+                    View Pricing
+                  </Button>
+                </Link>
+              </div>
+            </div>
           </div>
         </div>
       </section>
+
     </div>
   );
 }

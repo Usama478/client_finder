@@ -67,12 +67,12 @@ export default function DashboardPage() {
   }, [user])
 
   const kpis = [
-    { label: "Total Searches", value: stats ? String(stats.total_searches || 0) : "—", delta: "", icon: Search, color: "var(--primary)" },
-    { label: "Saved Clients", value: stats ? String(stats.total_clients || 0) : "—", delta: "", icon: Users, color: "var(--chart-2)" },
-    { label: "Verified", value: stats ? String(stats.verified_clients || 0) : "—", delta: "", icon: ShieldCheck, color: "var(--chart-3)" },
-    { label: "Leads Found", value: stats ? String(stats.leads_found || 0) : "—", delta: "", icon: Activity, color: "#8b5cf6" },
-    { label: "Relevant Leads", value: stats ? String(stats.relevant_leads || 0) : "—", delta: "", icon: Target, color: "var(--chart-2)" },
-    { label: "Emails Sent", value: stats ? String(stats.emails_sent || 0) : "—", delta: "", icon: Mail, color: "var(--primary)" },
+    { label: "Total Searches", value: stats ? String(stats.total_searches || 0) : "—", delta: "", icon: Search, color: "var(--primary)", path: "/app/search" },
+    { label: "Saved Clients", value: stats ? String(stats.total_clients || 0) : "—", delta: "", icon: Users, color: "var(--chart-2)", path: "/app/clients" },
+    { label: "Verified", value: stats ? String(stats.verified_clients || 0) : "—", delta: "", icon: ShieldCheck, color: "var(--chart-3)", path: "/app/clients" },
+    { label: "Leads Found", value: stats ? String(stats.leads_found || 0) : "—", delta: "", icon: Activity, color: "#8b5cf6", path: "/app/search" },
+    { label: "Relevant Leads", value: stats ? String(stats.relevant_leads || 0) : "—", delta: "", icon: Target, color: "var(--chart-2)", path: "/app/search" },
+    { label: "Emails Sent", value: stats ? String(stats.emails_sent || 0) : "—", delta: "", icon: Mail, color: "var(--primary)", path: "/app/email" },
   ];
 
   const pipeline = [
@@ -136,7 +136,7 @@ export default function DashboardPage() {
         {kpis.map((k, i) => {
           const Icon = k.icon;
           return (
-            <div key={i} style={S.card} className={`p-4 cursor-pointer ${S.cardHover}`} onClick={() => navigate("/app/search")}>
+            <div key={i} style={S.card} className={`p-4 cursor-pointer ${S.cardHover}`} onClick={() => navigate(k.path)}>
               <div className="flex items-start justify-between mb-2">
                 <div className={S.label}>{k.label}</div>
                 <div className="w-6 h-6 rounded flex items-center justify-center opacity-60" style={{ background: `${k.color}20` }}>
