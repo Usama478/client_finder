@@ -492,7 +492,30 @@ export default function CampaignEnginePage() {
       {/* ── ACTIVITY LOG ────────────────────────────────────────────────── */}
       {campaign && (campaign.activity_log?.length ?? 0) > 0 && (
         <div style={S.card} className="p-4">
-          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-3">Live Log</div>
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Live Log</div>
+            {(() => {
+              const verifiedCount = campaign.verified_count || 0
+              const targetCount = campaign.target_count || 0
+              const progress = targetCount > 0 ? Math.min((verifiedCount / targetCount) * 100, 100) : 0
+              const circumference = 2 * Math.PI * 26
+              const offset = circumference - (progress / 100) * circumference
+              
+              return (
+                <div className="relative flex items-center justify-center" style={{ width: 80, height: 80 }}>
+                  <svg className="transform -rotate-90" width="80" height="80">
+                    <circle cx="40" cy="40" r="26" fill="none" stroke="#1c2837" strokeWidth="4" />
+                    <circle cx="40" cy="40" r="26" fill="none" stroke="#6366f1" strokeWidth="4"
+                      strokeDasharray={circumference} strokeDashoffset={offset}
+                      className="transition-all duration-500" strokeLinecap="round" />
+                  </svg>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="text-sm font-bold text-white">{verifiedCount}<span className="text-[11px] text-muted-foreground font-normal">/{targetCount}</span></div>
+                  </div>
+                </div>
+              )
+            })()}
+          </div>
           <div ref={logRef} className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
             {(campaign.activity_log || []).map((entry, i) => (
               <div key={i} className="flex items-start gap-2 text-[12px]">

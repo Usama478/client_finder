@@ -177,7 +177,7 @@ def get_campaign_results(
         raise HTTPException(status_code=404, detail="Campaign not found")
     results = db.query(SearchResult).filter(
         SearchResult.campaign_id == campaign_id
-    ).order_by(SearchResult.result_id.desc()).all()
+    ).order_by(SearchResult.result_id.asc()).all()
     return [
         {
             "result_id": r.result_id,

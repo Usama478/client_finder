@@ -238,7 +238,7 @@ def run_campaign_resume(campaign_id: int) -> None:
         pending_leads = db.query(SearchResult).filter(
             SearchResult.campaign_id == campaign_id,
             SearchResult.campaign_status == "pending_relevance",
-        ).all()
+        ).order_by(SearchResult.id.asc()).all()
 
         _append_log(db, campaign, f"Found {len(pending_leads)} unprocessed candidates.")
 
@@ -316,7 +316,7 @@ def run_campaign_resume(campaign_id: int) -> None:
         remaining = db.query(SearchResult).filter(
             SearchResult.campaign_id == campaign_id,
             SearchResult.campaign_status == "pending_relevance",
-        ).count()
+        ).order_by(SearchResult.id.asc()).count()
         if remaining == 0:
             campaign.status = "completed"
             _append_log(db, campaign, f"Resume complete. {campaign.verified_count} total verified clients.")
@@ -380,6 +380,9 @@ def run_campaign_engine(campaign_id: int) -> None:
                 pass
 
         while campaign.verified_count < campaign.target_count and campaign.credits_used < campaign.credit_budget:
+            db.refresh(campaign)
+            if campaign.status == "failed":
+                return
             pass_number += 1
             campaign.current_pass = pass_number
             db.commit()
@@ -443,6 +446,9 @@ def run_campaign_engine(campaign_id: int) -> None:
 
             # Combined relevance → verification loop (one candidate at a time)
             for result_id in new_result_ids:
+                db.refresh(campaign)
+                if campaign.status == "failed":
+                    return
                 if campaign.credits_used >= campaign.credit_budget:
                     _append_log(db, campaign, "Credit budget reached.", "warn")
                     break
@@ -484,6 +490,9 @@ def run_campaign_engine(campaign_id: int) -> None:
                     continue
 
                 # ── Verification (only runs if relevance passed) ────────
+                db.refresh(campaign)
+                if campaign.status == "failed":
+                    return
                 if campaign.credits_used >= campaign.credit_budget:
                     _append_log(db, campaign, "Credit budget reached before verification.", "warn")
                     break
