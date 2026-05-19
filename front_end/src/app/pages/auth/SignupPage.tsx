@@ -156,14 +156,13 @@ export default function SignupPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="company">Company Name</Label>
+              <Label htmlFor="company">Company Name (optional)</Label>
               <Input
                 id="company"
                 type="text"
                 placeholder="Your Company Inc."
                 value={formData.company}
                 onChange={(e) => handleChange("company", e.target.value)}
-                required
               />
             </div>
 
@@ -177,6 +176,26 @@ export default function SignupPage() {
                 required
               />
             </div>
+            {formData.password.length > 0 && (() => {
+              const p = formData.password;
+              let score = 1;
+              if (p.length >= 6) score = 2;
+              if (p.length >= 8) score = 3;
+              if (p.length >= 8 && /[A-Z]/.test(p) && /\d/.test(p)) score = 4;
+              const labels = ["", "Weak", "Fair", "Good", "Strong"];
+              const colors = ["", "bg-red-500", "bg-amber-400", "bg-amber-400", "bg-green-500"];
+              const textColors = ["", "text-red-400", "text-amber-400", "text-amber-400", "text-green-400"];
+              return (
+                <div className="mt-1.5 space-y-1">
+                  <div className="flex gap-1">
+                    {[1,2,3,4].map(i => (
+                      <div key={i} className={`h-1 flex-1 rounded-full ${i <= score ? colors[score] : "bg-muted"}`} />
+                    ))}
+                  </div>
+                  <p className={`text-xs ${textColors[score]}`}>{labels[score]}</p>
+                </div>
+              );
+            })()}
 
             <div className="space-y-2">
               <Label htmlFor="confirmPassword">Confirm Password</Label>

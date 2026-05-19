@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional
 from app.db.session import get_db
 from app.models.user import User
@@ -13,6 +13,7 @@ from app.services.credit_service import initialize_credits
 from app.services.email_service import send_verification_email, send_password_reset_email
 import secrets
 from datetime import datetime, timedelta, timezone
+import re
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -22,6 +23,17 @@ class SignupRequest(BaseModel):
     name: str
     email: EmailStr
     password: str
+
+    @field_validator("password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters.")
+        if not re.search(r"[A-Z]", v):
+            raise ValueError("Password must contain at least one uppercase letter.")
+        if not re.search(r"\d", v):
+            raise ValueError("Password must contain at least one number.")
+        return v
 
 class LoginResponse(BaseModel):
     access_token: str
@@ -201,6 +213,17 @@ class ResetPasswordRequest(BaseModel):
     token: str
     password: str
 
+    @field_validator("password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters.")
+        if not re.search(r"[A-Z]", v):
+            raise ValueError("Password must contain at least one uppercase letter.")
+        if not re.search(r"\d", v):
+            raise ValueError("Password must contain at least one number.")
+        return v
+
 @router.post("/reset-password")
 def reset_password(request: ResetPasswordRequest,
                    db: Session = Depends(get_db)):
@@ -222,6 +245,19 @@ class UpdateProfileRequest(BaseModel):
     email: Optional[str] = None
     current_password: Optional[str] = None
     new_password: Optional[str] = None
+
+    @field_validator("new_password")
+    @classmethod
+    def new_password_strength(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters.")
+        if not re.search(r"[A-Z]", v):
+            raise ValueError("Password must contain at least one uppercase letter.")
+        if not re.search(r"\d", v):
+            raise ValueError("Password must contain at least one number.")
+        return v
 
 @router.put("/update-profile")
 def update_profile(

@@ -46,14 +46,19 @@ app.add_middleware(
 async def validation_exception_handler(request, exc):
     body_bytes = await request.body()
     body_str = body_bytes.decode('utf-8')
-    
+
     logger.error(f"[VALIDATION_ERROR] Path: {request.url.path}")
     logger.error(f"[VALIDATION_ERROR] Raw body: {body_str}")
     logger.error(f"[VALIDATION_ERROR] Error details: {exc.errors()}")
-    
+
+    safe_errors = []
+    for error in exc.errors():
+        safe_error = {k: str(v) if k == "ctx" else v for k, v in error.items()}
+        safe_errors.append(safe_error)
+
     return JSONResponse(
         status_code=422,
-        content={"detail": exc.errors(), "body_received": body_str}
+        content={"detail": safe_errors, "body_received": body_str}
     )
 
 @app.get("/health")

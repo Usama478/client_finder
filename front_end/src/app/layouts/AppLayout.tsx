@@ -2,7 +2,7 @@ import { Outlet, Link, useLocation, useNavigate } from "react-router";
 import {
   LayoutDashboard, Search, Users, UserCircle, Activity, Mail,
   FileText, CreditCard, Settings, Shield, Bell, Menu, X, ChevronLeft,
-  Zap, Key, Gauge, ArrowLeft
+  Zap, Key, Gauge, ArrowLeft, LogOut
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Avatar, AvatarFallback } from "../components/ui/avatar";
@@ -225,6 +225,7 @@ export default function AppLayout() {
 
         {/* User card */}
         <div className="p-2 border-t" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
+          <Link to="/app/profile">
           <div className={`flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer hover:bg-[#151a22] transition-colors ${!sidebarOpen ? "justify-center" : ""}`}>
             <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
               style={{ background: "linear-gradient(135deg, #7c3aed, #3b82f6)" }}>{userInitials}</div>
@@ -235,6 +236,14 @@ export default function AppLayout() {
               </div>
             )}
           </div>
+          </Link>
+          <button
+            onClick={() => logout()}
+            className={`mt-1 flex items-center gap-2 px-2 py-1.5 w-full rounded-lg text-red-400 hover:bg-red-500/10 transition-colors text-xs ${!sidebarOpen ? "justify-center" : ""}`}
+          >
+            <LogOut className="h-3.5 w-3.5 flex-shrink-0" />
+            {sidebarOpen && <span>Sign Out</span>}
+          </button>
         </div>
       </aside>
 
@@ -267,6 +276,15 @@ export default function AppLayout() {
                   {navItems.map(item => <NavItem key={item.path} item={item} mobile />)}
                   <div className="mt-4 pt-3 border-t" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
                     {accountItems.map(item => <NavItem key={item.path} item={{ ...item, badge: null, badgeGreen: false }} mobile />)}
+                  </div>
+                  <div className="mt-4 pt-3 border-t" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
+                    <button
+                      onClick={() => { logout(); setMobileMenuOpen(false); }}
+                      className="flex items-center gap-3 px-3 py-2 w-full rounded-lg text-sm text-red-400 hover:bg-red-500/10 transition-colors"
+                    >
+                      <LogOut className="h-4 w-4 flex-shrink-0" />
+                      <span>Sign Out</span>
+                    </button>
                   </div>
                 </>
               )}
@@ -307,6 +325,9 @@ export default function AppLayout() {
               <DropdownMenuContent align="end" className="w-48 bg-card border-border">
                 <DropdownMenuLabel className="text-[#e8edf5]">{userName}</DropdownMenuLabel>
                 <DropdownMenuSeparator style={{ background: "rgba(255,255,255,0.07)" }} />
+                <DropdownMenuItem onClick={() => navigate("/app/profile")} className="text-[#8a95a8] hover:text-[#e8edf5] cursor-pointer">
+                  <UserCircle className="mr-2 h-4 w-4" /> My Profile
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => navigate("/app/settings")} className="text-[#8a95a8] hover:text-[#e8edf5] cursor-pointer">
                   <Settings className="mr-2 h-4 w-4" /> Settings
                 </DropdownMenuItem>

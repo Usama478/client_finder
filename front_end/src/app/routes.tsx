@@ -20,6 +20,7 @@ import ActivityPage from "./pages/app/ActivityPage";
 import ContextsPage from "./pages/app/ContextsPage";
 import BillingPage from "./pages/app/BillingPage";
 import SettingsPage from "./pages/app/SettingsPage";
+import ProfilePage from "./pages/app/ProfilePage";
 import AdminDashboardPage from "./pages/admin/AdminDashboardPage";
 import UserManagementPage from "./pages/admin/UserManagementPage";
 import ApiKeyManagementPage from "./pages/admin/ApiKeyManagementPage";
@@ -65,6 +66,7 @@ export const router = createBrowserRouter([
       { path: "campaigns", Component: CampaignEnginePage },
       { path: "billing", Component: BillingPage },
       { path: "settings", Component: SettingsPage },
+      { path: "profile", Component: ProfilePage },
       { path: "admin", element: <ProtectedRoute requireAdmin={true}><AdminDashboardPage /></ProtectedRoute> },
       { path: "admin/users", element: <ProtectedRoute requireAdmin={true}><UserManagementPage /></ProtectedRoute> },
       { path: "admin/api-keys", element: <ProtectedRoute requireAdmin={true}><ApiKeyManagementPage /></ProtectedRoute> },
