@@ -4,6 +4,7 @@ import { useSearchParams, useNavigate, Link } from "react-router"
 import { api } from "../../../lib/api"
 import { campaignsApi, Campaign, CampaignResult, CostEstimate } from "../../../lib/campaigns-api"
 import { toast } from "sonner"
+import { usePageState } from "../../../lib/app-state-context"
 
 // ── tiny helpers ────────────────────────────────────────────────────────────
 const S = {
@@ -41,13 +42,9 @@ export default function CampaignEnginePage() {
   const navigate = useNavigate()
 
   // setup form
-  const [intent, setIntent] = useState("")
-  const [contextId, setContextId] = useState<number | null>(null)
+  const [campState, setCampState] = usePageState("campaign")
+  const { intent, contextId, targetCount, threshold, budget, platform, activeTab, historyExpanded } = campState
   const [contexts, setContexts] = useState<{ id: number; name: string }[]>([])
-  const [targetCount, setTargetCount] = useState(10)
-  const [threshold, setThreshold] = useState(60)
-  const [budget, setBudget] = useState(50)
-  const [platform, setPlatform] = useState<"maps" | "serp" | "both">("both")
   const [estimate, setEstimate] = useState<CostEstimate | null>(null)
   const [credits, setCredits] = useState<number | null>(null)
   const [launching, setLaunching] = useState(false)
@@ -56,12 +53,10 @@ export default function CampaignEnginePage() {
   // campaign state
   const [campaign, setCampaign] = useState<Campaign | null>(null)
   const [results, setResults] = useState<CampaignResult[]>([])
-  const [activeTab, setActiveTab] = useState<"all" | "passed" | "verified">("all")
   const [savingId, setSavingId] = useState<number | null>(null)
 
   // history state
   const [history, setHistory] = useState<Campaign[]>([])
-  const [historyExpanded, setHistoryExpanded] = useState(false)
 
   // log auto-scroll
   const logRef = useRef<HTMLDivElement>(null)
@@ -173,8 +168,7 @@ export default function CampaignEnginePage() {
   function handleReset() {
     setCampaign(null)
     setResults([])
-    setIntent("")
-    setContextId(null)
+    setCampState({ intent: "", contextId: null, activeTab: "all" })
     setEstimate(null)
     setSearchParams({})
   }
@@ -205,7 +199,7 @@ export default function CampaignEnginePage() {
       setHistory(h || [])
       setResults(r || [])
       setCampaign(c)
-      setHistoryExpanded(true)
+      setCampState({ historyExpanded: true })
     } catch {}
   }
 
@@ -263,7 +257,7 @@ export default function CampaignEnginePage() {
           {/* Intent */}
           <div className="md:col-span-2">
             <label className={S.label}>What are you looking for?</label>
-            <textarea value={intent} onChange={e => setIntent(e.target.value)} rows={2}
+            <textarea value={intent} onChange={e => setCampState({ intent: e.target.value })} rows={2}
               placeholder="e.g. US women's fashion retailers, UK homeware brands, German industrial suppliers…"
               className="w-full mt-1.5 px-3 py-2 rounded-lg text-sm text-foreground placeholder-muted-foreground resize-none focus:outline-none focus:ring-1 focus:ring-blue-500"
               style={{ background: "var(--muted)", border: "1px solid var(--border)" }} />
@@ -272,7 +266,7 @@ export default function CampaignEnginePage() {
           {/* Context */}
           <div>
             <label className={S.label}>AI Context (optional)</label>
-            <select value={contextId ?? ""} onChange={e => setContextId(e.target.value ? Number(e.target.value) : null)}
+            <select value={contextId ?? ""} onChange={e => setCampState({ contextId: e.target.value ? Number(e.target.value) : null })}
               className="w-full mt-1.5 px-3 py-2 rounded-lg text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
               style={{ background: "var(--muted)", border: "1px solid var(--border)" }}>
               <option value="">No context</option>
@@ -285,7 +279,7 @@ export default function CampaignEnginePage() {
             <label className={S.label}>Discovery Platform</label>
             <div className="flex gap-2 mt-1.5">
               {(["maps","serp","both"] as const).map(p => (
-                <button key={p} onClick={() => setPlatform(p)}
+                <button key={p} onClick={() => setCampState({ platform: p })}
                   className="flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all"
                   style={{
                     background: platform === p ? "rgba(59,130,246,0.2)" : "var(--muted)",
@@ -301,7 +295,7 @@ export default function CampaignEnginePage() {
           {/* Target */}
           <div>
             <label className={S.label}>Target Verified Clients</label>
-            <input type="number" min={1} max={50} value={targetCount} onChange={e => setTargetCount(Number(e.target.value))}
+            <input type="number" min={1} max={50} value={targetCount} onChange={e => setCampState({ targetCount: Number(e.target.value) })}
               className="w-full mt-1.5 px-3 py-2 rounded-lg text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
               style={{ background: "var(--muted)", border: "1px solid var(--border)" }} />
           </div>
@@ -312,7 +306,7 @@ export default function CampaignEnginePage() {
               Max Credits&nbsp;
               {credits !== null && <span className="text-blue-400">(you have {credits})</span>}
             </label>
-            <input type="number" min={5} value={budget} onChange={e => setBudget(Number(e.target.value))}
+            <input type="number" min={5} value={budget} onChange={e => setCampState({ budget: Number(e.target.value) })}
               className="w-full mt-1.5 px-3 py-2 rounded-lg text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
               style={{ background: "var(--muted)", border: "1px solid var(--border)" }} />
           </div>
@@ -320,7 +314,7 @@ export default function CampaignEnginePage() {
           {/* Threshold */}
           <div className="md:col-span-2">
             <label className={S.label}>Minimum Relevance Threshold — {threshold}%</label>
-            <input type="range" min={40} max={90} value={threshold} onChange={e => setThreshold(Number(e.target.value))}
+            <input type="range" min={40} max={90} value={threshold} onChange={e => setCampState({ threshold: Number(e.target.value) })}
               className="w-full mt-2 accent-blue-500" />
             <div className="flex justify-between text-[10px] text-muted-foreground mt-0.5">
               <span>40% (broader)</span><span>90% (stricter)</span>
@@ -360,7 +354,7 @@ export default function CampaignEnginePage() {
       {/* ── CAMPAIGN HISTORY ─────────────────────────────────────────────── */}
       {(history.length > 0 || campaign) && (
         <div style={S.card} className="p-5">
-          <button onClick={() => setHistoryExpanded(!historyExpanded)}
+          <button onClick={() => setCampState({ historyExpanded: !historyExpanded })}
             className="flex items-center justify-between w-full text-left">
             <div className={S.label}>Campaign History</div>
             {historyExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
@@ -414,7 +408,7 @@ export default function CampaignEnginePage() {
         <div style={S.card} className="p-5 space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <button onClick={() => { setCampaign(null); setResults([]); setSearchParams({}); setHistoryExpanded(true) }}
+              <button onClick={() => { setCampaign(null); setResults([]); setSearchParams({}); setCampState({ historyExpanded: true }) }}
                 className="text-[11px] px-2 py-1 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
                 ← Campaigns
               </button>
@@ -520,7 +514,7 @@ export default function CampaignEnginePage() {
             <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Results</div>
             <div className="flex gap-1">
               {(["all","passed","verified"] as const).map(tab => (
-                <button key={tab} onClick={() => setActiveTab(tab)}
+                <button key={tab} onClick={() => setCampState({ activeTab: tab })}
                   className="px-3 py-1 rounded-lg text-[11px] font-semibold transition-all capitalize"
                   style={{
                     background: activeTab === tab ? "rgba(59,130,246,0.2)" : "var(--muted)",

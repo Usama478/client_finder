@@ -193,9 +193,9 @@ export const api = {
 
   // Results
   results: (searchId: number) => request<SearchResult[]>(`/api/v1/results/${searchId}`),
-  leadDetail: (resultId: number) => request<SearchResult>(`/api/v1/results/${resultId}`),
+  leadDetail: (resultId: number) => request<SearchResult>(`/api/v1/dashboard/result/${resultId}`),
   updateClientStatus: (resultId: number, isSaved: boolean) =>
-    request(`/api/v1/results/${resultId}/client-status`,
+    request(`/api/v1/dashboard/result/${resultId}/client-status`,
       { method: "PUT", body: JSON.stringify({ is_saved_client: isSaved }) }),
 
   // Clients
@@ -228,7 +228,7 @@ export const api = {
 
   // Relevancy
   runRelevancy: (business: any, searchId: number, contextId: number | null, signal?: AbortSignal) =>
-    request<{ status: string; decision: string | null; score: number | null; reason: string | null }>("/api/v1/relevancy/run", {
+    request<{ status: string; decision: string | null; score: number | null; reason: string | null }>("/api/relevancy/v2/run", {
       method: "POST",
       signal,
       body: JSON.stringify({

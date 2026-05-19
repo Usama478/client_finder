@@ -4,6 +4,7 @@ import { Search, MapPin, Sparkles, ShieldCheck, Save, ExternalLink, Clock, Refre
 import { toast } from "sonner";
 import { useAuth } from "../../../lib/auth-context";
 import { api, CreditError } from "../../../lib/api";
+import { usePageState } from "../../../lib/app-state-context";
 
 /* ── Types ── */
 interface SearchSession {
@@ -62,12 +63,8 @@ export default function SearchBusinessesPage() {
   const { user, credits, refreshCredits } = useAuth();
   const routerLocation = useLocation();
   const navigate = useNavigate();
-  const [searchQuery, setSearchQuery]       = useState("");
-  const [location, setLocation]             = useState("");
-  const [industry, setIndustry]             = useState("");
-  const [showOtherIndustry, setShowOtherIndustry] = useState(false);
-  const [otherIndustry, setOtherIndustry]   = useState("");
-  const [selectedContext, setSelectedContext] = useState<number | null>(null);
+  const [searchState, setSearchState] = usePageState("search");
+  const { searchQuery, location, industry, otherIndustry, showOtherIndustry, selectedContext, discoveryPlatform, activeFilter, selectedSessionId } = searchState;
   const [searching, setSearching]           = useState(false);
   const [loadingMore, setLoadingMore]       = useState(false);
   const [processingAI, setProcessingAI]     = useState(false);
@@ -76,17 +73,14 @@ export default function SearchBusinessesPage() {
   const [aiProgress, setAiProgress]         = useState(0);
   const [processingVerify, setProcessingVerify] = useState(false);
   const [selectedIds, setSelectedIds]       = useState<string[]>([]);
-  const [activeFilter, setActiveFilter]     = useState("all");
   const [showHistory, setShowHistory]       = useState(false);
   const [sessions, setSessions]             = useState<SearchSession[]>([]);
   const [results, setResults]               = useState<BusinessResult[]>([]);
-  const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
   const [dataLoading, setDataLoading]       = useState(false);
   const [apiContexts, setApiContexts]       = useState<ApiContext[]>([]);
   const [nextPageToken, setNextPageToken]   = useState<string | null>(null);
   const [pollingIds, setPollingIds]         = useState<Set<string>>(new Set());
   const [aiContextInput, setAiContextInput] = useState("");
-  const [discoveryPlatform, setDiscoveryPlatform] = useState<"maps" | "serp" | "both">("both");
   const [queryPanelVisible, setQueryPanelVisible] = useState(false);
   const [generatingQueries, setGeneratingQueries] = useState(false);
   const [queryGenerationError, setQueryGenerationError] = useState<string | null>(null);
@@ -122,11 +116,11 @@ export default function SearchBusinessesPage() {
               (session: SearchSession) => session.search_id === parsed
             );
             if (belongsToUser) {
-              setSelectedSessionId(parsed);
+              setSearchState({ selectedSessionId: parsed });
             } else {
               localStorage.removeItem("cf_last_session_id");
               if (sessions.length > 0) {
-                setSelectedSessionId(sessions[0].search_id);
+                setSearchState({ selectedSessionId: sessions[0].search_id });
               }
             }
           }
@@ -142,20 +136,15 @@ export default function SearchBusinessesPage() {
   useEffect(() => {
     if (routerLocation.state?.fresh) {
       localStorage.removeItem("cf_last_session_id");
-      setSelectedSessionId(null);
+      setSearchState({ selectedSessionId: null, searchQuery: "", location: "", industry: "", selectedContext: null, activeFilter: "all" });
       setResults([]);
-      setSearchQuery("");
-      setLocation("");
-      setIndustry("");
-      setSelectedContext(null);
-      setActiveFilter("all");
       setSelectedIds([]);
       setNextPageToken(null);
       contextRestoredForSessionRef.current = null;
       return;
     }
     if (routerLocation.state?.sessionId) {
-      setSelectedSessionId(routerLocation.state.sessionId);
+      setSearchState({ selectedSessionId: routerLocation.state.sessionId });
     }
   }, [routerLocation.state]);
 
@@ -188,7 +177,7 @@ export default function SearchBusinessesPage() {
     if (contextRestoredForSessionRef.current === selectedSessionId) return;
     const matchedSession = sessions.find(s => s.search_id === selectedSessionId);
     if (matchedSession?.context_id) {
-      setSelectedContext(matchedSession.context_id);
+      setSearchState({ selectedContext: matchedSession.context_id });
       contextRestoredForSessionRef.current = selectedSessionId;
     }
   }, [selectedSessionId, sessions]);
@@ -336,7 +325,7 @@ export default function SearchBusinessesPage() {
       setSessions((newSessions || []) as SearchSession[]);
       const targetSession = (newSessions || []).find((s: SearchSession) => s.search_id === pendingSessionId);
       if (targetSession) {
-        setSelectedSessionId(targetSession.search_id);
+        setSearchState({ selectedSessionId: targetSession.search_id });
         localStorage.setItem("cf_last_session_id", String(targetSession.search_id));
       }
       setQueryPanelVisible(false);
@@ -381,7 +370,7 @@ export default function SearchBusinessesPage() {
       if (!isMountedRef.current) return;
       setSessions((newSessions || []) as SearchSession[]);
       if (newSessions && newSessions.length > 0) {
-        setSelectedSessionId(newSessions[0].search_id);
+        setSearchState({ selectedSessionId: newSessions[0].search_id });
         localStorage.setItem("cf_last_session_id", String(newSessions[0].search_id));
       }
     } catch (err: unknown) {
@@ -719,14 +708,14 @@ export default function SearchBusinessesPage() {
             <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest block mb-1.5">Keywords / Business Type</label>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <input style={{ ...inputStyle, paddingLeft: 32 }} placeholder="e.g. textile exporters, wholesale distributors…" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} onKeyDown={e => e.key === "Enter" && handleGenerateQueries()} />
+              <input style={{ ...inputStyle, paddingLeft: 32 }} placeholder="e.g. textile exporters, wholesale distributors…" value={searchQuery} onChange={e => setSearchState({ searchQuery: e.target.value })} onKeyDown={e => e.key === "Enter" && handleGenerateQueries()} />
             </div>
           </div>
           <div className="min-w-[160px]">
             <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest block mb-1.5">Location</label>
             <div className="relative">
               <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <input style={{ ...inputStyle, paddingLeft: 32 }} placeholder="Country, city…" value={location} onChange={e => setLocation(e.target.value)} />
+              <input style={{ ...inputStyle, paddingLeft: 32 }} placeholder="Country, city…" value={location} onChange={e => setSearchState({ location: e.target.value })} />
             </div>
           </div>
           <div className="min-w-[160px]">
@@ -737,12 +726,9 @@ export default function SearchBusinessesPage() {
               onChange={e => {
                 const val = e.target.value;
                 if (val === "Other") {
-                  setShowOtherIndustry(true);
-                  setIndustry("");
+                  setSearchState({ showOtherIndustry: true, industry: "" });
                 } else {
-                  setShowOtherIndustry(false);
-                  setIndustry(val);
-                  setOtherIndustry("");
+                  setSearchState({ showOtherIndustry: false, industry: val, otherIndustry: "" });
                 }
               }}>
               <option value="">All Industries</option>
@@ -761,7 +747,7 @@ export default function SearchBusinessesPage() {
                 style={inputStyle}
                 placeholder="Enter industry…"
                 value={otherIndustry}
-                onChange={e => setOtherIndustry(e.target.value)}
+                onChange={e => setSearchState({ otherIndustry: e.target.value })}
               />
             </div>
           )}
@@ -776,7 +762,7 @@ export default function SearchBusinessesPage() {
                 <button
                   key={opt}
                   disabled={queryPanelVisible}
-                  onClick={() => setDiscoveryPlatform(opt)}
+                  onClick={() => setSearchState({ discoveryPlatform: opt })}
                   style={{
                     background: discoveryPlatform === opt ? "rgba(59,130,246,0.12)" : "var(--muted)",
                     border: discoveryPlatform === opt ? "1px solid #3b82f6" : "1px solid var(--border)",
@@ -1013,7 +999,7 @@ export default function SearchBusinessesPage() {
           </div>
           <div className="flex gap-1.5 flex-wrap">
             {filterTabs.map(t => (
-              <button key={t.key} onClick={() => setActiveFilter(t.key)}
+              <button key={t.key} onClick={() => setSearchState({ activeFilter: t.key })}
                 className="px-3 py-1 rounded-full text-[12px] font-medium transition-all"
                 style={activeFilter === t.key
                   ? { background: "rgba(59,130,246,0.15)", border: "1px solid rgba(59,130,246,0.3)", color: "#60a5fa" }
@@ -1043,9 +1029,7 @@ export default function SearchBusinessesPage() {
                     pollingIntervalsRef.current.forEach(clearInterval);
                     pollingIntervalsRef.current.clear();
                     setResults((r || []) as BusinessResult[]);
-                    setSelectedSessionId(s.search_id);
-                    setSearchQuery(s.search_query || "");
-                    setLocation(s.search_location || "");
+                    setSearchState({ selectedSessionId: s.search_id, searchQuery: s.search_query || "", location: s.search_location || "" });
                     setNextPageToken(s.next_page_token || null);
                     toast.success("Search history loaded");
                   } catch { toast.error("Failed to load history"); }
