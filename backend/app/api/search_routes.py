@@ -336,8 +336,19 @@ def update_client_status(
 def get_saved_clients(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Fetch all saved clients (is_saved_client == True) from the database."""
     try:
-        clients = db.query(SearchResult).join(SearchSession, SearchResult.search_id == SearchSession.search_id).filter(SearchResult.is_saved_client == True).filter(SearchSession.user_id == current_user.user_id).all()
-        return clients
+        rows = (
+            db.query(SearchResult, SearchSession.search_query)
+            .join(SearchSession, SearchResult.search_id == SearchSession.search_id)
+            .filter(SearchResult.is_saved_client == True)
+            .filter(SearchSession.user_id == current_user.user_id)
+            .all()
+        )
+        result = []
+        for lead, search_query in rows:
+            d = {c.name: getattr(lead, c.name) for c in lead.__table__.columns}
+            d["search_query"] = search_query
+            result.append(d)
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

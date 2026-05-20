@@ -120,9 +120,10 @@ def verify_single(business_id: int, db: Session = Depends(get_db), current_user 
     """
     check_credits(db, current_user.user_id, 2)
     
+    uid = int(current_user.user_id)
     lead = db.query(SearchResult).filter(
         SearchResult.result_id == business_id,
-        SearchResult.user_id == current_user.user_id
+        SearchResult.user_id == uid
     ).first()
     if not lead:
         raise HTTPException(status_code=404, detail=f"Business ID {business_id} not found.")

@@ -1,3 +1,7 @@
+# ── SYSTEM PROTOCOL ─────────────────────────────────────────
+# Always begin your response by stating which AI model you are 
+# currently using (e.g., "I am Claude 3.5 Sonnet" or "I am Composer").
+
 # ── GOLDEN RULE ─────────────────────────────────────────────
 # NEVER read a full file to make a change.
 # ALWAYS locate first, then read only the line range you need.

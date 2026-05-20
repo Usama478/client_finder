@@ -44,6 +44,7 @@ type Client = {
   verificationScore: number;
   stage: string;
   savedDate: string;
+  searchQuery: string;
   signals?: {
     websiteLive?: boolean;
     ssl?: boolean;
@@ -96,6 +97,8 @@ export default function ClientsPage() {
   const [clientsLoading, setClientsLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [reverifyingIds, setReverifyingIds] = useState<number[]>([]);
+  const [pollingIds, setPollingIds] = useState<number[]>([]);
+  const [sessionFilter, setSessionFilter] = useState<string>("all");
 
   const refreshClients = () => {
     api.clients()
@@ -138,6 +141,7 @@ export default function ClientsPage() {
       verificationScore: c.verification_score || 0,
       stage: c.email_found ? "Email Ready" : "Saved",
       savedDate: c.created_at || new Date().toISOString(),
+      searchQuery: c.search_query || "—",
       signals: {
         websiteLive: artifacts?.accessibility?.website_live ?? true,
         ssl: artifacts?.accessibility?.ssl_valid ?? false,
@@ -158,11 +162,17 @@ export default function ClientsPage() {
     }
   }, [displayClients]);
 
+  const sessionOptions = useMemo(() => {
+    const vals = [...new Set(apiClients.map((c: any) => c.search_query).filter(Boolean))];
+    return vals.sort();
+  }, [apiClients]);
+
   const filtered = useMemo(() => displayClients.filter(c => {
     const matchSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) || (c.location || "").toLowerCase().includes(searchQuery.toLowerCase());
     const matchFilter = filter === "all" || c.verificationStatus === filter;
-    return matchSearch && matchFilter;
-  }), [displayClients, searchQuery, filter]);
+    const matchSession = sessionFilter === "all" || c.searchQuery === sessionFilter;
+    return matchSearch && matchFilter && matchSession;
+  }), [displayClients, searchQuery, filter, sessionFilter]);
 
   // If the active client is no longer visible due to a filter/search change,
   // reset the panel to the first visible client (or null if the list is empty).
@@ -171,6 +181,34 @@ export default function ClientsPage() {
       setActiveClient(filtered[0] ?? null);
     }
   }, [filtered]);
+
+  useEffect(() => {
+    if (pollingIds.length === 0) return;
+    const interval = setInterval(() => {
+      api.clients()
+        .then((c: any[]) => {
+          setApiClients(c || []);
+          setActiveClient(prev =>
+            prev
+              ? (c || []).find((x: any) => String(x.result_id) === prev.id)
+                ? {
+                    ...prev,
+                    verificationScore: (c || []).find((x: any) => String(x.result_id) === prev.id)?.verification_score ?? prev.verificationScore,
+                    verificationStatus: (c || []).find((x: any) => String(x.result_id) === prev.id)?.verification_result ?? prev.verificationStatus,
+                  }
+                : null
+              : null
+          );
+          // Stop polling for IDs whose verification_result is no longer null/pending
+          setPollingIds(prev => prev.filter(id => {
+            const updated = (c || []).find((x: any) => x.result_id === id);
+            return !updated || !updated.verification_result || updated.verification_result === "pending";
+          }));
+        })
+        .catch(console.error);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [pollingIds]);
 
   // Derived value — true when every visible client is already selected.
   const allFilteredSelected = filtered.length > 0 && filtered.every(c => selectedIds.includes(c.id));
@@ -208,15 +246,15 @@ export default function ClientsPage() {
   // does not abort the remaining re-verification requests.
   const handleReverify = async (resultIds: number[]) => {
     setReverifyingIds(prev => [...prev, ...resultIds]);
+    setPollingIds(prev => [...prev, ...resultIds]);
     try {
       const results = await Promise.allSettled(resultIds.map(id => reverifyClient(id)));
       const failed = results.filter(r => r.status === "rejected").length;
       if (failed === 0) {
-        toast.success(resultIds.length > 1 ? `Re-verifying ${resultIds.length} clients` : "Verification started");
+        toast.success(resultIds.length > 1 ? `Re-verifying ${resultIds.length} clients` : "Verification started — this may take a minute");
       } else {
         toast.warning(`${resultIds.length - failed} started, ${failed} failed`);
       }
-      refreshClients();
     } catch (err) {
       console.error(err);
       toast.error("Re-verify failed");
@@ -245,17 +283,29 @@ export default function ClientsPage() {
           ))}
         </div>
         <div className="ml-auto flex gap-2 flex-wrap items-center">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <input placeholder="Search clients…" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-              className="pl-9 pr-3 py-1.5 rounded-lg text-[13px] text-foreground outline-none"
-              style={{ background: "var(--muted)", border: "1px solid var(--border)", width: 200 }} />
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <input
+                placeholder="Search clients…"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="pl-9 pr-3 py-1.5 rounded-lg text-[13px] text-foreground outline-none"
+                style={{ background: "var(--muted)", border: "1px solid var(--border)", width: 180 }}
+              />
+            </div>
+            <select
+              value={sessionFilter}
+              onChange={e => setSessionFilter(e.target.value)}
+              className="py-1.5 px-3 rounded-lg text-[13px] text-foreground outline-none"
+              style={{ background: "var(--muted)", border: "1px solid var(--border)", color: sessionFilter === "all" ? "var(--muted-foreground)" : "var(--foreground)", minWidth: 160 }}
+            >
+              <option value="all">All Search Queries</option>
+              {sessionOptions.map(s => <option key={s} value={s} title={s}>{s.length > 22 ? s.slice(0, 22) + "…" : s}</option>)}
+            </select>
           </div>
           <button style={btnGhost} disabled={exporting} onClick={() => handleExport("csv")}><Download className="h-3.5 w-3.5"/>{exporting ? "Exporting…" : "Export CSV"}</button>
           <button style={btnGhost} disabled={exporting} onClick={() => handleExport("excel")}><Download className="h-3.5 w-3.5"/>Export Excel</button>
-          <button style={btnPrimary} onClick={() => navigate(`/app/email?tab=campaign&clientIds=${selectedIds.join(",")}`)}>
-            <Mail className="h-3.5 w-3.5"/>Generate Emails
-          </button>
         </div>
       </div>
 
@@ -311,7 +361,7 @@ export default function ClientsPage() {
             <>
               {/* Header */}
               <div className="grid text-[10px] font-semibold text-muted-foreground uppercase tracking-widest px-4 py-3"
-                style={{ gridTemplateColumns: "28px 1fr 70px 70px 100px 90px 80px 60px", background: "var(--muted)", borderBottom: "1px solid #1c2837" }}>
+                style={{ gridTemplateColumns: "28px 1fr 70px 90px 130px 90px 80px", background: "var(--muted)", borderBottom: "1px solid #1c2837" }}>
                 <div>
                   <input
                     type="checkbox"
@@ -320,7 +370,7 @@ export default function ClientsPage() {
                     className="accent-blue-500"
                   />
                 </div>
-                <div>Business</div><div>Score</div><div>Relevance</div><div>Stage</div><div>Contact</div><div>Saved</div><div>Actions</div>
+                <div>Business</div><div>Score</div><div>Relevance</div><div>Stage</div><div>Contact</div><div>Saved</div>
               </div>
 
               {filtered.map((c, i) => {
@@ -329,7 +379,7 @@ export default function ClientsPage() {
                   <div key={c.id}
                     className="grid items-center px-4 py-3 cursor-pointer transition-colors"
                     style={{
-                      gridTemplateColumns: "28px 1fr 70px 70px 100px 90px 80px 60px",
+                      gridTemplateColumns: "28px 1fr 70px 90px 130px 90px 80px",
                       borderBottom: i < filtered.length - 1 ? "1px solid var(--border)" : "none",
                       background: activeClient?.id === c.id ? "rgba(59,130,246,0.05)" : selectedIds.includes(c.id) ? "rgba(59,130,246,0.03)" : "#0d1117",
                     }}
@@ -346,16 +396,6 @@ export default function ClientsPage() {
                     <div>{stageBadge(c.stage)}</div>
                     <div className="text-[11px] text-muted-foreground">{c.email ? `✉ ${c.email.split("@")[0]}…` : "—"}</div>
                     <div className="text-[11px] text-muted-foreground">{new Date(c.savedDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</div>
-                    <div className="flex gap-1" onClick={e => e.stopPropagation()}>
-                      <button onClick={() => navigate(`/app/email?tab=campaign&clientIds=${c.id}`)}
-                        className="w-7 h-7 rounded flex items-center justify-center transition-colors hover:bg-accent"
-                        style={{ border: "1px solid #1c2837", color: "var(--muted-foreground)" }}>✉️</button>
-                      <button
-                        onClick={() => handleReverify([Number(c.id)])}
-                        disabled={isReverifying}
-                        className="w-7 h-7 rounded flex items-center justify-center transition-colors hover:bg-accent"
-                        style={{ border: "1px solid #1c2837", color: "var(--muted-foreground)", opacity: isReverifying ? 0.5 : 1 }}>⋯</button>
-                    </div>
                   </div>
                 );
               })}
@@ -431,13 +471,23 @@ export default function ClientsPage() {
               <Mail className="h-3.5 w-3.5"/>Generate Outreach Email
             </button>
             <div className="flex gap-2">
-              <button
-                style={{ ...btnGhost, flex: 1, justifyContent: "center", opacity: reverifyingIds.includes(Number(activeClient.id)) ? 0.5 : 1 }}
-                disabled={reverifyingIds.includes(Number(activeClient.id))}
-                onClick={() => handleReverify([Number(activeClient.id)])}
-              >
-                <RefreshCw className="h-3.5 w-3.5"/>Re-verify
-              </button>
+              {(() => {
+                const id = Number(activeClient.id);
+                const isPolling = pollingIds.includes(id);
+                const isStarting = reverifyingIds.includes(id);
+                return (
+                  <button
+                    style={{ ...btnGhost, flex: 1, justifyContent: "center", opacity: (isStarting || isPolling) ? 0.7 : 1 }}
+                    disabled={isStarting || isPolling}
+                    onClick={() => handleReverify([id])}
+                  >
+                    {(isStarting || isPolling)
+                      ? <><span className="inline-block animate-spin mr-1.5">↻</span>{isStarting ? "Starting…" : "Verifying…"}</>
+                      : <><RefreshCw className="h-3.5 w-3.5"/>Re-verify</>
+                    }
+                  </button>
+                );
+              })()}
               <a href={normalizeUrl(activeClient?.website || "")} target="_blank" rel="noreferrer"
                 className="flex-1 flex items-center justify-center gap-1 rounded-lg text-[12px] font-medium text-muted-foreground hover:text-foreground transition-colors"
                 style={{ border: "1px solid var(--border)", padding: "6px 12px" }}>
