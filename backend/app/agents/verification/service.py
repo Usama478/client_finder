@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import multiprocessing
 import queue as _queue_module
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
@@ -13,6 +14,23 @@ from pydantic import ValidationError
 from app.services.serp_enrichment_service import enrich_lead_via_serp
 
 logger = logging.getLogger(__name__)
+
+_PHASE: dict[int, str] = {}
+_PHASE_LOCK = threading.Lock()
+
+
+def _set_phase(business_id: int, phase: str | None) -> None:
+    with _PHASE_LOCK:
+        if phase is None:
+            _PHASE.pop(business_id, None)
+        else:
+            _PHASE[business_id] = phase
+
+
+def get_phase(business_id: int) -> str | None:
+    with _PHASE_LOCK:
+        return _PHASE.get(business_id)
+
 
 # Hard ceiling on total graph execution time.  The collection node already
 # enforces its own sub-page budget; this outer timeout guards against any node
@@ -45,6 +63,7 @@ def _try_mark_verification_failed(business_id: int, reason: str) -> None:
                 lead.verification_status = "failed"
                 lead.verification_reason = reason
                 db.commit()
+                _set_phase(business_id, None)
                 return  # Written successfully
         except Exception as exc:
             logger.error(f"[VERIFICATION] ERROR for business_id={business_id}: {str(exc)}")
@@ -574,6 +593,7 @@ def run_verification_for_business(business_id: int) -> Dict[str, object]:
         lead.verified_product_catalog = None
         lock_db.commit()
         logger.info("verification_service LOCK_ACQUIRED business_id=%s", business_id)
+        _set_phase(business_id, "Preparing lead")
     except ValueError as exc:
         logger.error(f"[VERIFICATION] ERROR for business_id={business_id}: {str(exc)}")
         # ValueError is raised intentionally (e.g. business_id not found).
@@ -596,6 +616,7 @@ def run_verification_for_business(business_id: int) -> Dict[str, object]:
     # ------------------------------------------------------------------ #
     # Task 1.5 – SERP enrichment (between lock release and graph exec)    #
     # ------------------------------------------------------------------ #
+    _set_phase(business_id, "Enriching via web search")
     _enrich_db = SessionLocal()
     try:
         _lead_for_enrich = _enrich_db.query(SearchResult).filter(SearchResult.result_id == business_id).first()
@@ -622,6 +643,7 @@ def run_verification_for_business(business_id: int) -> Dict[str, object]:
     # ------------------------------------------------------------------ #
     initial_state = _build_initial_state(business_id)
 
+    _set_phase(business_id, "Analyzing website")
     logger.info(f"[VERIFICATION] Starting web verification for business_id={business_id}")
 
     try:
@@ -687,6 +709,7 @@ def run_verification_for_business(business_id: int) -> Dict[str, object]:
     # If _persist_verification_to_db throws (DB down, constraint, etc.), #
     # the lead must not remain stuck in "processing" forever.            #
     # ------------------------------------------------------------------ #
+    _set_phase(business_id, "Saving results")
     try:
         _persist_verification_to_db(business_id=business_id, final_state=final_state)
         logger.info(f"[VERIFICATION] Saved to DB: business_id={business_id} verification_status={final_state.get('verification_result')} legitimacy_score={final_state.get('legitimacy_score')}")
@@ -710,6 +733,8 @@ def run_verification_for_business(business_id: int) -> Dict[str, object]:
         final_state.get("verification_result"),
         final_state.get("verification_score"),
     )
+
+    _set_phase(business_id, None)
 
     return {
         "verification_result": final_state.get("verification_result"),

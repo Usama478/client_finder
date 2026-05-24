@@ -27,14 +27,34 @@ async function req<T>(path: string, options: RequestInit = {}): Promise<T> {
   return res.json()
 }
 
+export type CampaignStatus =
+  | "pending"
+  | "running"
+  | "paused"
+  | "completed"
+  | "exhausted"
+  | "failed"
+
+export type DiscoveryPlatform = "maps" | "serp" | "both"
+
+export type CampaignResultStatus =
+  | "pending_relevance"
+  | "running_relevance"
+  | "rejected_relevance"
+  | "queued_for_verification"
+  | "running_verification"
+  | "rejected_verification"
+  | "verified"
+  | "error"
+
 export interface Campaign {
   id: number
-  status: "pending" | "running" | "completed" | "exhausted" | "failed"
+  status: CampaignStatus
   search_intent: string
   target_count: number
   relevance_threshold: number
   credit_budget: number
-  discovery_platform: string
+  discovery_platform: DiscoveryPlatform
   current_pass: number
   verified_count: number
   credits_used: number
@@ -54,8 +74,8 @@ export interface CampaignResult {
   result_id: number
   business_name: string
   website: string
-  source: string
-  campaign_status: string
+  source: "maps" | "serp"
+  campaign_status: CampaignResultStatus
   campaign_pass: number
   relevance_decision: string | null
   relevance_score: number | null
@@ -93,7 +113,7 @@ export const campaignsApi = {
   getActive: () => req<Campaign | null>("/api/v1/campaigns/active"),
   get: (id: number) => req<Campaign>(`/api/v1/campaigns/${id}`),
   getResults: (id: number) => req<CampaignResult[]>(`/api/v1/campaigns/${id}/results`),
-  cancel: (id: number) => req<{ status: string }>(`/api/v1/campaigns/${id}/cancel`, { method: "POST" }),
+  cancel: (id: number) => req<{ status: CampaignStatus }>(`/api/v1/campaigns/${id}/cancel`, { method: "POST" }),
   saveClient: (campaignId: number, resultId: number) =>
     req<{ status: string }>(`/api/v1/campaigns/${campaignId}/save-client/${resultId}`, { method: "POST" }),
   resume: (id: number) => req<Campaign>(`/api/v1/campaigns/${id}/resume`, { method: "POST" }),

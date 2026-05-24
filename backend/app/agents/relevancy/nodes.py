@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Tuple
 from urllib.parse import urljoin
 
 from app.agents.relevancy.schemas import CollectPageSourcesOutput, PageSource
+from app.agents.relevancy.phase_tracker import set_relevance_phase
 from app.agents.relevancy.state import RelevancyAgentState
 from app.agents.relevancy.utils import normalize_url as _normalize_url
 from app.agents.relevancy.tools_v2 import (
@@ -53,6 +54,12 @@ PRIORITY_ROUTE_SLUGS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ("category", ("category", "categories", "kategorie")),
 )
 logger = logging.getLogger(__name__)
+
+
+def _report_phase(state: RelevancyAgentState, phase: str) -> None:
+    business_id = state.get("business_id")
+    if isinstance(business_id, int):
+        set_relevance_phase(business_id, phase)
 
 
 def _collect_errors(fetch_result: Dict[str, object]) -> List[str]:
@@ -203,6 +210,7 @@ def _homepage_link_candidates(base_url: str, homepage_result: Dict[str, object])
 
 
 def preclassify_target_node(state: RelevancyAgentState):
+    _report_phase(state, "Checking target type")
     # Run both social and marketplace filters, merging results into shared state
     social_result = social_profile_filter(state)
     marketplace_result = marketplace_filter(state)
@@ -210,6 +218,7 @@ def preclassify_target_node(state: RelevancyAgentState):
 
 
 def collect_page_sources_node(state: RelevancyAgentState):
+    _report_phase(state, "Scraping website pages")
     start_time = time.time()
     normalized = _normalize_url(state.get("website"))
     if not normalized:
@@ -364,14 +373,17 @@ def collect_page_sources_node(state: RelevancyAgentState):
 
 
 def detect_platform_node(state: RelevancyAgentState):
+    _report_phase(state, "Detecting e-commerce platform")
     return detect_platform(state)
 
 
 def shopify_probe_node(state: RelevancyAgentState):
+    _report_phase(state, "Probing Shopify store")
     return shopify_probe(state)
 
 
 def extract_structured_signals_node(state: RelevancyAgentState):
+    _report_phase(state, "Extracting structured signals")
     result = extract_structured_signals(state)
     if not isinstance(result, dict):
         return result
@@ -396,22 +408,27 @@ def extract_structured_signals_node(state: RelevancyAgentState):
 
 
 def extract_clean_text_and_sections_node(state: RelevancyAgentState):
+    _report_phase(state, "Extracting page text")
     return extract_clean_text_and_sections(state)
 
 
 def catalog_intelligence_node(state: RelevancyAgentState):
+    _report_phase(state, "Analyzing product catalog")
     return catalog_intelligence(state)
 
 
 def business_model_intelligence_node(state: RelevancyAgentState):
+    _report_phase(state, "Analyzing business model")
     return business_model_intelligence(state)
 
 
 def llm_relevance_judge_node(state: RelevancyAgentState):
+    _report_phase(state, "Scoring relevance with AI")
     return llm_relevance_judge(state)
 
 
 def end_irrelevant_node(state: RelevancyAgentState):
+    _report_phase(state, "Finalizing result")
     decision = "irrelevant"
     manual_review = False
     confidence = 0.75
@@ -474,6 +491,7 @@ def end_irrelevant_node(state: RelevancyAgentState):
 
 
 def finalize_manual_review_node(state: RelevancyAgentState):
+    _report_phase(state, "Finalizing manual review")
     block_reason = state.get("collect_block_reason") or "unknown"
     status_code = state.get("collect_status_code")
     status_text = status_code if isinstance(status_code, int) else "unknown"

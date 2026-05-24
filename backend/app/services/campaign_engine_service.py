@@ -14,6 +14,7 @@ from app.db.session import SessionLocal
 from app.models.campaign import Campaign
 from app.models.search_result import SearchResult
 from app.models.search_session import SearchSession
+from app.services.credit_service import check_credits, deduct_credits
 
 logger = logging.getLogger(__name__)
 
@@ -113,11 +114,17 @@ async def _run_discovery_pass(
     if campaign.discovery_platform in ("maps", "both") and maps_query:
         try:
             from app.services.google_maps_service import search_google_maps
+            from app.models.search_session import SearchSession
             maps_db = SessionLocal()
             try:
                 result = search_google_maps(db=maps_db, user_id=user_id, query=maps_query)
                 if result and result.get("search_id"):
                     search_id = result["search_id"]
+                    maps_session = maps_db.query(SearchSession).filter(
+                        SearchSession.search_id == search_id
+                    ).first()
+                    if maps_session and maps_session.campaign_id is None:
+                        maps_session.campaign_id = campaign.id
                     new_leads = maps_db.query(SearchResult).filter(
                         SearchResult.search_id == search_id
                     ).all()
@@ -131,6 +138,7 @@ async def _run_discovery_pass(
                         lead.campaign_pass = pass_number
                         maps_db.commit()
                         result_ids.append(lead.result_id)
+                    maps_db.commit()
             finally:
                 maps_db.close()
         except Exception as e:
@@ -148,6 +156,7 @@ async def _run_discovery_pass(
                     search_query=web_query,
                     created_at=datetime.utcnow(),
                     discovery_platform="serp",
+                    campaign_id=campaign.id,
                 )
                 serp_db.add(serp_session)
                 serp_db.commit()
@@ -207,8 +216,148 @@ def _run_verification_sync(result_id: int) -> dict:
     return run_verification_for_business(result_id)
 
 
+def _get_context_text(db: Session, campaign: Campaign) -> str:
+    if not campaign.context_id:
+        return ""
+    try:
+        from app.models.search_context import SearchContext
+        ctx = db.query(SearchContext).filter(SearchContext.id == campaign.context_id).first()
+        if ctx:
+            return ctx.prompt_text or ""
+    except Exception:
+        pass
+    return ""
+
+
+def _build_seen_domains(db: Session, campaign_id: int) -> set:
+    seen: set = set()
+    for lead in db.query(SearchResult).filter(SearchResult.campaign_id == campaign_id).all():
+        domain = _extract_domain(lead.website or "")
+        if domain:
+            seen.add(domain)
+    return seen
+
+
+def _finalize_campaign(db: Session, campaign: Campaign) -> None:
+    campaign.completed_at = datetime.now(timezone.utc)
+    if campaign.verified_count >= campaign.target_count:
+        campaign.status = "completed"
+        _append_log(db, campaign, f"Campaign completed. {campaign.verified_count} verified clients found.")
+    elif campaign.credits_used >= campaign.credit_budget:
+        campaign.status = "exhausted"
+        _append_log(
+            db,
+            campaign,
+            f"Campaign exhausted budget. {campaign.verified_count}/{campaign.target_count} verified.",
+        )
+    else:
+        campaign.status = "completed"
+        _append_log(db, campaign, f"Campaign finished. {campaign.verified_count} verified clients found.")
+    db.commit()
+
+
+def _process_candidate(
+    db: Session,
+    campaign: Campaign,
+    lead: SearchResult,
+    context_text: str,
+    campaign_id: int,
+    *,
+    relevance_pass_suffix: str = ". Running verification...",
+    relevance_error_prefix: str = "Relevance error on",
+) -> bool:
+    """Run relevance then verification for one lead. Returns True if inner loop should break (credits)."""
+    lead.campaign_status = "running_relevance"
+    db.commit()
+    _append_log(db, campaign, f"Checking relevance: {lead.business_name or lead.website}")
+
+    try:
+        output = _run_relevance_sync(
+            lead.result_id, context_text, campaign.search_intent, campaign.context_id
+        )
+        campaign.credits_used += CREDIT_COSTS["relevance_agent"]
+        deduct_credits(
+            db,
+            campaign.user_id,
+            CREDIT_COSTS["relevance_agent"],
+            "campaign_relevance",
+            reference_id=str(campaign_id),
+            reference_type="campaign",
+        )
+        decision = output.get("relevance_decision", "irrelevant")
+        score_raw = output.get("confidence", 0)
+        score = int(float(score_raw) * 100) if float(score_raw) <= 1 else int(float(score_raw))
+
+        if decision == "relevant" and score >= campaign.relevance_threshold:
+            lead.campaign_status = "queued_for_verification"
+            campaign.total_relevance_passed += 1
+            db.commit()
+            _append_log(
+                db,
+                campaign,
+                f"✓ Relevance passed ({score}%) — {lead.business_name}{relevance_pass_suffix}",
+            )
+        else:
+            lead.campaign_status = "rejected_relevance"
+            db.commit()
+            _append_log(db, campaign, f"✗ Relevance failed ({decision}, {score}%) — {lead.business_name}")
+            return False
+    except Exception as e:
+        lead.campaign_status = "error"
+        db.commit()
+        if relevance_error_prefix == "Relevance error on":
+            _append_log(db, campaign, f"{relevance_error_prefix} {lead.website}: {e}", "error")
+        else:
+            _append_log(db, campaign, f"{relevance_error_prefix}: {e}", "error")
+        return False
+
+    db.refresh(campaign)
+    if campaign.credits_used >= campaign.credit_budget:
+        _append_log(db, campaign, "Credit budget reached before verification.", "warn")
+        return True
+
+    lead.campaign_status = "running_verification"
+    db.commit()
+    _append_log(db, campaign, f"Verifying: {lead.business_name or lead.website}")
+
+    try:
+        v_output = _run_verification_sync(lead.result_id)
+        campaign.credits_used += CREDIT_COSTS["verification_agent"] + CREDIT_COSTS["serp_enrichment"]
+        deduct_credits(
+            db,
+            campaign.user_id,
+            CREDIT_COSTS["verification_agent"] + CREDIT_COSTS["serp_enrichment"],
+            "campaign_verification",
+            reference_id=str(campaign_id),
+            reference_type="campaign",
+        )
+        v_result = v_output.get("verification_result", "")
+        v_score = v_output.get("verification_score", 0) or 0
+
+        if v_result in ("verified", "strong", "passed") or int(v_score) >= 50:
+            lead.campaign_status = "verified"
+            campaign.verified_count += 1
+            campaign.total_verification_passed += 1
+            db.commit()
+            _append_log(
+                db,
+                campaign,
+                f"✓✓ VERIFIED: {lead.business_name} (score: {v_score}) [{campaign.verified_count}/{campaign.target_count}]",
+            )
+        else:
+            lead.campaign_status = "rejected_verification"
+            db.commit()
+            _append_log(db, campaign, f"✗ Verification failed (score: {v_score}) — {lead.business_name}")
+    except Exception as e:
+        lead.campaign_status = "error"
+        db.commit()
+        _append_log(db, campaign, f"Verification error on {lead.website}: {e}", "error")
+
+    return False
+
+
 def run_campaign_resume(campaign_id: int) -> None:
-    """Process remaining pending_relevance candidates without new discovery."""
+    """Phase 1: drain pending queue. Phase 2: discover until target or credits."""
     db = SessionLocal()
     try:
         campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
@@ -223,110 +372,153 @@ def run_campaign_resume(campaign_id: int) -> None:
 
         campaign.status = "running"
         db.commit()
-        _append_log(db, campaign, f"Resuming campaign — processing remaining discovered candidates.")
+        _append_log(db, campaign, "Resuming campaign — draining discovered queue first.")
 
-        context_text = ""
-        if campaign.context_id:
-            try:
-                from app.models.search_context import SearchContext
-                ctx = db.query(SearchContext).filter(SearchContext.id == campaign.context_id).first()
-                if ctx:
-                    context_text = ctx.prompt_text or ""
-            except Exception:
-                pass
+        context_text = _get_context_text(db, campaign)
 
         pending_leads = db.query(SearchResult).filter(
             SearchResult.campaign_id == campaign_id,
             SearchResult.campaign_status == "pending_relevance",
-        ).order_by(SearchResult.id.asc()).all()
+        ).order_by(SearchResult.result_id.asc()).all()
 
         _append_log(db, campaign, f"Found {len(pending_leads)} unprocessed candidates.")
 
         for lead in pending_leads:
+            db.refresh(campaign)
+            if campaign.status == "paused":
+                _append_log(db, campaign, "Campaign paused by user.")
+                return
             if campaign.credits_used >= campaign.credit_budget:
                 _append_log(db, campaign, "Credit budget reached.", "warn")
                 break
-            if campaign.verified_count >= campaign.target_count:
-                _append_log(db, campaign, "Target count reached.", "info")
+
+            if _process_candidate(
+                db,
+                campaign,
+                lead,
+                context_text,
+                campaign_id,
+                relevance_pass_suffix="",
+                relevance_error_prefix="Relevance error",
+            ):
                 break
 
-            # Relevance
-            lead.campaign_status = "running_relevance"
-            db.commit()
-            _append_log(db, campaign, f"Checking relevance: {lead.business_name or lead.website}")
+        db.refresh(campaign)
+        if campaign.status == "paused":
+            _append_log(db, campaign, "Campaign paused by user.")
+            return
 
-            try:
-                output = _run_relevance_sync(lead.result_id, context_text, campaign.search_intent, campaign.context_id)
-                campaign.credits_used += CREDIT_COSTS["relevance_agent"]
-                deduct_credits(db, campaign.user_id, CREDIT_COSTS["relevance_agent"], "campaign_relevance", reference_id=str(campaign_id), reference_type="campaign")
-                decision = output.get("relevance_decision", "irrelevant")
-                score_raw = output.get("confidence", 0)
-                score = int(float(score_raw) * 100) if float(score_raw) <= 1 else int(float(score_raw))
+        if (
+            campaign.verified_count < campaign.target_count
+            and campaign.credits_used < campaign.credit_budget
+        ):
+            _append_log(db, campaign, "Queue drained. Target not yet met. Generating new queries...")
 
-                if decision == "relevant" and score >= campaign.relevance_threshold:
-                    lead.campaign_status = "queued_for_verification"
-                    campaign.total_relevance_passed += 1
+            seen_domains = _build_seen_domains(db, campaign_id)
+            previous_queries: list[str] = []
+            pass_number = campaign.current_pass or 0
+
+            while (
+                campaign.verified_count < campaign.target_count
+                and campaign.credits_used < campaign.credit_budget
+            ):
+                db.refresh(campaign)
+                if campaign.status == "paused":
+                    _append_log(db, campaign, "Campaign paused by user.")
+                    return
+
+                pass_number += 1
+                campaign.current_pass = pass_number
+                db.commit()
+
+                _append_log(db, campaign, f"Pass {pass_number} starting — generating queries.")
+
+                maps_query = None
+                web_query = None
+                try:
+                    queries = _generate_varied_queries(
+                        campaign.search_intent, previous_queries, context_text
+                    )
+                    maps_query = (queries.get("maps_queries") or [""])[0]
+                    web_query = (queries.get("web_queries") or [""])[0]
+                    previous_queries.extend([maps_query, web_query])
+                    _append_log(
+                        db,
+                        campaign,
+                        f"Pass {pass_number} queries — Maps: '{maps_query}' | Web: '{web_query}'",
+                    )
+                except Exception as e:
+                    _append_log(db, campaign, f"Query generation failed: {e}", "error")
+                    campaign.status = "failed"
+                    campaign.error_message = f"Query generation failed: {str(e)}"
+                    campaign.completed_at = datetime.now(timezone.utc)
                     db.commit()
-                    _append_log(db, campaign, f"✓ Relevance passed ({score}%) — {lead.business_name}")
-                else:
-                    lead.campaign_status = "rejected_relevance"
+                    return
+
+                campaign.credits_used += CREDIT_COSTS["discovery_pass"]
+                deduct_credits(
+                    db,
+                    campaign.user_id,
+                    CREDIT_COSTS["discovery_pass"],
+                    "campaign_discovery",
+                    reference_id=str(campaign_id),
+                    reference_type="campaign",
+                )
+                db.commit()
+                if campaign.credits_used >= campaign.credit_budget:
+                    _append_log(db, campaign, "Credit budget reached before discovery.", "warn")
+                    break
+
+                try:
+                    new_result_ids = asyncio.run(
+                        _run_discovery_pass(
+                            campaign,
+                            db,
+                            pass_number,
+                            maps_query,
+                            web_query,
+                            seen_domains,
+                            campaign.user_id,
+                        )
+                    )
+                    campaign.total_discovered += len(new_result_ids)
                     db.commit()
-                    _append_log(db, campaign, f"✗ Relevance failed ({decision}, {score}%) — {lead.business_name}")
+                    _append_log(
+                        db,
+                        campaign,
+                        f"Pass {pass_number} discovered {len(new_result_ids)} new candidates.",
+                    )
+                except Exception as e:
+                    _append_log(db, campaign, f"Discovery failed: {e}", "error")
+                    break
+
+                if not new_result_ids:
+                    _append_log(
+                        db,
+                        campaign,
+                        f"Pass {pass_number} found no new candidates. Trying next query variation.",
+                    )
                     continue
-            except Exception as e:
-                lead.campaign_status = "error"
-                db.commit()
-                _append_log(db, campaign, f"Relevance error: {e}", "error")
-                continue
 
-            # Verification
-            if campaign.credits_used >= campaign.credit_budget:
-                _append_log(db, campaign, "Credit budget reached before verification.", "warn")
-                break
+                for result_id in new_result_ids:
+                    db.refresh(campaign)
+                    if campaign.status == "paused":
+                        _append_log(db, campaign, "Campaign paused by user.")
+                        return
+                    if campaign.credits_used >= campaign.credit_budget:
+                        _append_log(db, campaign, "Credit budget reached.", "warn")
+                        break
+                    if campaign.verified_count >= campaign.target_count:
+                        break
 
-            lead.campaign_status = "running_verification"
-            db.commit()
-            _append_log(db, campaign, f"Verifying: {lead.business_name or lead.website}")
+                    lead = db.query(SearchResult).filter(SearchResult.result_id == result_id).first()
+                    if not lead:
+                        continue
 
-            try:
-                v_output = _run_verification_sync(lead.result_id)
-                campaign.credits_used += CREDIT_COSTS["verification_agent"] + CREDIT_COSTS["serp_enrichment"]
-                deduct_credits(db, campaign.user_id, CREDIT_COSTS["verification_agent"] + CREDIT_COSTS["serp_enrichment"], "campaign_verification", reference_id=str(campaign_id), reference_type="campaign")
-                v_result = v_output.get("verification_result", "")
-                v_score = v_output.get("verification_score", 0) or 0
+                    if _process_candidate(db, campaign, lead, context_text, campaign_id):
+                        break
 
-                if v_result in ("verified", "strong", "passed") or int(v_score) >= 50:
-                    lead.campaign_status = "verified"
-                    campaign.verified_count += 1
-                    campaign.total_verification_passed += 1
-                    db.commit()
-                    _append_log(db, campaign, f"✓✓ VERIFIED: {lead.business_name} (score: {v_score}) [{campaign.verified_count}/{campaign.target_count}]")
-                else:
-                    lead.campaign_status = "rejected_verification"
-                    db.commit()
-                    _append_log(db, campaign, f"✗ Verification failed (score: {v_score}) — {lead.business_name}")
-            except Exception as e:
-                lead.campaign_status = "error"
-                db.commit()
-                _append_log(db, campaign, f"Verification error: {e}", "error")
-                continue
-
-        # Finalize
-        campaign.completed_at = datetime.now(timezone.utc)
-        remaining = db.query(SearchResult).filter(
-            SearchResult.campaign_id == campaign_id,
-            SearchResult.campaign_status == "pending_relevance",
-        ).order_by(SearchResult.id.asc()).count()
-        if remaining == 0:
-            campaign.status = "completed"
-            _append_log(db, campaign, f"Resume complete. {campaign.verified_count} total verified clients.")
-        elif campaign.credits_used >= campaign.credit_budget:
-            campaign.status = "exhausted"
-            _append_log(db, campaign, f"Budget exhausted. {campaign.verified_count} verified. {remaining} candidates still pending.")
-        else:
-            campaign.status = "completed"
-            _append_log(db, campaign, f"Resume complete. {campaign.verified_count} verified clients found.")
-        db.commit()
+        _finalize_campaign(db, campaign)
 
     except Exception as e:
         logger.error(f"[CAMPAIGN_RESUME {campaign_id}] Fatal error: {e}", exc_info=True)
@@ -356,7 +548,6 @@ def run_campaign_engine(campaign_id: int) -> None:
         ).update({"campaign_status": "pending_relevance"}, synchronize_session=False)
         db.commit()
 
-        from app.services.credit_service import check_credits, deduct_credits
         check_credits(db, campaign.user_id, CREDIT_COSTS["discovery_pass"])
 
         campaign.status = "running"
@@ -369,19 +560,12 @@ def run_campaign_engine(campaign_id: int) -> None:
         previous_queries: list[str] = []
         pass_number = 0
 
-        context_text = ""
-        if campaign.context_id:
-            try:
-                from app.models.search_context import SearchContext
-                ctx = db.query(SearchContext).filter(SearchContext.id == campaign.context_id).first()
-                if ctx:
-                    context_text = ctx.prompt_text or ""
-            except Exception:
-                pass
+        context_text = _get_context_text(db, campaign)
 
         while campaign.verified_count < campaign.target_count and campaign.credits_used < campaign.credit_budget:
             db.refresh(campaign)
-            if campaign.status == "failed":
+            if campaign.status == "paused":
+                _append_log(db, campaign, "Campaign paused by user.")
                 return
             pass_number += 1
             campaign.current_pass = pass_number
@@ -447,7 +631,8 @@ def run_campaign_engine(campaign_id: int) -> None:
             # Combined relevance → verification loop (one candidate at a time)
             for result_id in new_result_ids:
                 db.refresh(campaign)
-                if campaign.status == "failed":
+                if campaign.status == "paused":
+                    _append_log(db, campaign, "Campaign paused by user.")
                     return
                 if campaign.credits_used >= campaign.credit_budget:
                     _append_log(db, campaign, "Credit budget reached.", "warn")
@@ -459,86 +644,10 @@ def run_campaign_engine(campaign_id: int) -> None:
                 if not lead:
                     continue
 
-                # ── Relevance ──────────────────────────────────────────
-                lead.campaign_status = "running_relevance"
-                db.commit()
-                _append_log(db, campaign, f"Checking relevance: {lead.business_name or lead.website}")
-
-                try:
-                    output = _run_relevance_sync(result_id, context_text, campaign.search_intent, campaign.context_id)
-                    campaign.credits_used += CREDIT_COSTS["relevance_agent"]
-                    deduct_credits(db, campaign.user_id, CREDIT_COSTS["relevance_agent"], "campaign_relevance", reference_id=str(campaign_id), reference_type="campaign")
-                    decision = output.get("relevance_decision", "irrelevant")
-                    score_raw = output.get("confidence", 0)
-                    score = int(float(score_raw) * 100) if float(score_raw) <= 1 else int(float(score_raw))
-
-                    if decision == "relevant" and score >= campaign.relevance_threshold:
-                        lead.campaign_status = "queued_for_verification"
-                        campaign.total_relevance_passed += 1
-                        db.commit()
-                        _append_log(db, campaign, f"✓ Relevance passed ({score}%) — {lead.business_name}. Running verification...")
-                    else:
-                        lead.campaign_status = "rejected_relevance"
-                        db.commit()
-                        _append_log(db, campaign, f"✗ Relevance failed ({decision}, {score}%) — {lead.business_name}")
-                        continue  # skip verification, move to next candidate
-
-                except Exception as e:
-                    lead.campaign_status = "error"
-                    db.commit()
-                    _append_log(db, campaign, f"Relevance error on {lead.website}: {e}", "error")
-                    continue
-
-                # ── Verification (only runs if relevance passed) ────────
-                db.refresh(campaign)
-                if campaign.status == "failed":
-                    return
-                if campaign.credits_used >= campaign.credit_budget:
-                    _append_log(db, campaign, "Credit budget reached before verification.", "warn")
-                    break
-                if campaign.verified_count >= campaign.target_count:
+                if _process_candidate(db, campaign, lead, context_text, campaign_id):
                     break
 
-                lead.campaign_status = "running_verification"
-                db.commit()
-                _append_log(db, campaign, f"Verifying: {lead.business_name or lead.website}")
-
-                try:
-                    v_output = _run_verification_sync(lead.result_id)
-                    campaign.credits_used += CREDIT_COSTS["verification_agent"] + CREDIT_COSTS["serp_enrichment"]
-                    deduct_credits(db, campaign.user_id, CREDIT_COSTS["verification_agent"] + CREDIT_COSTS["serp_enrichment"], "campaign_verification", reference_id=str(campaign_id), reference_type="campaign")
-                    v_result = v_output.get("verification_result", "")
-                    v_score = v_output.get("verification_score", 0) or 0
-
-                    if v_result in ("verified", "strong", "passed") or int(v_score) >= 50:
-                        lead.campaign_status = "verified"
-                        campaign.verified_count += 1
-                        campaign.total_verification_passed += 1
-                        db.commit()
-                        _append_log(db, campaign, f"✓✓ VERIFIED: {lead.business_name} (score: {v_score}) [{campaign.verified_count}/{campaign.target_count}]")
-                    else:
-                        lead.campaign_status = "rejected_verification"
-                        db.commit()
-                        _append_log(db, campaign, f"✗ Verification failed (score: {v_score}) — {lead.business_name}")
-
-                except Exception as e:
-                    lead.campaign_status = "error"
-                    db.commit()
-                    _append_log(db, campaign, f"Verification error on {lead.website}: {e}", "error")
-                    continue
-
-        # Finalize
-        campaign.completed_at = datetime.now(timezone.utc)
-        if campaign.verified_count >= campaign.target_count:
-            campaign.status = "completed"
-            _append_log(db, campaign, f"Campaign completed. {campaign.verified_count} verified clients found.")
-        elif campaign.credits_used >= campaign.credit_budget:
-            campaign.status = "exhausted"
-            _append_log(db, campaign, f"Campaign exhausted budget. {campaign.verified_count}/{campaign.target_count} verified.")
-        else:
-            campaign.status = "completed"
-            _append_log(db, campaign, f"Campaign finished. {campaign.verified_count} verified clients found.")
-        db.commit()
+        _finalize_campaign(db, campaign)
 
     except Exception as e:
         logger.error(f"[CAMPAIGN {campaign_id}] Fatal error: {e}", exc_info=True)

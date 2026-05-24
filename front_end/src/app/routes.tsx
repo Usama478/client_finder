@@ -26,6 +26,7 @@ import UserManagementPage from "./pages/admin/UserManagementPage";
 import ApiKeyManagementPage from "./pages/admin/ApiKeyManagementPage";
 import ThresholdConfigPage from "./pages/admin/ThresholdConfigPage";
 import CampaignEnginePage from "./pages/app/CampaignEnginePage"
+import LeadsPage from "./pages/app/LeadsPage"
 
 export const router = createBrowserRouter([
   {
@@ -57,6 +58,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, Component: DashboardPage },
       { path: "search", Component: SearchBusinessesPage },
+      { path: "leads", Component: LeadsPage },
       { path: "clients", Component: ClientsPage },
       { path: "business/:id", Component: BusinessDetailsPage },
       { path: "contacts", Component: ContactsPage },

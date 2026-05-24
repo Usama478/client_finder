@@ -13,6 +13,20 @@ export interface DashboardStats {
   leads_found: number
   relevant_leads: number
   emails_sent: number
+  relevant_leads_count: number
+  verification_processed_count: number
+  // KPI card outcome metrics
+  saved_clients: number
+  verified_count: number
+  // Pipeline Overview volume metrics
+  relevancy_processed: number
+  verification_processed: number
+  clients_count: number
+  emails_drafted: number
+  // Next Actions / Funnel pending-stage metrics
+  pending_relevancy: number
+  pending_verification: number
+  verified_passed: number
   risk_distribution: { name: string; value: number; color: string }[]
   verification_data: { name: string; value: number; color: string }[]
 }
@@ -21,9 +35,12 @@ export interface SearchSession {
   search_id: number
   user_id: number
   search_query: string
+  search_location?: string | null
   context_id: number | null
   context_name: string | null
+  discovery_platform?: "maps" | "serp" | "both" | null
   created_at: string | null
+  result_count?: number
   results_count: number
   status: "done" | "scoring"
   next_page_token: string | null
@@ -41,6 +58,29 @@ export interface UserCredit {
   allocated_total: number
   low_credits: boolean
   empty: boolean
+}
+
+export interface Lead {
+  id: number
+  search_id: number
+  name: string
+  website: string | null
+  source: string
+  relevance_decision: string | null
+  relevance_score: number | null
+  relevance_reason: string | null
+  verification_score: number | null
+  verified_product_catalog: Record<string, unknown> | null
+  primary_contact_email: string | null
+  campaign_status: string | null
+  is_saved_client: boolean
+}
+
+export interface LeadsResponse {
+  leads: Lead[]
+  total: number
+  page: number
+  total_pages: number
 }
 
 export interface SearchResult {
@@ -173,8 +213,22 @@ export const api = {
 
   // Sessions
   sessions: () => request<SearchSession[]>("/api/v1/sessions"),
-  createSession: (data: { search_query: string; context_id?: number | null; discovery_platform?: string }) =>
-    request<SearchSession>("/api/v1/sessions", { method: "POST", body: JSON.stringify(data) }),
+  createSession: (data: {
+    user_id?: number
+    query?: string
+    search_query?: string
+    search_location?: string
+    page_token?: string | null
+    context_id?: number | null
+    session_id?: number | null
+    ai_context?: string | null
+    discovery_platform?: "maps" | "serp" | "both"
+    skip_discovery?: boolean
+  }) =>
+    request<SearchSession & { status?: string; results_added?: number }>("/api/v1/search", {
+      method: "POST",
+      body: JSON.stringify(data)
+    }),
   generateQueries: (sessionId: number) =>
     request<{ maps_queries: string[]; web_queries: string[] }>(
       `/api/v1/sessions/${sessionId}/generate-queries`,
@@ -191,11 +245,27 @@ export const api = {
       body: JSON.stringify({ session_id: sessionId, query: "", discovery_platform: platform, skip_discovery: false })
     }),
 
+  // Leads Hub
+  getLeads: (params: {
+    filter?: string
+    source?: string
+    session_id?: number
+    page?: number
+  }) => {
+    const qs = new URLSearchParams()
+    if (params.filter) qs.set("filter", params.filter)
+    if (params.source) qs.set("source", params.source)
+    if (params.session_id != null) qs.set("session_id", String(params.session_id))
+    if (params.page != null) qs.set("page", String(params.page))
+    const query = qs.toString()
+    return request<LeadsResponse>(`/api/v1/leads${query ? `?${query}` : ""}`)
+  },
+
   // Results
   results: (searchId: number) => request<SearchResult[]>(`/api/v1/results/${searchId}`),
   leadDetail: (resultId: number) => request<SearchResult>(`/api/v1/dashboard/result/${resultId}`),
   updateClientStatus: (resultId: number, isSaved: boolean) =>
-    request(`/api/v1/dashboard/result/${resultId}/client-status`,
+    request(`/api/v1/results/${resultId}/client-status`,
       { method: "PUT", body: JSON.stringify({ is_saved_client: isSaved }) }),
 
   // Clients
@@ -222,7 +292,7 @@ export const api = {
     request<{ status: string; results: unknown[] }>("/api/v1/verification/verify/batch",
       { method: "POST", body: JSON.stringify({ business_ids: businessIds }) }),
   verificationStatus: (businessId: number) =>
-    request<{ business_id: number; verification_status: string | null; verification_result: string | null; verification_score: number | null }>(
+    request<{ business_id: number; verification_status: string | null; verification_result: string | null; verification_score: number | null; current_phase: string | null }>(
       `/api/v1/verification/${businessId}/status`
     ),
 
@@ -242,6 +312,14 @@ export const api = {
         description: "",
       })
     }),
+  relevancyStatus: (businessId: number) =>
+    request<{
+      business_id: number;
+      relevance_status: string | null;
+      relevance_decision: string | null;
+      relevance_score: number | null;
+      current_phase: string | null;
+    }>(`/api/relevancy/v2/${businessId}/status`),
 
   // Email drafts
   emailDrafts: (businessId: number) => request<EmailDraft[]>(`/api/v1/email/drafts/${businessId}?t=${Date.now()}`),
@@ -269,12 +347,12 @@ export const api = {
     ),
 
   // Exporter profile
-  getMyProfile: () => request<ExporterProfile>("/api/v1/profile/me"),
+  getMyProfile: () => request<ExporterProfile>("/api/v1/exporter-profiles/me"),
   createProfile: (data: any) =>
-    request<ExporterProfile>("/api/v1/profile/",
+    request<ExporterProfile>("/api/v1/exporter-profiles",
       { method: "POST", body: JSON.stringify(data) }),
   updateProfile2: (profileId: number, data: any) =>
-    request<ExporterProfile>(`/api/v1/profile/${profileId}`,
+    request<ExporterProfile>(`/api/v1/exporter-profiles/${profileId}`,
       { method: "PUT", body: JSON.stringify(data) }),
 
   // Contacts

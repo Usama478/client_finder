@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { Search, MapPin, Sparkles, ShieldCheck, Save, ExternalLink, Clock, RefreshCw, Play, Eye, X, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../../../lib/auth-context";
 import { api, CreditError } from "../../../lib/api";
 import { usePageState } from "../../../lib/app-state-context";
+import { useBackgroundJobs } from "../../../lib/background-jobs-context";
 
 /* ── Types ── */
 interface SearchSession {
@@ -12,6 +13,7 @@ interface SearchSession {
   search_query: string;
   search_location: string;
   context_id: number | null;
+  discovery_platform?: "maps" | "serp" | "both";
   result_count: number;
   next_page_token: string | null;
   created_at: string;
@@ -33,6 +35,7 @@ interface BusinessResult {
   verification_result: string | null;
   verification_score: number | null;
   verification_reason: string;
+  manual_review?: boolean | null;
 }
 
 interface ApiContext {
@@ -63,15 +66,19 @@ export default function SearchBusinessesPage() {
   const { user, credits, refreshCredits } = useAuth();
   const routerLocation = useLocation();
   const navigate = useNavigate();
+  const {
+    relevanceJob,
+    verifyJob,
+    startRelevanceJob,
+    pauseRelevanceJob,
+    dismissRelevanceBanner,
+    startVerifyJob,
+    cancelVerifyJob,
+    dismissVerifyBanner,
+  } = useBackgroundJobs();
   const [searchState, setSearchState] = usePageState("search");
   const { searchQuery, location, industry, otherIndustry, showOtherIndustry, selectedContext, discoveryPlatform, activeFilter, selectedSessionId } = searchState;
-  const [searching, setSearching]           = useState(false);
   const [loadingMore, setLoadingMore]       = useState(false);
-  const [processingAI, setProcessingAI]     = useState(false);
-  const [processingItemId, setProcessingItemId] = useState<string | null>(null);
-  const [completedItemIds, setCompletedItemIds] = useState<Set<string>>(new Set());
-  const [aiProgress, setAiProgress]         = useState(0);
-  const [processingVerify, setProcessingVerify] = useState(false);
   const [selectedIds, setSelectedIds]       = useState<string[]>([]);
   const [showHistory, setShowHistory]       = useState(false);
   const [sessions, setSessions]             = useState<SearchSession[]>([]);
@@ -79,8 +86,6 @@ export default function SearchBusinessesPage() {
   const [dataLoading, setDataLoading]       = useState(false);
   const [apiContexts, setApiContexts]       = useState<ApiContext[]>([]);
   const [nextPageToken, setNextPageToken]   = useState<string | null>(null);
-  const [pollingIds, setPollingIds]         = useState<Set<string>>(new Set());
-  const [aiContextInput, setAiContextInput] = useState("");
   const [queryPanelVisible, setQueryPanelVisible] = useState(false);
   const [generatingQueries, setGeneratingQueries] = useState(false);
   const [queryGenerationError, setQueryGenerationError] = useState<string | null>(null);
@@ -90,11 +95,13 @@ export default function SearchBusinessesPage() {
   const [selectedWebQuery, setSelectedWebQuery] = useState<number>(0);
   const [pendingSessionId, setPendingSessionId] = useState<number | null>(null);
   const [triggeringDiscovery, setTriggeringDiscovery] = useState(false);
-  const pollingIntervalsRef          = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
   const isMountedRef                 = useRef(true);
-  const cancelAIRef                  = useRef(false);
-  const abortControllerRef           = useRef<AbortController | null>(null);
   const contextRestoredForSessionRef = useRef<number | null>(null);
+
+  const activeRelevanceJob =
+    relevanceJob && relevanceJob.sessionId === selectedSessionId ? relevanceJob : null;
+  const activeVerifyJob =
+    verifyJob && verifyJob.sessionId === selectedSessionId ? verifyJob : null;
 
   const hasScoredLeads = results.some(
     r => r.relevance_decision !== null && r.relevance_decision !== undefined
@@ -104,10 +111,16 @@ export default function SearchBusinessesPage() {
   useEffect(() => {
     if (!user) return;
     const isFresh = routerLocation.state?.fresh === true;
+    const navSessionId = routerLocation.state?.sessionId as number | undefined;
     api.sessions(user.user_id)
       .then(s => {
         const sessions = (s || []) as SearchSession[];
         setSessions(sessions);
+        if (navSessionId) {
+          const belongs = sessions.some(x => x.search_id === navSessionId);
+          if (belongs) setSearchState({ selectedSessionId: navSessionId });
+          return;
+        }
         if (!isFresh) {
           const lastId = localStorage.getItem("cf_last_session_id");
           if (lastId) {
@@ -136,7 +149,17 @@ export default function SearchBusinessesPage() {
   useEffect(() => {
     if (routerLocation.state?.fresh) {
       localStorage.removeItem("cf_last_session_id");
-      setSearchState({ selectedSessionId: null, searchQuery: "", location: "", industry: "", selectedContext: null, activeFilter: "all" });
+      setSearchState({
+        selectedSessionId: null,
+        searchQuery: "",
+        location: "",
+        industry: "",
+        otherIndustry: "",
+        showOtherIndustry: false,
+        selectedContext: null,
+        discoveryPlatform: "both",
+        activeFilter: "all",
+      });
       setResults([]);
       setSelectedIds([]);
       setNextPageToken(null);
@@ -155,9 +178,6 @@ export default function SearchBusinessesPage() {
   useEffect(() => {
     if (!selectedSessionId) return;
     localStorage.setItem("cf_last_session_id", String(selectedSessionId));
-    setProcessingAI(false);
-    setAiProgress(0);
-    setCompletedItemIds(new Set());
     setDataLoading(true);
     api.results(selectedSessionId)
       .then(r => {
@@ -166,7 +186,16 @@ export default function SearchBusinessesPage() {
       })
       .catch((e) => { console.error(e); toast.error("Failed to load data. Please refresh.") })
       .finally(() => { if (isMountedRef.current) setDataLoading(false); });
-  }, [selectedSessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedSessionId]);
+
+  useEffect(() => {
+    if (!selectedSessionId) {
+      setNextPageToken(null);
+      return;
+    }
+    const matched = sessions.find(s => s.search_id === selectedSessionId);
+    setNextPageToken(matched?.next_page_token ?? null);
+  }, [selectedSessionId, sessions]);
 
   /* ── Auto-restore context from session (runs when sessions list arrives) ──
      Uses a ref to track which session has already had its context restored,
@@ -176,70 +205,35 @@ export default function SearchBusinessesPage() {
     if (!selectedSessionId || sessions.length === 0) return;
     if (contextRestoredForSessionRef.current === selectedSessionId) return;
     const matchedSession = sessions.find(s => s.search_id === selectedSessionId);
-    if (matchedSession?.context_id) {
-      setSearchState({ selectedContext: matchedSession.context_id });
+    if (matchedSession) {
+      setSearchState({ selectedContext: matchedSession.context_id ?? null });
       contextRestoredForSessionRef.current = selectedSessionId;
     }
   }, [selectedSessionId, sessions]);
 
-  /* ── Cleanup on unmount: mark as unmounted + clear all polling intervals ── */
   useEffect(() => {
     return () => {
       isMountedRef.current = false;
-      pollingIntervalsRef.current.forEach(clearInterval);
-      pollingIntervalsRef.current.clear();
     };
   }, []);
 
-  const stopPollingId = useCallback((id: string) => {
-    const handle = pollingIntervalsRef.current.get(id);
-    if (handle !== undefined) {
-      clearInterval(handle);
-      pollingIntervalsRef.current.delete(id);
-    }
-    setPollingIds(prev => {
-      const next = new Set(prev);
-      next.delete(id);
-      if (next.size === 0) setProcessingVerify(false);
-      return next;
-    });
-  }, []);
+  const relevanceCompletedCount = activeRelevanceJob?.completedIds.size ?? 0;
+  const verifyCompletedCount = activeVerifyJob?.completedIds.size ?? 0;
 
-  const startPolling = useCallback((id: string) => {
-    const handle = setInterval(async () => {
-      try {
-        const status = await api.verificationStatus(Number(id));
-        const isTerminal =
-          status.verification_status !== null &&
-          status.verification_status !== undefined &&
-          status.verification_status !== "processing" &&
-          status.verification_status !== "skipped";
-        if (isTerminal) {
-          stopPollingId(id);
-          setResults(prev =>
-            prev.map(r =>
-              r.result_id === Number(id)
-                ? {
-                    ...r,
-                    verification_status: status.verification_status,
-                    verification_result: status.verification_result,
-                    verification_score: status.verification_score,
-                  }
-                : r
-            )
-          );
-        }
-      } catch (err) {
-        console.error(`Polling failed for business ${id}`, err);
-      }
-    }, 3000);
-    pollingIntervalsRef.current.set(id, handle);
-  }, [stopPollingId]);
+  useEffect(() => {
+    if (!selectedSessionId) return;
+    if (relevanceCompletedCount === 0 && verifyCompletedCount === 0) return;
+    api.results(selectedSessionId)
+      .then(r => {
+        if (isMountedRef.current) setResults((r || []) as BusinessResult[]);
+      })
+      .catch(e => console.error(e));
+  }, [selectedSessionId, relevanceCompletedCount, verifyCompletedCount]);
 
   const contexts = apiContexts.length > 0
     ? apiContexts.map(c => ({ id: (c.id ?? c.context_id) as number, name: c.name, desc: c.prompt_text || "" }))
     : [];
-  const contextLocked = selectedSessionId !== null && !queryPanelVisible && pendingSessionId === null;
+  const contextLocked = queryPanelVisible || pendingSessionId !== null || generatingQueries || triggeringDiscovery;
 
   const handleGenerateQueries = async () => {
     if (!searchQuery.trim()) { toast.error("Enter a search query"); return; }
@@ -327,6 +321,7 @@ export default function SearchBusinessesPage() {
       if (targetSession) {
         setSearchState({ selectedSessionId: targetSession.search_id });
         localStorage.setItem("cf_last_session_id", String(targetSession.search_id));
+        setNextPageToken(targetSession.next_page_token || null);
       }
       setQueryPanelVisible(false);
       setPendingSessionId(null);
@@ -335,53 +330,6 @@ export default function SearchBusinessesPage() {
       toast.error((err as Error).message || "Discovery failed");
     } finally {
       if (isMountedRef.current) setTriggeringDiscovery(false);
-    }
-  };
-
-  const handleSearch = async () => {
-    if (!searchQuery.trim()) { toast.error("Enter a search query"); return; }
-    if (!user) return;
-    if (selectedContext === null) { toast.error("Please select an AI context before searching"); return; }
-    if (credits && credits.empty) {
-      toast.error("Credits exhausted — contact your team to top up.");
-      return;
-    }
-    if (credits && credits.credits_remaining < 10) {
-      toast.error(`Insufficient credits. Search costs 10 credits. You have ${credits.credits_remaining}.`);
-      return;
-    }
-    setSearching(true);
-    const searchToastId = toast.loading("Searching for businesses…");
-    try {
-      const finalIndustry = showOtherIndustry ? otherIndustry : industry;
-      const parts = [searchQuery, finalIndustry, location].filter(Boolean);
-      const finalQuery = parts.join(" ");
-      const searchResponse = await api.createSession({
-        user_id: user.user_id,
-        query: finalQuery,
-        search_location: location || "",
-        context_id: selectedContext ?? null,
-      });
-      setNextPageToken(searchResponse?.next_page_token || null);
-      toast.dismiss(searchToastId);
-      toast.success("Search complete!");
-      await refreshCredits();
-      const newSessions = await api.sessions(user.user_id);
-      if (!isMountedRef.current) return;
-      setSessions((newSessions || []) as SearchSession[]);
-      if (newSessions && newSessions.length > 0) {
-        setSearchState({ selectedSessionId: newSessions[0].search_id });
-        localStorage.setItem("cf_last_session_id", String(newSessions[0].search_id));
-      }
-    } catch (err: unknown) {
-      toast.dismiss(searchToastId);
-      if (err instanceof CreditError) {
-        toast.error("Credits exhausted — contact your team to top up.");
-      } else {
-        toast.error((err as Error).message || "Search failed");
-      }
-    } finally {
-      if (isMountedRef.current) setSearching(false);
     }
   };
 
@@ -417,6 +365,7 @@ export default function SearchBusinessesPage() {
   const handleRunAI = async () => {
     if (!selectedIds.length) { toast.error("Select at least one business"); return; }
     if (selectedContext === null) { toast.error("Please select an AI context before running relevance scoring"); return; }
+    if (!selectedSessionId) { toast.error("No active search session"); return; }
     if (credits && credits.empty) {
       toast.error("Credits exhausted — contact your team to top up.");
       return;
@@ -427,122 +376,44 @@ export default function SearchBusinessesPage() {
       return;
     }
 
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-    cancelAIRef.current = false;
-    setProcessingAI(true);
-    setAiProgress(0);
-    setProcessingItemId(null);
-    setCompletedItemIds(new Set());
-    toast.info(`Running AI relevance on ${selectedIds.length} leads…`);
+    const idsToRun = [...selectedIds];
+    setSelectedIds([]);
 
-    let passed = 0;
-    let failed = 0;
-    let creditErrorHit = false;
-    const totalIds = selectedIds.length;
-    let processedCount = 0;
+    const contextName = contexts.find(c => c.id === selectedContext)?.name;
 
-    /* Process a single lead — called concurrently inside each chunk */
-    const processSingleLead = async (id: string): Promise<void> => {
-      if (cancelAIRef.current) return;
-      setProcessingItemId(id);
-      const businessObject = results.find(r => String(r.result_id) === id);
-      if (!businessObject) return;
-
-      try {
-        if (!businessObject.website) {
-          setResults(prev => prev.map(r =>
+    await startRelevanceJob({
+      selectedIds: idsToRun,
+      sessionId: selectedSessionId,
+      contextId: selectedContext,
+      contextName,
+      businesses: results,
+      onItemUpdate: (id, partial) => {
+        setResults(prev =>
+          prev.map(r =>
             r.result_id === Number(id)
-              ? { ...r, relevance_decision: "skipped" as const, relevance_reason: "No website — skipped" }
+              ? {
+                  ...r,
+                  ...(partial.relevance_decision != null
+                    ? { relevance_decision: partial.relevance_decision as BusinessResult["relevance_decision"] }
+                    : {}),
+                  ...(partial.relevance_score != null ? { relevance_score: partial.relevance_score } : {}),
+                  ...(partial.relevance_reason != null ? { relevance_reason: partial.relevance_reason } : {}),
+                }
               : r
-          ));
-          failed++;
-          return;
-        }
-        const response = await api.runRelevancy(
-          businessObject, selectedSessionId || 0, selectedContext, controller.signal
+          )
         );
-        if (!isMountedRef.current) return;
-        setResults(prev => prev.map(r =>
-          r.result_id === Number(id)
-            ? { ...r,
-                relevance_decision: response.relevance_decision,
-                relevance_score: response.relevance_score != null ? response.relevance_score : (response.relevance_decision === "irrelevant" ? 0 : response.confidence),
-                relevance_reason: response.relevance_reason }
-            : r
-        ));
-        passed++;
-      } catch (err: unknown) {
-        /* AbortError means user paused — stop silently */
-        if ((err as DOMException).name === "AbortError") return;
-        if (err instanceof CreditError) {
-          creditErrorHit = true;
-          cancelAIRef.current = true;
-          controller.abort();
-          return;
-        }
-        if (isMountedRef.current) {
-          setResults(prev => prev.map(r =>
-            r.result_id === Number(id)
-              ? { ...r, relevance_decision: "error" as const, relevance_reason: (err as Error).message }
-              : r
-          ));
-        }
-        failed++;
-      } finally {
-        if (!isMountedRef.current) return;
-        processedCount++;
-        setCompletedItemIds(prev => new Set(prev).add(id));
-        setProcessingItemId(null);
-        setAiProgress(Math.min((processedCount / totalIds) * 100, 95));
-      }
-    };
-
-    /* Run leads in parallel chunks of 3 instead of one-by-one */
-    const CHUNK_SIZE = 3;
-    try {
-      for (let i = 0; i < selectedIds.length; i += CHUNK_SIZE) {
-        if (cancelAIRef.current) break;
-        const chunk = selectedIds.slice(i, i + CHUNK_SIZE);
-        await Promise.all(chunk.map(id => processSingleLead(id)));
-      }
-
-      if (creditErrorHit) {
-        toast.error("Credits exhausted — contact your team to top up.");
-        await refreshCredits();
-        return;
-      }
-
-      const wasCancelled = cancelAIRef.current;
-      if (selectedSessionId) {
+      },
+      onSessionRefresh: async () => {
+        if (!selectedSessionId) return;
         const r = await api.results(selectedSessionId);
         if (isMountedRef.current) setResults((r || []) as BusinessResult[]);
-      }
-      await refreshCredits();
-      if (wasCancelled) {
-        toast.info(`AI paused: ${passed} scored, ${failed} skipped/failed`);
-      } else {
-        toast.success(`AI complete: ${passed} scored, ${failed} skipped/failed`);
-      }
-    } catch (err: unknown) {
-      if (err instanceof CreditError) {
-        toast.error("Credits exhausted — contact your team to top up.");
-      } else {
-        toast.error((err as Error).message || "AI scoring failed");
-      }
-    } finally {
-      if (isMountedRef.current) {
-        setProcessingAI(false);
-        setAiProgress(100);
-        setProcessingItemId(null);
-        setCompletedItemIds(new Set());
-        setSelectedIds([]);
-      }
-    }
+      },
+    });
   };
 
   const handleVerify = () => {
     if (!selectedIds.length) { toast.error("Select at least one business"); return; }
+    if (!selectedSessionId) { toast.error("No active search session"); return; }
     if (credits && credits.empty) {
       toast.error("Credits exhausted — contact your team to top up.");
       return;
@@ -566,34 +437,33 @@ export default function SearchBusinessesPage() {
       return;
     }
 
-    api.verifyBatch(validIds)
-      .then(() => refreshCredits())
-      .catch((err: unknown) => {
-        if (err instanceof CreditError) {
-          toast.error("Credits exhausted — contact your team to top up.");
-        } else {
-          toast.error((err as Error).message || "Verification request failed");
-        }
-      });
-
-    toast.info(`Verifying ${validIds.length} leads…`);
-    setProcessingVerify(true);
     setSelectedIds([]);
 
-    const idStrings = validIds.map(String);
-    setPollingIds(prev => {
-      const next = new Set(prev);
-      idStrings.forEach(id => next.add(id));
-      return next;
+    startVerifyJob({
+      validIds,
+      sessionId: selectedSessionId,
+      onItemUpdate: (id, partial) => {
+        setResults(prev =>
+          prev.map(r =>
+            r.result_id === Number(id)
+              ? {
+                  ...r,
+                  ...(partial.verification_status != null
+                    ? { verification_status: partial.verification_status }
+                    : {}),
+                  ...(partial.verification_result != null
+                    ? { verification_result: partial.verification_result }
+                    : {}),
+                  ...(partial.verification_score != null
+                    ? { verification_score: partial.verification_score }
+                    : {}),
+                }
+              : r
+          )
+        );
+      },
     });
-    idStrings.forEach(startPolling);
   };
-
-  /* Bug 2 fix: Cancel actually stops all active polling intervals */
-  const handleCancelVerify = useCallback(() => {
-    pollingIds.forEach(id => stopPollingId(id));
-    setProcessingVerify(false);
-  }, [pollingIds, stopPollingId]);
 
   const handleSave = async () => {
     if (!selectedIds.length) { toast.error("Select at least one business"); return; }
@@ -616,17 +486,6 @@ export default function SearchBusinessesPage() {
     }
   };
 
-  /* Bug 5 fix: Export wired up to the real API */
-  const handleExport = async () => {
-    if (!selectedSessionId) { toast.error("No active search session to export"); return; }
-    try {
-      await api.exportResults(selectedSessionId);
-      toast.success("Export started — check your downloads");
-    } catch (err: unknown) {
-      toast.error((err as Error).message || "Export failed");
-    }
-  };
-
   /* Bug 3 fix: per-row save directly calls the API, bypassing selectedIds state */
   const handleSaveSingle = async (id: string, name: string) => {
     try {
@@ -640,25 +499,43 @@ export default function SearchBusinessesPage() {
   const toggle = (id: string) => setSelectedIds(p => p.includes(id) ? p.filter(i => i !== id) : [...p, id]);
   const toggleAll = () => setSelectedIds(p => p.length === filtered.length ? [] : filtered.map(r => r.id));
 
-  const tableData = results.length > 0 ? results.map(r => ({
-    id: String(r.result_id),
-    name: r.business_name || "Unknown",
-    category: r.business_type || "—",
-    location: r.address || "—",
-    website: r.website || "",
-    source: r.source || "maps",
-    email: r.email_found || null,
-    phone: (r.all_phones_found || [])[0] || null,
-    relevanceScore: r.relevance_decision === "irrelevant" ? 0 : Math.round(r.relevance_score || 0),
-    relevanceStatus: r.relevance_decision === "relevant" ? "passed"
-      : r.relevance_decision === "irrelevant" ? "failed"
-      : r.relevance_decision === "unknown" ? "low-confidence"
-      : "pending",
-    verificationScore: r.verification_score || null,
-    verificationStatus: r.verification_result || "pending",
-    reasoning: r.relevance_reason || "",
-    verificationReasoning: r.verification_reason || "",
-  })) : [];
+  const tableData = results.length > 0 ? results.map(r => {
+    const verificationRawStatus = r.verification_result || r.verification_status || "pending";
+    const verificationScore = r.verification_score != null ? Math.round(r.verification_score) : null;
+    const verificationProcessed =
+      (r.verification_status != null && r.verification_status !== "pending")
+      || (r.verification_result != null && r.verification_result !== "pending")
+      || r.verification_score != null;
+    const verificationStatus = r.manual_review
+      || verificationRawStatus === "manual_review"
+      || verificationRawStatus === "manual_review_required"
+      || (verificationRawStatus === "partial" && verificationScore !== null && verificationScore < 50)
+      ? "manual_review"
+      : verificationRawStatus;
+
+    return {
+      id: String(r.result_id),
+      name: r.business_name || "Unknown",
+      category: r.business_type || "—",
+      location: r.address || "—",
+      website: r.website || "",
+      source: r.source || "maps",
+      email: r.email_found || null,
+      phone: (r.all_phones_found || [])[0] || null,
+      relevanceScore: r.relevance_decision === "irrelevant"
+        ? 0
+        : (r.relevance_score != null ? Math.round(r.relevance_score) : null),
+      relevanceStatus: r.relevance_decision === "relevant" ? "passed"
+        : r.relevance_decision === "irrelevant" ? "failed"
+        : r.relevance_decision === "unknown" ? "low-confidence"
+        : "pending",
+      verificationScore,
+      verificationStatus,
+      verificationProcessed,
+      reasoning: r.relevance_reason || "",
+      verificationReasoning: r.verification_reason || "",
+    };
+  }) : [];
 
   const filtered = tableData.filter(r => {
     if (activeFilter === "passed")   return r.relevanceStatus === "passed";
@@ -683,6 +560,7 @@ export default function SearchBusinessesPage() {
 
   const verifyBadge = (s: string | null) => {
     if (s === "verified") return <Badge color="green">✓ Verified</Badge>;
+    if (s === "manual_review") return <Badge color="amber">Manual Review</Badge>;
     if (s === "partial")  return <Badge color="amber">⚠ Partial</Badge>;
     if (s === "failed")   return <Badge color="red">✗ Failed</Badge>;
     if (s === "running")  return <Badge color="blue">⏳ Running</Badge>;
@@ -690,6 +568,22 @@ export default function SearchBusinessesPage() {
   };
 
   const scoreColor = (n: number, status?: string) => status === "failed" ? "var(--destructive)" : n >= 75 ? "var(--chart-2)" : n >= 50 ? "var(--chart-3)" : "var(--destructive)";
+
+  const verifyProgressPct = activeVerifyJob && activeVerifyJob.totalCount > 0
+    ? (activeVerifyJob.completedIds.size / activeVerifyJob.totalCount) * 100
+    : 0;
+  const verifyingBusinessName = activeVerifyJob?.activeItemId
+    ? tableData.find(t => t.id === activeVerifyJob.activeItemId)?.name
+    : null;
+  const verifyingPhaseCaption = activeVerifyJob?.activeItemId
+    ? activeVerifyJob.phaseById[activeVerifyJob.activeItemId]
+    : null;
+  const relevanceBusinessName = activeRelevanceJob?.activeItemId
+    ? tableData.find(t => t.id === activeRelevanceJob.activeItemId)?.name
+    : null;
+  const relevancePhaseCaption = activeRelevanceJob?.activeItemId
+    ? activeRelevanceJob.phaseById[activeRelevanceJob.activeItemId]
+    : null;
 
   const filterTabs = [
     { key: "all",     label: `All (${tableData.length})` },
@@ -753,7 +647,7 @@ export default function SearchBusinessesPage() {
           )}
         </div>
 
-        {/* AI Context free-text + Discovery Platform */}
+        {/* Discovery Platform */}
         <div className="mt-3 flex flex-wrap gap-3 items-end">
           <div>
             <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest block mb-1.5">Discovery Source</label>
@@ -784,7 +678,7 @@ export default function SearchBusinessesPage() {
             style={btnPrimary}
             onClick={handleGenerateQueries}
             disabled={generatingQueries || queryPanelVisible || selectedContext === null || !!(credits && credits.empty)}>
-            {generatingQueries ? <><RefreshCw className="h-3.5 w-3.5 animate-spin" />Generating…</> : <><Sparkles className="h-3.5 w-3.5" />Generate Queries</>}
+            {generatingQueries ? <><RefreshCw className="h-3.5 w-3.5 animate-spin" />Searching…</> : <><Sparkles className="h-3.5 w-3.5" />Search</>}
           </button>
         </div>
 
@@ -891,27 +785,25 @@ export default function SearchBusinessesPage() {
             <span className="text-[11px] text-muted-foreground italic">No contexts available. Create one in the Context page.</span>
           ) : (
             <>
-              <button onClick={() => setSelectedContext(null)}
-                disabled={searching || contextLocked}
+              <button onClick={() => setSearchState({ selectedContext: null })}
+                disabled={contextLocked}
                 className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[12px] font-medium transition-all"
                 style={{
                   ...(selectedContext === null
                     ? { background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", color: "#a78bfa" }
                     : { background: "var(--muted)", border: "1px solid var(--border)", color: "var(--muted-foreground)" }),
-                  ...(searching ? { opacity: 0.4, cursor: "not-allowed" } : {}),
                   ...(contextLocked ? { opacity: 0.5, cursor: "not-allowed" } : {}),
                 }}>
                 {selectedContext === null ? "🧠 " : ""}None
               </button>
               {contexts.map(c => (
-                <button key={c.id} onClick={() => setSelectedContext(c.id)}
-                  disabled={searching || contextLocked}
+                <button key={c.id} onClick={() => setSearchState({ selectedContext: c.id })}
+                  disabled={contextLocked}
                   className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[12px] font-medium transition-all"
                   style={{
                     ...(selectedContext === c.id
                       ? { background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", color: "#a78bfa" }
                       : { background: "var(--muted)", border: "1px solid var(--border)", color: "var(--muted-foreground)" }),
-                    ...(searching ? { opacity: 0.4, cursor: "not-allowed" } : {}),
                     ...(contextLocked ? { opacity: 0.5, cursor: "not-allowed" } : {}),
                   }}>
                   {selectedContext === c.id ? "🧠 " : ""}{c.name}
@@ -927,42 +819,79 @@ export default function SearchBusinessesPage() {
           </button>
         </div>
         {contextLocked && (
-          <span className="text-[11px] text-muted-foreground mt-1 block">Context is locked to this search session. Start a new search to change it.</span>
+          <span className="text-[11px] text-muted-foreground mt-1 block">Context is locked while queries are being generated or discovery is in progress.</span>
         )}
       </div>
 
       {/* AI Processing Banner */}
-      {processingAI && (
+      {activeRelevanceJob?.bannerVisible && (
         <div className="p-4 rounded-xl flex items-center gap-4" style={{ background: "linear-gradient(135deg, rgba(59,130,246,0.08), rgba(139,92,246,0.08))", border: "1px solid rgba(139,92,246,0.2)" }}>
           <span className="text-2xl">🤖</span>
           <div className="flex-1">
-            <div className="text-sm font-semibold text-foreground">AI Relevance Scoring in progress — {Math.round(aiProgress)}% complete</div>
-            <div className="text-[12px] text-muted-foreground mt-0.5">Analysing against "{contexts.find(c => c.id === selectedContext)?.name || "default"}" context. Partial results shown below.</div>
+            <div className="text-sm font-semibold text-foreground">
+              {activeRelevanceJob.isRunning ? (
+                <>AI Relevance Scoring in progress — {Math.round(activeRelevanceJob.progress)}% complete</>
+              ) : activeRelevanceJob.isComplete ? (
+                <>AI Relevance Scoring complete — {activeRelevanceJob.completedIds.size} leads processed</>
+              ) : (
+                <>AI Relevance Scoring paused — {activeRelevanceJob.completedIds.size} leads processed so far</>
+              )}
+            </div>
+            <div className="text-[12px] text-muted-foreground mt-0.5">
+              {relevanceBusinessName && (
+                <div className="font-medium">Processing: {relevanceBusinessName}</div>
+              )}
+              {relevancePhaseCaption && (
+                <div className="mt-1">{relevancePhaseCaption}</div>
+              )}
+              {!relevanceBusinessName && !relevancePhaseCaption && (
+                <div>
+                  Analysing against &quot;{activeRelevanceJob.contextName || contexts.find(c => c.id === selectedContext)?.name || "default"}&quot; context. Partial results shown below.
+                </div>
+              )}
+            </div>
             <div className="mt-2 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--accent)" }}>
-              <div className="h-full rounded-full transition-all duration-300" style={{ width: `${aiProgress}%`, background: "linear-gradient(90deg, #3b82f6, #8b5cf6)" }} />
+              <div className="h-full rounded-full transition-all duration-300" style={{ width: `${activeRelevanceJob.progress}%`, background: "linear-gradient(90deg, #3b82f6, #8b5cf6)" }} />
             </div>
           </div>
-          <button style={btnGhost} onClick={() => {
-            cancelAIRef.current = true;
-            abortControllerRef.current?.abort();
-            setProcessingAI(false);
-          }}>Pause</button>
+          <div className="flex gap-2">
+            {activeRelevanceJob.isRunning && (
+              <button type="button" style={btnGhost} onClick={pauseRelevanceJob}>Pause</button>
+            )}
+            <button type="button" style={btnGhost} onClick={dismissRelevanceBanner}><X className="h-3.5 w-3.5" /></button>
+          </div>
         </div>
       )}
 
       {/* Verification Banner */}
-      {processingVerify && (
+      {activeVerifyJob?.bannerVisible && (
         <div className="p-4 rounded-xl flex items-center gap-4" style={{ background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.2)" }}>
           <span className="text-2xl">🔒</span>
           <div className="flex-1">
-            <div className="text-sm font-semibold text-foreground">Verification checks running…</div>
-            <div className="text-[12px] text-muted-foreground mt-0.5">Checking SSL, domain age, social presence, legal registration…</div>
+            <div className="text-sm font-semibold text-foreground">
+              {activeVerifyJob.isRunning ? (
+                <>Verifying {activeVerifyJob.completedIds.size}/{activeVerifyJob.totalCount}</>
+              ) : (
+                <>Verification complete — {activeVerifyJob.completedIds.size} leads verified</>
+              )}
+              {verifyingBusinessName ? ` — ${verifyingBusinessName}` : ""}
+            </div>
+            <div className="text-[12px] text-muted-foreground mt-0.5">
+              {verifyingPhaseCaption || "Checking SSL, domain age, social presence, legal registration…"}
+            </div>
             <div className="mt-2 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--accent)" }}>
-              <div className="h-full rounded-full" style={{ width: "60%", background: "var(--chart-2)", animation: "pulse 1.5s ease-in-out infinite" }} />
+              <div
+                className="h-full rounded-full transition-all duration-300"
+                style={{ width: `${verifyProgressPct}%`, background: "var(--chart-2)" }}
+              />
             </div>
           </div>
-          {/* Bug 2 fix: handleCancelVerify stops all active polling intervals */}
-          <button style={btnGhost} onClick={handleCancelVerify}>Cancel</button>
+          <div className="flex gap-2">
+            {activeVerifyJob.isRunning && (
+              <button type="button" style={btnGhost} onClick={cancelVerifyJob}>Cancel</button>
+            )}
+            <button type="button" style={btnGhost} onClick={dismissVerifyBanner}><X className="h-3.5 w-3.5" /></button>
+          </div>
         </div>
       )}
 
@@ -1011,8 +940,6 @@ export default function SearchBusinessesPage() {
           <button style={btnGhost} onClick={() => setShowHistory(v => !v)}>
             <Clock className="h-3.5 w-3.5" /> History <ChevronDown className="h-3 w-3" />
           </button>
-          {/* Bug 5 fix: Export button wired to handleExport */}
-          <button style={btnGhost} onClick={handleExport} disabled={!selectedSessionId}>↓ Export</button>
         </div>
 
         {/* History Dropdown */}
@@ -1020,33 +947,46 @@ export default function SearchBusinessesPage() {
           <div className="mt-2 p-4 rounded-xl space-y-2" style={{ background: "var(--card)", border: "1px solid var(--border)" }}>
             <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-2">Recent Searches</div>
             {/* Minor cleanup: use s.search_id as key instead of array index */}
-            {sessions.slice(0, 5).map(s => (
-              <div key={s.search_id} className="flex items-center gap-3 p-2.5 rounded-lg cursor-pointer hover:bg-muted transition-colors"
-                onClick={async () => {
-                  try {
-                    /* Minor cleanup: api.results always returns an array — no need for fallback destructuring */
-                    const r = await api.results(s.search_id);
-                    pollingIntervalsRef.current.forEach(clearInterval);
-                    pollingIntervalsRef.current.clear();
-                    setResults((r || []) as BusinessResult[]);
-                    setSearchState({ selectedSessionId: s.search_id, searchQuery: s.search_query || "", location: s.search_location || "" });
-                    setNextPageToken(s.next_page_token || null);
-                    toast.success("Search history loaded");
-                  } catch { toast.error("Failed to load history"); }
-                }}>
-                <div className="flex-1">
-                  <div className="text-[13px] font-medium text-foreground">
-                    {s.search_query || "Search"}
+            {sessions.slice(0, 5).map(s => {
+              const loadHistorySession = async () => {
+                try {
+                  const r = await api.results(s.search_id);
+                  setResults((r || []) as BusinessResult[]);
+                  contextRestoredForSessionRef.current = s.search_id;
+                  const platform = s.discovery_platform;
+                  setSearchState({
+                    selectedSessionId: s.search_id,
+                    searchQuery: s.search_query || "",
+                    location: s.search_location || "",
+                    selectedContext: s.context_id ?? null,
+                    ...(platform === "maps" || platform === "serp" || platform === "both"
+                      ? { discoveryPlatform: platform }
+                      : {}),
+                  });
+                  setNextPageToken(s.next_page_token || null);
+                  toast.success("Search history loaded");
+                } catch {
+                  toast.error("Failed to load history");
+                }
+              };
+              return (
+                <div key={s.search_id} className="flex items-center gap-3 p-2.5 rounded-lg transition-colors">
+                  <div className="flex-1">
+                    <div className="text-[13px] font-medium text-foreground">
+                      {s.search_query || "Search"}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">
+                      {s.result_count || 0} results · {
+                        s.created_at ? new Date(s.created_at).toLocaleDateString() : ""
+                      }
+                    </div>
                   </div>
-                  <div className="text-[11px] text-muted-foreground">
-                    {s.result_count || 0} results · {
-                      s.created_at ? new Date(s.created_at).toLocaleDateString() : ""
-                    }
-                  </div>
+                  <button type="button" style={btnGhost} className="text-[11px]" onClick={loadHistorySession}>
+                    <Play className="h-3 w-3" />Reload
+                  </button>
                 </div>
-                <button style={btnGhost} className="text-[11px]"><Play className="h-3 w-3" />Reload</button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -1054,11 +994,10 @@ export default function SearchBusinessesPage() {
         <div className="mt-2 overflow-hidden rounded-xl" style={{ border: "1px solid var(--border)" }}>
           {/* Header */}
           <div className="grid text-[10px] font-semibold text-muted-foreground uppercase tracking-widest px-4 py-3"
-            style={{ gridTemplateColumns: "28px minmax(0, 1fr) 90px 130px 140px 100px 110px 90px", background: "var(--muted)", borderBottom: "1px solid var(--border)" }}>
+            style={{ gridTemplateColumns: "28px minmax(0, 1fr) 160px 130px 120px 130px 90px", background: "var(--muted)", borderBottom: "1px solid var(--border)" }}>
             <div><input type="checkbox" checked={selectedIds.length === filtered.length && filtered.length > 0} onChange={toggleAll} className="accent-blue-500" /></div>
             <div>Business</div>
             <div>Industry</div>
-            <div>Location</div>
             <div>Relevance</div>
             <div>Verification</div>
             <div>Decision</div>
@@ -1077,16 +1016,17 @@ export default function SearchBusinessesPage() {
             <div key={r.id}
               className="grid items-center px-4 py-3 transition-colors hover:bg-muted"
               style={{
-                gridTemplateColumns: "28px minmax(0, 1fr) 90px 130px 140px 100px 110px 90px",
+                gridTemplateColumns: "28px minmax(0, 1fr) 160px 130px 120px 130px 90px",
                 borderBottom: i < filtered.length - 1 ? "1px solid var(--border)" : "none",
                 background: selectedIds.includes(r.id) ? "rgba(59,130,246,0.04)" : "var(--card)",
               }}>
               <div className="flex items-center justify-center">
-                {processingItemId === r.id ? (
+                {activeRelevanceJob?.activeItemId === r.id || activeVerifyJob?.activeItemId === r.id ? (
                   <RefreshCw className="h-3.5 w-3.5 text-blue-400 animate-spin" />
-                ) : completedItemIds.has(r.id) ? (
+                ) : activeRelevanceJob?.completedIds.has(r.id) || activeVerifyJob?.completedIds.has(r.id) ? (
                   <span style={{ color: "var(--chart-2)", fontSize: 14, lineHeight: 1 }}>✓</span>
-                ) : processingAI && selectedIds.includes(r.id) ? (
+                ) : (activeRelevanceJob?.isRunning || activeVerifyJob?.isRunning) &&
+                  (activeRelevanceJob?.processingIds.has(r.id) || activeVerifyJob?.processingIds.has(r.id)) ? (
                   <Clock className="h-3.5 w-3.5 text-muted-foreground" />
                 ) : (
                   <input type="checkbox" checked={selectedIds.includes(r.id)} onChange={() => toggle(r.id)} className="accent-blue-500" />
@@ -1148,13 +1088,10 @@ export default function SearchBusinessesPage() {
                 </div>
               </div>
 
-              <div className="text-[12px] text-muted-foreground flex items-center gap-1" style={{ minWidth: 0, overflow: "hidden" }}>
-                <MapPin className="h-3 w-3 flex-shrink-0" />
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.location}</span>
-              </div>
-
-              <div style={{ minWidth: 0 }}>
-                {(r.relevanceStatus === "passed" || r.relevanceStatus === "failed") && (
+              <div style={{ minWidth: 0, paddingRight: 16 }}>
+                {r.relevanceScore === null ? (
+                  <span className="text-[12px] text-muted-foreground">—</span>
+                ) : (
                   <div className="flex items-center gap-2">
                     <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--accent)" }}>
                       <div className="h-full rounded-full" style={{ width: `${r.relevanceScore}%`, background: scoreColor(r.relevanceScore, r.relevanceStatus) }} />
@@ -1162,11 +1099,14 @@ export default function SearchBusinessesPage() {
                     <span className="text-[12px] font-bold w-7 text-right" style={{ color: scoreColor(r.relevanceScore, r.relevanceStatus) }}>{r.relevanceScore}</span>
                   </div>
                 )}
-                <div className="text-[10px] text-muted-foreground mt-1 line-clamp-1" title={r.reasoning}>{r.reasoning}</div>
               </div>
 
               <div style={{ minWidth: 0 }}>
-                {verifyBadge(pollingIds.has(r.id) ? "running" : r.verificationStatus)}
+                {activeVerifyJob?.processingIds.has(r.id)
+                  ? verifyBadge("running")
+                  : r.verificationProcessed
+                    ? verifyBadge(r.verificationStatus)
+                    : <span className="text-[12px] text-muted-foreground">—</span>}
               </div>
               <div style={{ minWidth: 0 }}>{relevanceBadge(r.relevanceStatus)}</div>
 

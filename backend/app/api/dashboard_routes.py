@@ -14,6 +14,7 @@ from typing import List, Dict, Any
 router = APIRouter(prefix="/api/v1/dashboard", tags=["dashboard"])
 
 class DashboardStatsResponse(BaseModel):
+    # Existing fields (kept for backwards compatibility with other consumers)
     total_clients: int
     verified_clients: int
     unverified_clients: int
@@ -23,6 +24,23 @@ class DashboardStatsResponse(BaseModel):
     leads_found: int
     relevant_leads: int
     emails_sent: int
+    relevant_leads_count: int
+    verification_processed_count: int
+
+    # KPI card fields (outcome metrics — what came out of each stage)
+    saved_clients: int                # same as total_clients, semantic alias for KPI card
+    verified_count: int               # relevance_decision='relevant' AND verification_score >= 50
+
+    # Pipeline Overview fields (volume metrics — what went through each stage)
+    relevancy_processed: int          # SearchResult where relevance_decision IS NOT NULL
+    verification_processed: int       # SearchResult where verification_score IS NOT NULL
+    clients_count: int                # same as saved_clients, semantic alias for pipeline block
+    emails_drafted: int               # total EmailDraft rows for this user (any status)
+
+    # Next Actions / Funnel fields (pending-stage backlog + actual pass count)
+    pending_relevancy: int            # leads_found - relevancy_processed (never touched by relevancy agent)
+    pending_verification: int         # relevance_decision='relevant' AND verification_score IS NULL
+    verified_passed: int              # verification_score >= 50 (passed verification, not just ran)
 
 @router.get("/stats", response_model=DashboardStatsResponse)
 def get_dashboard_stats(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -82,6 +100,74 @@ def get_dashboard_stats(db: Session = Depends(get_db), current_user: User = Depe
         EmailDraft.status == 'sent'
     ).filter(SearchSession.user_id == current_user.user_id).count()
 
+    # ── Pipeline Overview: volume metrics (what was processed at each stage) ──
+    # Leads that went through the relevancy agent (relevance_decision IS NOT NULL):
+    # includes 'relevant', 'irrelevant', 'low_confidence' — i.e. every classified lead.
+    relevancy_processed = db.query(func.count(SearchResult.result_id)).join(
+        SearchSession, SearchResult.search_id == SearchSession.search_id
+    ).filter(
+        SearchSession.user_id == current_user.user_id,
+        SearchResult.relevance_decision.isnot(None),
+    ).scalar() or 0
+
+    # Leads that went through the verification agent (verification_score IS NOT NULL),
+    # regardless of pass/fail outcome.
+    verification_processed = db.query(func.count(SearchResult.result_id)).join(
+        SearchSession, SearchResult.search_id == SearchSession.search_id
+    ).filter(
+        SearchSession.user_id == current_user.user_id,
+        SearchResult.verification_score.isnot(None),
+    ).scalar() or 0
+
+    # Total emails drafted for this user (any status — drafted, queued, sent, failed, etc.).
+    emails_drafted = db.query(func.count(EmailDraft.id)).join(
+        SearchResult, EmailDraft.business_id == SearchResult.result_id
+    ).join(
+        SearchSession, SearchResult.search_id == SearchSession.search_id
+    ).filter(
+        SearchSession.user_id == current_user.user_id,
+    ).scalar() or 0
+
+    # ── KPI card outcome metrics ──
+    # "Verified" KPI: leads that passed relevancy AND scored ≥ 50 on verification.
+    verified_count = db.query(func.count(SearchResult.result_id)).join(
+        SearchSession, SearchResult.search_id == SearchSession.search_id
+    ).filter(
+        SearchSession.user_id == current_user.user_id,
+        SearchResult.relevance_decision == 'relevant',
+        SearchResult.verification_score >= 50,
+    ).scalar() or 0
+
+    # ── Next Actions / Funnel pending counts ──
+    # Leads never touched by the relevancy agent. Computed as total - processed
+    # (safer than COUNT WHERE relevance_decision IS NULL in case a NULL row
+    # was processed but the column happened to be cleared elsewhere).
+    pending_relevancy = max(0, leads_found - relevancy_processed)
+
+    # Leads that passed relevancy ('relevant') but verification agent never ran.
+    pending_verification = db.query(func.count(SearchResult.result_id)).join(
+        SearchSession, SearchResult.search_id == SearchSession.search_id
+    ).filter(
+        SearchSession.user_id == current_user.user_id,
+        SearchResult.relevance_decision == 'relevant',
+        SearchResult.verification_score.is_(None),
+    ).scalar() or 0
+
+    # Leads that actually PASSED verification (score ≥ 50), independent of
+    # verification_processed which counts every lead the agent ran on.
+    verified_passed = db.query(func.count(SearchResult.result_id)).join(
+        SearchSession, SearchResult.search_id == SearchSession.search_id
+    ).filter(
+        SearchSession.user_id == current_user.user_id,
+        SearchResult.verification_score >= 50,
+    ).scalar() or 0
+
+    # Semantic aliases — same underlying value, but distinct names for clarity in the UI.
+    saved_clients = total_clients
+    clients_count = total_clients
+    # Backwards-compat field still used by older frontend code paths.
+    relevant_leads_count = relevant_leads
+
     return DashboardStatsResponse(
         total_clients=total_clients,
         verified_clients=verified_clients,
@@ -91,7 +177,18 @@ def get_dashboard_stats(db: Session = Depends(get_db), current_user: User = Depe
         verification_data=verification_data,
         leads_found=leads_found,
         relevant_leads=relevant_leads,
-        emails_sent=emails_sent
+        emails_sent=emails_sent,
+        relevant_leads_count=relevant_leads_count,
+        verification_processed_count=verification_processed,
+        saved_clients=saved_clients,
+        verified_count=verified_count,
+        relevancy_processed=relevancy_processed,
+        verification_processed=verification_processed,
+        clients_count=clients_count,
+        emails_drafted=emails_drafted,
+        pending_relevancy=pending_relevancy,
+        pending_verification=pending_verification,
+        verified_passed=verified_passed,
     )
 
 @router.get("/activity")
@@ -100,11 +197,15 @@ def get_activity(limit: int = 50, db: Session = Depends(get_db), current_user: U
     sessions = db.query(SearchSession).filter(SearchSession.user_id == current_user.user_id).order_by(
         SearchSession.created_at.desc()).limit(15).all()
     for s in sessions:
+        cid = s.campaign_id
         events.append({
             "type": "search",
             "text": f"Search started — \"{s.search_query or 'Search'}\"",
             "time": s.created_at.isoformat() if s.created_at else "",
             "color": "#3b82f6",
+            "search_id": s.search_id,
+            "origin": "campaign" if cid else "search",
+            "campaign_id": cid,
         })
     verified = db.query(SearchResult).join(SearchSession, SearchResult.search_id == SearchSession.search_id).filter(
         SearchResult.verification_result.in_(["verified", "partial"])
@@ -115,6 +216,8 @@ def get_activity(limit: int = 50, db: Session = Depends(get_db), current_user: U
             "text": f"Verification complete — {r.business_name}",
             "time": r.created_at.isoformat() if r.created_at else "",
             "color": "#10b981",
+            "business_id": r.result_id,
+            "campaign_id": r.campaign_id,
         })
     relevant = db.query(SearchResult).join(SearchSession, SearchResult.search_id == SearchSession.search_id).filter(
         SearchResult.relevance_decision == "relevant"
@@ -125,6 +228,8 @@ def get_activity(limit: int = 50, db: Session = Depends(get_db), current_user: U
             "text": f"AI relevance scored — {r.business_name}",
             "time": r.created_at.isoformat() if r.created_at else "",
             "color": "#8b5cf6",
+            "business_id": r.result_id,
+            "campaign_id": r.campaign_id,
         })
     sent_drafts = db.query(EmailDraft).join(SearchResult, EmailDraft.business_id == SearchResult.result_id).join(SearchSession, SearchResult.search_id == SearchSession.search_id).filter(
         EmailDraft.status == "sent"
@@ -132,11 +237,17 @@ def get_activity(limit: int = 50, db: Session = Depends(get_db), current_user: U
     # Bulk-fetch all lead names in one query instead of one query per draft
     draft_business_ids = [d.business_id for d in sent_drafts]
     leads_map: Dict[int, str] = {}
+    campaign_by_business: Dict[int, int] = {}
     if draft_business_ids:
-        lead_rows = db.query(SearchResult.result_id, SearchResult.business_name).filter(
+        lead_rows = db.query(
+            SearchResult.result_id,
+            SearchResult.business_name,
+            SearchResult.campaign_id,
+        ).filter(
             SearchResult.result_id.in_(draft_business_ids)
         ).all()
         leads_map = {row[0]: row[1] for row in lead_rows}
+        campaign_by_business = {row[0]: row[2] for row in lead_rows if row[2]}
     for d in sent_drafts:
         business_name = leads_map.get(d.business_id, "lead")
         events.append({
@@ -144,6 +255,8 @@ def get_activity(limit: int = 50, db: Session = Depends(get_db), current_user: U
             "text": f"Email sent to {business_name}",
             "time": d.sent_at.isoformat() if d.sent_at else "",
             "color": "#10b981",
+            "business_id": d.business_id,
+            "campaign_id": campaign_by_business.get(d.business_id),
         })
     events.sort(key=lambda x: x["time"] or "", reverse=True)
     return events[:limit]

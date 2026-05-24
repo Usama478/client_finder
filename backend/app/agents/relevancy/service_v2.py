@@ -5,6 +5,8 @@ import logging
 from typing import Dict, Optional
 from urllib.parse import urlparse
 
+from app.agents.relevancy.phase_tracker import set_relevance_phase
+
 logger = logging.getLogger(__name__)
 
 # Hard ceiling on total graph execution time.  The collection node already
@@ -429,6 +431,7 @@ def run_relevancy_v2_for_business(
     )
 
     try:
+        set_relevance_phase(business_id, "Starting relevance check")
         logger.info(f"[RELEVANCY] Invoking LLM graph for business_id={business_id}")
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _executor:
             _future = _executor.submit(relevancy_graph.invoke, initial_state)
@@ -452,6 +455,7 @@ def run_relevancy_v2_for_business(
             graph_exc,
             exc_info=True,
         )
+        set_relevance_phase(business_id, None)
         _try_mark_failed(
             business_id,
             f"[CRITICAL_FAILURE] Graph execution crashed: {type(graph_exc).__name__}: {graph_exc}",
@@ -485,12 +489,14 @@ def run_relevancy_v2_for_business(
             persist_exc,
             exc_info=True,
         )
+        set_relevance_phase(business_id, None)
         _try_mark_failed(
             business_id,
             f"[CRITICAL_FAILURE] persist_failed: {persist_exc}",
         )
         raise
 
+    set_relevance_phase(business_id, None)
     return output
 
 

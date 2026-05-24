@@ -218,8 +218,15 @@ async def resume_campaign(
         SearchResult.campaign_id == campaign_id,
         SearchResult.campaign_status == "pending_relevance",
     ).count()
-    if pending_count == 0:
-        raise HTTPException(status_code=400, detail="No pending candidates to process")
+    can_drain = pending_count > 0
+    can_discover = (
+        (campaign.verified_count or 0) < campaign.target_count
+        and (campaign.credits_used or 0) < campaign.credit_budget
+    )
+    if not can_drain and not can_discover:
+        if (campaign.verified_count or 0) >= campaign.target_count:
+            raise HTTPException(status_code=400, detail="Target already reached")
+        raise HTTPException(status_code=400, detail="Credit budget exhausted")
     campaign.status = "running"
     campaign.error_message = None
     db.commit()
@@ -239,10 +246,10 @@ def cancel_campaign(
     ).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    campaign.status = "failed"
-    campaign.error_message = "Cancelled by user"
+    campaign.status = "paused"
+    campaign.error_message = None
     db.commit()
-    return {"status": "cancelled"}
+    return {"status": "paused"}
 
 
 @router.post("/{campaign_id}/save-client/{result_id}")

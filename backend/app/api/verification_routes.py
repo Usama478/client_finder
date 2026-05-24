@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.agents.verification.service import (
+    get_phase,
     reset_stale_processing_leads,
     run_verification_batch,
     run_verification_for_business,
@@ -202,6 +203,7 @@ def get_verification_status(business_id: int, current_user = Depends(get_current
             "verification_status": lead.verification_status,
             "verification_result": lead.verification_result,
             "verification_score": lead.verification_score,
+            "current_phase": get_phase(business_id),
         }
     finally:
         db.close()

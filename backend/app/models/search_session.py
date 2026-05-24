@@ -31,4 +31,11 @@ class SearchSession(Base):
     approved_queries = Column(JSONB, nullable=True)
     discovery_platform = Column(String(10), nullable=True, default="both")
 
+    campaign_id = Column(
+        Integer,
+        ForeignKey("campaigns.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())

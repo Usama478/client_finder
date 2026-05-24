@@ -16,8 +16,9 @@ from app.services.activity_service import log_activity
 router = APIRouter(prefix="/api/v1", tags=["search"])
 
 class SearchRequest(BaseModel):
-    user_id: int
+    user_id: Optional[int] = None
     query: str
+    search_location: Optional[str] = None
     page_token: Optional[str] = None
     context_id: Optional[int] = None
     session_id: Optional[int] = None
@@ -55,6 +56,7 @@ async def search_endpoint(request: SearchRequest, db: Session = Depends(get_db),
             new_session = SS(
                 user_id=current_user.user_id,
                 search_query=request.query,
+                search_location=request.search_location,
                 created_at=datetime.utcnow(),
                 context_id=request.context_id,
                 ai_context=request.ai_context,
@@ -128,6 +130,7 @@ def list_search_sessions(db: Session = Depends(get_db), current_user: User = Dep
         sessions = (
             db.query(SearchSession)
             .filter(SearchSession.user_id == current_user.user_id)
+            .filter(SearchSession.campaign_id.is_(None))
             .order_by(SearchSession.created_at.desc())
             .all()
         )
@@ -170,9 +173,12 @@ def list_search_sessions(db: Session = Depends(get_db), current_user: User = Dep
                 "search_id": session.search_id,
                 "user_id": session.user_id,
                 "search_query": session.search_query,
+                "search_location": session.search_location,
                 "context_id": session.context_id,
                 "context_name": context_name,
+                "discovery_platform": session.discovery_platform,
                 "created_at": session.created_at.isoformat() if session.created_at else None,
+                "result_count": results_count,
                 "results_count": results_count,
                 "status": status,
                 "next_page_token": session.next_page_token,

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { useNavigate } from "react-router"
 import { api } from "../../../lib/api"
 import { Search, Target, ShieldCheck, Mail, Download, Clock } from "lucide-react"
 
@@ -17,8 +18,42 @@ const typeColor: Record<string, string> = {
   export: "var(--chart-3)",
 }
 
+type ActivityEvent = {
+  type: string
+  text: string
+  time: string
+  color?: string
+  search_id?: number
+  business_id?: number
+  campaign_id?: number
+  origin?: "search" | "campaign"
+}
+
+type NavTarget = { to: string; state?: { sessionId: number } }
+
+function getTarget(event: ActivityEvent): NavTarget | null {
+  if (
+    (event.type === "verification" ||
+      event.type === "relevance" ||
+      event.type === "email") &&
+    event.business_id
+  ) {
+    return { to: `/app/business/${event.business_id}` }
+  }
+  if (event.type === "search") {
+    if (event.origin === "campaign" && event.campaign_id) {
+      return { to: `/app/campaigns?campaign=${event.campaign_id}` }
+    }
+    if (event.search_id) {
+      return { to: "/app/search", state: { sessionId: event.search_id } }
+    }
+  }
+  return null
+}
+
 export default function ActivityPage() {
-  const [events, setEvents] = useState<any[]>([])
+  const navigate = useNavigate()
+  const [events, setEvents] = useState<ActivityEvent[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -61,9 +96,12 @@ export default function ActivityPage() {
             {events.map((event, i) => {
               const Icon = typeIcon[event.type] || Clock
               const color = typeColor[event.type] || "var(--muted-foreground)"
-              return (
-                <div key={i} className="flex items-start gap-4 px-5 py-4
-                  hover:bg-muted transition-colors">
+              const target = getTarget(event)
+              const rowClass = `flex items-start gap-4 px-5 py-4 w-full text-left transition-colors ${
+                target ? "hover:bg-muted cursor-pointer" : ""
+              }`
+              const content = (
+                <>
                   <div className="w-8 h-8 rounded-lg flex items-center justify-center
                     flex-shrink-0 mt-0.5"
                     style={{ background: `${color}15` }}>
@@ -81,13 +119,39 @@ export default function ActivityPage() {
                         : ""}
                     </div>
                   </div>
-                  <div className="flex-shrink-0">
+                  <div className="flex-shrink-0 flex items-center gap-1">
+                    {event.type === "search" && event.origin && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full
+                        text-[10px] font-semibold uppercase tracking-wide"
+                        style={{ background: "var(--muted)", color: "var(--muted-foreground)" }}>
+                        from {event.origin === "campaign" ? "Campaign" : "Search"}
+                      </span>
+                    )}
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full
                       text-[10px] font-semibold uppercase tracking-wide"
                       style={{ background: `${color}15`, color }}>
                       {event.type}
                     </span>
                   </div>
+                </>
+              )
+              if (target) {
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    className={rowClass}
+                    onClick={() =>
+                      navigate(target.to, target.state ? { state: target.state } : undefined)
+                    }
+                  >
+                    {content}
+                  </button>
+                )
+              }
+              return (
+                <div key={i} className={rowClass}>
+                  {content}
                 </div>
               )
             })}

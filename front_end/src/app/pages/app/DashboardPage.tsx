@@ -66,41 +66,43 @@ export default function DashboardPage() {
     })
   }, [user])
 
+  // KPI cards = OUTCOME metrics (what came out of each stage).
   const kpis = [
-    { label: "Total Searches", value: stats ? String(stats.total_searches || 0) : "—", delta: "", icon: Search, color: "var(--primary)", path: "/app/search" },
-    { label: "Saved Clients", value: stats ? String(stats.total_clients || 0) : "—", delta: "", icon: Users, color: "var(--chart-2)", path: "/app/clients" },
-    { label: "Verified", value: stats ? String(stats.verified_clients || 0) : "—", delta: "", icon: ShieldCheck, color: "var(--chart-3)", path: "/app/clients" },
-    { label: "Leads Found", value: stats ? String(stats.leads_found || 0) : "—", delta: "", icon: Activity, color: "#8b5cf6", path: "/app/search" },
-    { label: "Relevant Leads", value: stats ? String(stats.relevant_leads || 0) : "—", delta: "", icon: Target, color: "var(--chart-2)", path: "/app/search" },
-    { label: "Emails Sent", value: stats ? String(stats.emails_sent || 0) : "—", delta: "", icon: Mail, color: "var(--primary)", path: "/app/email" },
+    { label: "Saved Clients",  value: stats ? String(stats.saved_clients   ?? stats.total_clients    ?? 0) : "—", delta: "", icon: Users,       color: "var(--chart-2)", path: "/app/clients" },
+    { label: "Verified",       value: stats ? String(stats.verified_count  ?? stats.verified_clients ?? 0) : "—", delta: "", icon: ShieldCheck, color: "var(--chart-3)", path: "/app/leads?filter=verified" },
+    { label: "Leads Found",    value: stats ? String(stats.leads_found     ?? 0) : "—",                            delta: "", icon: Activity,    color: "#8b5cf6",        path: "/app/leads?filter=all" },
+    { label: "Relevant Leads", value: stats ? String(stats.relevant_leads  ?? 0) : "—",                            delta: "", icon: Target,      color: "var(--chart-2)", path: "/app/leads?filter=relevant" },
   ];
 
+  // Pipeline Overview = VOLUME metrics (what was processed through each stage).
+  // NOTE: Relevancy uses `relevancy_processed` (all classified leads), NOT
+  // `relevant_leads` (only those that passed). These are intentionally different.
   const pipeline = [
-    { stage: "Search",       count: stats?.total_searches ?? "—", icon: Search,       path: "/app/search",  active: true  },
-    { stage: "Relevancy",    count: stats?.leads_found ?? "—", icon: Target,       path: "/app/search",  active: false },
-    { stage: "Verification", count: stats?.relevant_leads ?? "—",  icon: ShieldCheck,  path: "/app/clients", active: false },
-    { stage: "Clients",      count: stats?.total_clients ?? "—",   icon: Users,        path: "/app/clients", active: false },
-    { stage: "Outreach",     count: stats?.emails_sent ?? "—",  icon: Mail,         path: "/app/email",   active: false },
+    { stage: "Search",       count: stats?.total_searches         ?? "—", icon: Search,      path: "/app/search",  active: true  },
+    { stage: "Relevancy",    count: stats?.relevancy_processed    ?? "—", icon: Target,      path: "/app/search",  active: false },
+    { stage: "Verification", count: stats?.verification_processed ?? "—", icon: ShieldCheck, path: "/app/clients", active: false },
+    { stage: "Clients",      count: stats?.clients_count          ?? stats?.total_clients ?? "—", icon: Users, path: "/app/clients", active: false },
+    { stage: "Outreach",     count: stats?.emails_drafted         ?? "—", icon: Mail,        path: "/app/email",   active: false },
   ];
 
   const funnel = [
     { stage: "Leads Found", count: stats?.leads_found ?? 0, fill: "var(--primary)" },
     { stage: "Relevant",    count: stats?.relevant_leads ?? 0, fill: "#8b5cf6" },
-    { stage: "Verified",    count: stats?.verified_clients ?? 0,  fill: "var(--chart-2)" },
+    { stage: "Verified",    count: stats?.verified_passed ?? 0,  fill: "var(--chart-2)" },
     { stage: "Clients",     count: stats?.total_clients ?? 0,   fill: "var(--chart-3)" },
   ];
 
   const nextActions = [
-    { icon: Target, text: `${stats?.leads_found ?? 0} leads ready for AI relevance scoring`,  badge: { label: "Pending", color: "amber" as const }, path: "/app/search"  },
-    { icon: ShieldCheck, text: `${stats?.relevant_leads ?? 0} relevant leads ready for verification`,   badge: { label: "Ready",   color: "blue"  as const }, path: "/app/clients" },
-    { icon: Users, text: `${stats?.verified_clients ?? 0} verified clients ready for outreach`,     badge: { label: "New",     color: "green" as const }, path: "/app/email"   },
+    { icon: Target, text: `${stats?.pending_relevancy ?? 0} leads ready for AI relevance scoring`,  badge: { label: "Pending", color: "amber" as const }, path: "/app/leads?filter=pending_relevancy" },
+    { icon: ShieldCheck, text: `${stats?.pending_verification ?? 0} relevant leads ready for verification`,   badge: { label: "Ready",   color: "blue"  as const }, path: "/app/leads?filter=pending_verification" },
+    { icon: Users, text: `${stats?.verified_clients ?? 0} verified clients ready for outreach`,     badge: { label: "New",     color: "green" as const }, path: "/app/email?filter=verified" },
   ];
 
   if (isLoading) {
     return (
       <div className="p-6 space-y-5 page-enter">
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-          {Array.from({ length: 6 }).map((_, i) => (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} style={S.card} className="p-4 animate-pulse">
               <div className="h-3 w-20 rounded bg-white/5 mb-3" />
               <div className="h-7 w-12 rounded bg-white/8 mb-2" />
@@ -132,7 +134,7 @@ export default function DashboardPage() {
   return (
     <div className="p-6 space-y-5 page-enter">
       {/* KPI Row */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {kpis.map((k, i) => {
           const Icon = k.icon;
           return (

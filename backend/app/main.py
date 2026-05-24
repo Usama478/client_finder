@@ -13,11 +13,16 @@ from app.api import (
     exporter_profile_routes,
     contacts_routes,
     admin_routes,
+    leads_routes,
 )
 
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 import logging
+
+from contextlib import asynccontextmanager
+from apscheduler.schedulers.background import BackgroundScheduler
+from app.agents.verification.service import reset_stale_processing_leads
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +31,36 @@ logging.basicConfig(
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s"
 )
 
-app = FastAPI(title="Client Finder MVP")
+def _reset_stale_job() -> None:
+    try:
+        count = reset_stale_processing_leads(max_age_minutes=15)
+        if count:
+            logger.warning("scheduler: reset %d stale verification row(s)", count)
+    except Exception as exc:
+        logger.error("scheduler: reset_stale_processing_leads failed: %s", exc)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    try:
+        count = reset_stale_processing_leads(max_age_minutes=0)
+        if count:
+            logger.warning("startup: reset %d stale verification row(s)", count)
+    except Exception as exc:
+        logger.error("startup: reset_stale_processing_leads failed: %s", exc)
+
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(_reset_stale_job, "interval", minutes=10, id="reset_stale")
+    scheduler.start()
+    logger.info("startup: stale-verification scheduler started (interval=10m)")
+
+    yield
+
+    # Shutdown
+    scheduler.shutdown(wait=False)
+    logger.info("shutdown: stale-verification scheduler stopped")
+
+app = FastAPI(title="Client Finder MVP", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -77,6 +111,7 @@ app.include_router(auth_routes.router)
 app.include_router(exporter_profile_routes.router)
 app.include_router(contacts_routes.router)
 app.include_router(admin_routes.router)
+app.include_router(leads_routes.router, prefix="/api/v1/leads")
 from app.api.routes import campaign_routes
 app.include_router(campaign_routes.router)
 

@@ -1,7 +1,7 @@
 import { Outlet, Link, useLocation, useNavigate } from "react-router";
 import {
-  LayoutDashboard, Search, Users, UserCircle, Activity, Mail,
-  FileText, CreditCard, Settings, Shield, Bell, Menu, X, ChevronLeft,
+  LayoutDashboard, Search, LayoutList, Users, UserCircle, Activity, Mail,
+  FileText, CreditCard, Settings, Menu, X, ChevronLeft,
   Zap, Key, Gauge, ArrowLeft, LogOut
 } from "lucide-react";
 import { Button } from "../components/ui/button";
@@ -44,6 +44,7 @@ export default function AppLayout() {
   const navItems = [
     { icon: LayoutDashboard, label: "Dashboard", path: "/app", badge: null },
     { icon: Search, label: "Search Businesses", path: "/app/search", badge: null },
+    { icon: LayoutList, label: "Leads Hub", path: "/app/leads", badge: null },
     { icon: Zap, label: "Campaign Engine", path: "/app/campaigns", badge: null },
     { icon: Users, label: "Clients", path: "/app/clients", badge: null, badgeGreen: false },
     { icon: UserCircle, label: "Contacts", path: "/app/contacts", badge: null },
@@ -70,6 +71,7 @@ export default function AppLayout() {
   const pageTitles: Record<string, { title: string; sub: string }> = {
     "/app": { title: "Dashboard", sub: "Overview & pipeline" },
     "/app/search": { title: "Search Businesses", sub: "Discover → Score → Verify → Decide" },
+    "/app/leads": { title: "Leads Hub", sub: "All discovered leads across every search session" },
     "/app/clients": { title: "Clients", sub: "Saved & verified lead database" },
     "/app/contacts": { title: "Contacts", sub: "Contact directory" },
     "/app/activity": { title: "Activity", sub: "Operational timeline" },
@@ -307,9 +309,6 @@ export default function AppLayout() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" className="relative h-8 w-8 text-[#8a95a8] hover:text-[#e8edf5] hover:bg-[#151a22]">
-              <Bell className="h-4 w-4" />
-            </Button>
             <Button onClick={() => navigate("/app/search", { state: { fresh: true } })}
               className="text-xs h-8 px-3 bg-blue-600 hover:bg-blue-700 text-white">
               + New Search

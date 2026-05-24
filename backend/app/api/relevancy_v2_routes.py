@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 
+from app.agents.relevancy.phase_tracker import get_relevance_phase
 from app.agents.relevancy.service_v2 import run_relevancy_v2_for_business, rescore_relevancy_v2_for_business
 from app.db.session import get_db
 from app.models.search_context import SearchContext
@@ -32,6 +33,27 @@ class RelevancyV2RunRequest(BaseModel):
     category: Optional[str] = None
     address: Optional[str] = None
     description: Optional[str] = None
+
+
+@router.get("/{business_id}/status")
+def get_relevancy_status(
+    business_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    lead = db.query(SearchResult).filter(
+        SearchResult.result_id == business_id,
+        SearchResult.user_id == current_user.user_id,
+    ).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail=f"Business ID {business_id} not found.")
+    return {
+        "business_id": business_id,
+        "relevance_status": lead.relevance_status,
+        "relevance_decision": lead.relevance_decision,
+        "relevance_score": lead.relevance_score,
+        "current_phase": get_relevance_phase(business_id),
+    }
 
 
 @router.post("/run")

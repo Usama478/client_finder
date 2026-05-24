@@ -1,0 +1,18 @@
+services:
+  backend:
+    environment:
+      - WATCHFILES_FORCE_POLLING=true
+
+  frontend:
+    build:
+      context: ./front_end
+      dockerfile: Dockerfile.dev
+    command: npm run dev -- --host 0.0.0.0
+    ports: !override
+      - "5173:5173"
+    volumes:
+      - ./front_end:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000/api/v1
+      - CHOKIDAR_USEPOLLING=true
