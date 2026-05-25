@@ -117,11 +117,26 @@ export interface ExporterProfile {
   id: number
   user_id: number
   company_name: string
-  products: string
-  target_markets: string
-  certifications: string
-  business_type: string
-  location: string
+  company_location?: string | null
+  product_categories?: string[] | null
+  certifications?: string[] | null
+  export_markets?: string[] | null
+  target_buyer_types?: string[] | null
+  value_proposition?: string | null
+  contact_person_name?: string | null
+  products?: string
+  target_markets?: string
+  business_type?: string
+  location?: string
+}
+
+export interface GenerateEmailResult {
+  status: string
+  draft_id?: number
+  subject?: string
+  reason?: string
+  skip_code?: string
+  message?: string
 }
 
 export interface SearchContext {
@@ -250,12 +265,14 @@ export const api = {
     filter?: string
     source?: string
     session_id?: number
+    q?: string
     page?: number
   }) => {
     const qs = new URLSearchParams()
     if (params.filter) qs.set("filter", params.filter)
     if (params.source) qs.set("source", params.source)
     if (params.session_id != null) qs.set("session_id", String(params.session_id))
+    if (params.q) qs.set("q", params.q)
     if (params.page != null) qs.set("page", String(params.page))
     const query = qs.toString()
     return request<LeadsResponse>(`/api/v1/leads${query ? `?${query}` : ""}`)
@@ -324,12 +341,34 @@ export const api = {
   // Email drafts
   emailDrafts: (businessId: number) => request<EmailDraft[]>(`/api/v1/email/drafts/${businessId}?t=${Date.now()}`),
   emailDraftDetail: (draftId: number) => request<EmailDraft>(`/api/v1/email/drafts/detail/${draftId}?t=${Date.now()}`),
-  generateEmail: (businessId: number, userId: number, exporterProfileId: number, userInstructions?: string) =>
-    request<EmailDraft>(`/api/v1/email/generate/${businessId}`,
-      { method: "POST", body: JSON.stringify({ user_id: userId, exporter_profile_id: exporterProfileId, sequence_position: 1, user_instructions: userInstructions }) }),
-  generateBatch: (searchId: number, userId: number, userInstructions?: string) =>
-    request<{ status: string; drafted: number }>("/api/v1/email/generate-batch",
-      { method: "POST", body: JSON.stringify({ search_id: searchId, user_id: userId, sequence_position: 1, user_instructions: userInstructions ?? "" }) }),
+  generateEmail: (
+    businessId: number,
+    userId: number,
+    exporterProfileId: number,
+    userInstructions?: string,
+    temperature = 0.4,
+  ) =>
+    request<GenerateEmailResult>(`/api/v1/email/generate/${businessId}`, {
+      method: "POST",
+      body: JSON.stringify({
+        user_id: userId,
+        exporter_profile_id: exporterProfileId,
+        sequence_position: 1,
+        user_instructions: userInstructions ?? "",
+        temperature,
+      }),
+    }),
+  generateBatch: (searchId: number, userId: number, userInstructions?: string, temperature = 0.4) =>
+    request<{ status: string; drafted: number; created?: number; total?: number }>("/api/v1/email/generate-batch", {
+      method: "POST",
+      body: JSON.stringify({
+        search_id: searchId,
+        user_id: userId,
+        sequence_position: 1,
+        user_instructions: userInstructions ?? "",
+        temperature,
+      }),
+    }),
   updateDraft: (draftId: number, payload: { subject: string; body: string }) =>
     request<EmailDraft>(`/api/v1/email/drafts/detail/${draftId}`,
       { method: "PATCH", body: JSON.stringify(payload) }),

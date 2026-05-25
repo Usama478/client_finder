@@ -8,16 +8,33 @@ from pydantic import BaseModel
 from typing import Optional, List
 
 class ExporterProfileUpdate(BaseModel):
+    profile_name: Optional[str] = None
+    is_default: Optional[bool] = None
     company_name: Optional[str] = None
-    company_website: Optional[str] = None
-    company_description: Optional[str] = None
-    target_market: Optional[str] = None
-    product_categories: Optional[str] = None
-    export_experience: Optional[str] = None
-    preferred_regions: Optional[str] = None
-    annual_revenue: Optional[str] = None
-    employee_count: Optional[str] = None
-    certifications: Optional[str] = None
+    company_location: Optional[str] = None
+    year_established: Optional[int] = None
+    website: Optional[str] = None
+    contact_person_name: Optional[str] = None
+    contact_email: Optional[str] = None
+    product_categories: Optional[List[str]] = None
+    key_products: Optional[List[str]] = None
+    specializations: Optional[List[str]] = None
+    preferred_categories_for_outreach: Optional[List[str]] = None
+    moq: Optional[int] = None
+    monthly_capacity: Optional[str] = None
+    sampling_available: Optional[bool] = None
+    sampling_turnaround_days: Optional[int] = None
+    bulk_lead_time_days: Optional[int] = None
+    sample_policy: Optional[str] = None
+    minimum_order_flexibility_note: Optional[str] = None
+    certifications: Optional[List[str]] = None
+    export_markets: Optional[List[str]] = None
+    client_types: Optional[List[str]] = None
+    target_buyer_types: Optional[List[str]] = None
+    value_proposition: Optional[str] = None
+    production_strengths: Optional[List[str]] = None
+    services: Optional[List[str]] = None
+    shipping_terms: Optional[List[str]] = None
 
 router = APIRouter(prefix="/api/v1/exporter-profiles", tags=["exporter-profiles"])
 
@@ -47,11 +64,10 @@ def create_profile(data: ExporterProfileUpdate,
         db.commit()
         db.refresh(existing)
         return existing.__dict__
-    profile = ExporterProfile(
-        user_id=current_user.user_id,
-        is_default=True,
-        **data.model_dump(exclude_none=True)
-    )
+    profile_data = data.model_dump(exclude_none=True)
+    profile_data["user_id"] = current_user.user_id
+    profile_data["is_default"] = True
+    profile = ExporterProfile(**profile_data)
     db.add(profile)
     db.commit()
     db.refresh(profile)

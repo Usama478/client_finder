@@ -10,6 +10,8 @@ import { FileText, Plus, Edit, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../../../lib/api";
 
+const MAX_CHARS = 5000;
+
 export default function ContextsPage() {
   const [contexts, setContexts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -17,10 +19,15 @@ export default function ContextsPage() {
   const [ctxName, setCtxName] = useState("");
   const [ctxDesc, setCtxDesc] = useState("");
   const [ctxCriteria, setCtxCriteria] = useState("");
+  const [createCharCount, setCreateCharCount] = useState(0);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingContext, setEditingContext] = useState<any>(null);
   const [editName, setEditName] = useState("");
   const [editPrompt, setEditPrompt] = useState("");
+  const [editCharCount, setEditCharCount] = useState(0);
+
+  const createOverLimit = createCharCount > MAX_CHARS;
+  const editOverLimit = editCharCount > MAX_CHARS;
 
   useEffect(() => {
     api.contexts()
@@ -37,6 +44,13 @@ export default function ContextsPage() {
     usageCount: c.usage_count || 0,
   }));
 
+  const resetCreateForm = () => {
+    setCtxName("");
+    setCtxDesc("");
+    setCtxCriteria("");
+    setCreateCharCount(0);
+  };
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-start">
@@ -44,7 +58,10 @@ export default function ContextsPage() {
           <h1 className="text-3xl font-bold">Search Contexts</h1>
           <p className="text-muted-foreground mt-1">Define reusable search criteria for AI relevance scoring</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <Dialog open={dialogOpen} onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (!open) resetCreateForm();
+        }}>
           <DialogTrigger asChild>
             <Button>
               <Plus className="mr-2 h-4 w-4" />
@@ -66,27 +83,46 @@ export default function ContextsPage() {
               </div>
               <div className="space-y-2">
                 <Label>AI Criteria</Label>
-                <Textarea placeholder="Describe what makes a business relevant..." className="min-h-[150px]" value={ctxCriteria} onChange={e => setCtxCriteria(e.target.value)} />
+                <Textarea
+                  placeholder="Describe what makes a business relevant..."
+                  className="min-h-[150px]"
+                  value={ctxCriteria}
+                  onChange={e => {
+                    setCtxCriteria(e.target.value);
+                    setCreateCharCount(e.target.value.length);
+                  }}
+                />
+                <p className="text-sm text-muted-foreground">
+                  {createCharCount} / {MAX_CHARS}
+                </p>
+                {createOverLimit && (
+                  <p className="text-sm text-amber-600">
+                    Character limit exceeded. Shorten your criteria to save.
+                  </p>
+                )}
               </div>
-              <Button className="w-full" onClick={async () => {
-                try {
-                  if (!ctxName) { toast.error("Enter a context name"); return; }
-                  await api.createContext({
-                    name: ctxName,
-                    description: ctxDesc,
-                    prompt_text: ctxCriteria,
-                  });
-                  const updated = await api.contexts();
-                  setContexts(updated || []);
-                  toast.success("Context created");
-                  setDialogOpen(false);
-                  setCtxName("");
-                  setCtxDesc("");
-                  setCtxCriteria("");
-                } catch (err: any) {
-                  toast.error(err.message || "Failed to create context");
-                }
-              }}>
+              <Button
+                className="w-full"
+                disabled={!ctxName.trim() || createOverLimit}
+                onClick={async () => {
+                  try {
+                    if (!ctxName.trim()) { toast.error("Enter a context name"); return; }
+                    if (createOverLimit) return;
+                    await api.createContext({
+                      name: ctxName,
+                      description: ctxDesc,
+                      prompt_text: ctxCriteria,
+                    });
+                    const updated = await api.contexts();
+                    setContexts(updated || []);
+                    toast.success("Context created");
+                    setDialogOpen(false);
+                    resetCreateForm();
+                  } catch (err: any) {
+                    toast.error(err.message || "Failed to create context");
+                  }
+                }}
+              >
                 Create Context
               </Button>
             </div>
@@ -94,29 +130,29 @@ export default function ContextsPage() {
         </Dialog>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-6">
+      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
         {displayContexts.map((context) => (
-          <Card key={context.id}>
-            <CardHeader>
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-2">
-                  <FileText className="h-5 w-5 text-blue-600" />
-                  <CardTitle>{context.name}</CardTitle>
+          <Card key={context.id} className="h-[200px] flex flex-col overflow-hidden">
+            <CardHeader className="pb-2 shrink-0">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <FileText className="h-4 w-4 shrink-0 text-blue-600" />
+                  <CardTitle className="text-base truncate">{context.name}</CardTitle>
                 </div>
-                <Badge variant="secondary">{context.usageCount} uses</Badge>
+                <Badge variant="secondary" className="shrink-0">{context.usageCount} uses</Badge>
               </div>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-sm text-muted-foreground">{context.description}</p>
-              <div className="p-3 bg-muted rounded-lg">
-                <div className="text-sm font-medium mb-2">AI Criteria:</div>
-                <div className="text-sm text-gray-700 whitespace-pre-line">{context.criteria}</div>
-              </div>
-              <div className="flex gap-2">
+            <CardContent className="flex flex-col flex-1 min-h-0 pt-0 space-y-3">
+              <p className="text-sm text-muted-foreground line-clamp-3 flex-1 min-h-0">
+                {context.criteria || "No criteria set"}
+              </p>
+              <div className="flex gap-2 shrink-0 mt-auto">
                 <Button variant="outline" size="sm" onClick={() => {
                   setEditingContext(context);
                   setEditName(context.name);
-                  setEditPrompt(context.criteria);
+                  const criteria = context.criteria || "";
+                  setEditPrompt(criteria);
+                  setEditCharCount(criteria.length);
                   setEditDialogOpen(true);
                 }}>
                   <Edit className="mr-2 h-4 w-4" />
@@ -153,20 +189,41 @@ export default function ContextsPage() {
             </div>
             <div className="space-y-2">
               <Label>AI Criteria</Label>
-              <Textarea placeholder="Describe what makes a business relevant..." className="min-h-[150px]" value={editPrompt} onChange={e => setEditPrompt(e.target.value)} />
+              <Textarea
+                placeholder="Describe what makes a business relevant..."
+                className="min-h-[150px]"
+                value={editPrompt}
+                onChange={e => {
+                  setEditPrompt(e.target.value);
+                  setEditCharCount(e.target.value.length);
+                }}
+              />
+              <p className="text-sm text-muted-foreground">
+                {editCharCount} / {MAX_CHARS}
+              </p>
+              {editOverLimit && (
+                <p className="text-sm text-amber-600">
+                  Character limit exceeded. Shorten your criteria to save.
+                </p>
+              )}
             </div>
-            <Button className="w-full" onClick={async () => {
-              try {
-                if (!editName) { toast.error("Enter a context name"); return; }
-                await api.updateContext(Number(editingContext.id), { name: editName, prompt_text: editPrompt });
-                const updated = await api.contexts();
-                setContexts(updated || []);
-                setEditDialogOpen(false);
-                toast.success("Context updated");
-              } catch (err: any) {
-                toast.error(err.message || "Failed to update context");
-              }
-            }}>
+            <Button
+              className="w-full"
+              disabled={!editName.trim() || editOverLimit}
+              onClick={async () => {
+                try {
+                  if (!editName.trim()) { toast.error("Enter a context name"); return; }
+                  if (editOverLimit) return;
+                  await api.updateContext(Number(editingContext.id), { name: editName, prompt_text: editPrompt });
+                  const updated = await api.contexts();
+                  setContexts(updated || []);
+                  setEditDialogOpen(false);
+                  toast.success("Context updated");
+                } catch (err: any) {
+                  toast.error(err.message || "Failed to update context");
+                }
+              }}
+            >
               Save Changes
             </Button>
           </div>

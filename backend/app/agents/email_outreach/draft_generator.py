@@ -5,7 +5,7 @@ draft_generator.py — Two-call LLM email generation with output validation.
 
 Call 1: build_email_strategy  — gpt-4o-mini, 600 tokens, returns normalised
         strategy dict that controls tone, angle, and CTA for the email.
-Call 2: generate_email_draft  — gpt-4o-mini, 800 tokens, returns subject +
+Call 2: generate_email_draft  — gpt-4o-mini, 1200 tokens, returns subject +
         body using the strategy produced by call 1.
 
 Never raises.  All public functions return safe dicts on any failure.
@@ -13,8 +13,9 @@ Never raises.  All public functions return safe dicts on any failure.
 
 import json
 import logging
+import re
 import time as _time
-from typing import Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -23,9 +24,9 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _MODEL = "gpt-4o-mini"
-_TEMPERATURE = 0.4
+_DEFAULT_TEMPERATURE = 0.4
 _MAX_TOKENS_STRATEGY = 600
-_MAX_TOKENS_EMAIL = 1000
+_MAX_TOKENS_EMAIL = 1200
 
 _VALID_TONES = {"casual_professional", "formal", "warm_direct"}
 _VALID_RECIPIENT_TITLES = {
@@ -81,15 +82,17 @@ Rules:
 
 _EMAIL_SYSTEM_PROMPT = """\
 You are writing a cold outreach email from a textile manufacturer
-to a fashion brand buyer. Follow ALL rules below. If USER INSTRUCTIONS
-are provided at the end of the prompt, they take priority and override
-any conflicting default rules.
+to a fashion brand buyer. Follow ALL rules below.
 
-DEFAULT RULES (overridable by USER INSTRUCTIONS):
+If an EMAIL TEMPLATE TO FOLLOW section is provided, it takes highest
+priority — match its structure, tone, and phrasing style exactly.
+ADDITIONAL USER INSTRUCTIONS override default rules where they conflict.
+
+DEFAULT RULES (overridable by EMAIL TEMPLATE or ADDITIONAL USER INSTRUCTIONS):
 - Never write "we are a leading manufacturer" or any variation
 - Never mention Pakistan as a selling point — factual mention only
 - Never use the buyer's personal name — use recipient_title only
-- Body must be 150-250 words. Count carefully before outputting.
+- Write an appropriately detailed email body
 - Open with personalization_hook — must be specific to this buyer
 - Include exactly 3 bullet points using capability_highlights
 - Each bullet point must be one line only
@@ -126,6 +129,136 @@ def _get_attr(obj, name, default=None):
     return getattr(obj, name, default)
 
 
+_PLACEHOLDER_RE = re.compile(r"\{\{(\w+)\}\}")
+
+
+def _clamp_temperature(value: float) -> float:
+    try:
+        t = float(value)
+    except (TypeError, ValueError):
+        return _DEFAULT_TEMPERATURE
+    return max(0.0, min(1.0, t))
+
+
+def _json_preview(value: Any, max_len: int = 800) -> str:
+    if value is None:
+        return ""
+    try:
+        text = json.dumps(value, default=str)
+    except (TypeError, ValueError):
+        text = str(value)
+    if len(text) > max_len:
+        return text[:max_len] + "…"
+    return text
+
+
+def build_placeholder_map(lead, email_context: dict, profile, ai_context: str = "") -> dict:
+    """Variables for {{placeholder}} substitution in user templates."""
+    ctx = email_context or {}
+    catalog = _get_attr(lead, "verified_product_catalog") or {}
+    if not isinstance(catalog, dict):
+        catalog = {}
+    categories = (
+        catalog.get("product_categories")
+        or ctx.get("product_categories")
+        or []
+    )
+    if isinstance(categories, str):
+        categories = [categories]
+    product_category = categories[0] if categories else ""
+    certs = _get_attr(profile, "certifications") or []
+    if isinstance(certs, list) and certs:
+        certification = certs[0]
+    else:
+        certification = str(certs) if certs else ""
+    return {
+        "company_name": ctx.get("company_name") or _get_attr(lead, "business_name") or "",
+        "product_category": product_category,
+        "website": _get_attr(lead, "website") or "",
+        "relevance_score": _get_attr(lead, "relevance_score"),
+        "verification_score": _get_attr(lead, "verification_score"),
+        "seller_company": _get_attr(profile, "company_name") or "",
+        "seller_location": _get_attr(profile, "company_location") or "",
+        "certification": certification,
+        "ai_context": ai_context or "",
+    }
+
+
+def apply_template_placeholders(text: str, variables: dict) -> str:
+    if not text:
+        return text
+
+    def _repl(match: re.Match) -> str:
+        key = match.group(1)
+        if key not in variables:
+            return match.group(0)
+        val = variables[key]
+        if val is None:
+            return ""
+        return str(val)
+
+    return _PLACEHOLDER_RE.sub(_repl, text)
+
+
+def _extract_template_and_instructions(raw: str) -> tuple[str, str]:
+    """Split user instructions into custom notes vs email template body."""
+    if not raw:
+        return "", ""
+    for marker in ("--- EMAIL TEMPLATE ---", "--- TEMPLATE CONTEXT ---"):
+        if marker in raw:
+            before, _, after = raw.partition(marker)
+            return before.strip(), after.strip()
+    return raw.strip(), ""
+
+
+def _build_instruction_prefix(
+    user_instructions: str,
+    placeholders: dict,
+) -> str:
+    """Build critical template/instruction block to prepend before lead data."""
+    custom, template = _extract_template_and_instructions(user_instructions)
+    resolved_custom = apply_template_placeholders(custom, placeholders)
+    resolved_template = apply_template_placeholders(template, placeholders)
+    parts: list[str] = []
+    if resolved_template:
+        parts.append(
+            "CRITICAL INSTRUCTION — you MUST follow this template structure exactly.\n"
+            "Do not deviate from the format, tone, or section order specified below.\n"
+            "The template overrides your default email structure:\n\n"
+            f"{resolved_template}"
+        )
+    if resolved_custom:
+        parts.append(f"ADDITIONAL USER INSTRUCTIONS:\n{resolved_custom}")
+    if not parts:
+        return ""
+    return "\n\n".join(parts) + "\n\n"
+
+
+def _format_lead_data_block(lead, email_context: dict) -> str:
+    ctx = email_context or {}
+    serp = _get_attr(lead, "serp_enrichment") or {}
+    hunter = _get_attr(lead, "hunter_emails") or []
+    catalog = _get_attr(lead, "verified_product_catalog") or {}
+    primary = _get_attr(lead, "primary_contact_email") or _get_attr(lead, "email_found")
+    lines = [
+        f"Business name: {_get_attr(lead, 'business_name')}",
+        f"Website: {_get_attr(lead, 'website')}",
+        f"Relevance decision: {_get_attr(lead, 'relevance_decision')}",
+        f"Relevance score: {_get_attr(lead, 'relevance_score')}",
+        f"Relevance reason: {_get_attr(lead, 'relevance_reason')}",
+        f"Verification score: {_get_attr(lead, 'verification_score')}",
+        f"Legitimacy score: {_get_attr(lead, 'legitimacy_score')}",
+        f"Primary contact email: {primary}",
+        f"Hunter emails: {hunter}",
+        f"Verified product catalog: {_json_preview(catalog)}",
+        f"SERP enrichment: {_json_preview(serp)}",
+        f"Email context (curated): company={ctx.get('company_name')}, "
+        f"products={ctx.get('product_categories')}, "
+        f"description={(ctx.get('company_description') or '')[:200]}",
+    ]
+    return "\n".join(lines)
+
+
 def _truncate_at_sentence(text: str, max_words: int) -> str:
     """Truncate *text* at the last sentence boundary before *max_words*."""
     words = text.split()
@@ -139,13 +272,18 @@ def _truncate_at_sentence(text: str, max_words: int) -> str:
     return truncated.strip()
 
 
-def _llm_call(system: str, user: str, max_tokens: int) -> Optional[str]:
+def _llm_call(
+    system: str,
+    user: str,
+    max_tokens: int,
+    temperature: float = _DEFAULT_TEMPERATURE,
+) -> Optional[str]:
     """Single ChatOpenAI call; returns raw string content or None on failure."""
     from langchain_openai import ChatOpenAI
 
     llm = ChatOpenAI(
         model=_MODEL,
-        temperature=_TEMPERATURE,
+        temperature=_clamp_temperature(temperature),
         max_tokens=max_tokens,
         model_kwargs={"response_format": {"type": "json_object"}},
         request_timeout=30,
@@ -253,6 +391,9 @@ def build_email_strategy(
     profile,
     sequence_position: int,
     user_instructions: str = "",
+    lead=None,
+    ai_context: str = "",
+    temperature: float = _DEFAULT_TEMPERATURE,
 ) -> dict:
     """
     Call gpt-4o-mini to build a structured email strategy.
@@ -262,7 +403,13 @@ def build_email_strategy(
     if not email_context or not getattr(profile, "company_name", None):
         return _normalize_strategy({}, sequence_position, profile)
 
-    user_message = (
+    placeholders = build_placeholder_map(lead, email_context, profile, ai_context)
+
+    instruction_prefix = _build_instruction_prefix(user_instructions, placeholders)
+
+    user_message = instruction_prefix + (
+        f"CAMPAIGN AI CONTEXT:\n{ai_context or '(none)'}\n\n"
+        f"LEAD DATA:\n{_format_lead_data_block(lead, email_context) if lead is not None else '(no lead row)'}\n\n"
         f"BUYER:\n"
         f"Company: {email_context.get('company_name')}\n"
         f"Products: {email_context.get('product_categories')}\n"
@@ -294,13 +441,15 @@ def build_email_strategy(
         f"\n"
         f"SEQUENCE POSITION: {sequence_position} of 3"
     )
-    
-    if user_instructions:
-        user_message += f"\n\nUSER INSTRUCTIONS:\n{user_instructions}"
 
     content = None
     try:
-        content = _llm_call(_STRATEGY_SYSTEM_PROMPT, user_message, _MAX_TOKENS_STRATEGY)
+        content = _llm_call(
+            _STRATEGY_SYSTEM_PROMPT,
+            user_message,
+            _MAX_TOKENS_STRATEGY,
+            temperature=temperature,
+        )
     except Exception as exc:
         logger.error(
             "build_email_strategy LLM_CALL_FAILED company=%s error=%s",
@@ -340,6 +489,9 @@ def generate_email_draft(
     profile,
     sequence_position: int,
     user_instructions: str = "",
+    lead=None,
+    ai_context: str = "",
+    temperature: float = _DEFAULT_TEMPERATURE,
 ) -> dict:
     """
     Call gpt-4o-mini to produce the final email subject and body.
@@ -353,7 +505,13 @@ def generate_email_draft(
     while len(highlights) < 3:
         highlights.append("")
 
-    user_message = (
+    placeholders = build_placeholder_map(lead, email_context, profile, ai_context)
+
+    instruction_prefix = _build_instruction_prefix(user_instructions, placeholders)
+
+    user_message = instruction_prefix + (
+        f"CAMPAIGN AI CONTEXT:\n{ai_context or '(none)'}\n\n"
+        f"LEAD DATA:\n{_format_lead_data_block(lead, email_context) if lead is not None else '(no lead row)'}\n\n"
         f"STRATEGY:\n"
         f"Angle: {strategy.get('angle')}\n"
         f"Personalization hook: {strategy.get('personalization_hook')}\n"
@@ -376,14 +534,16 @@ def generate_email_draft(
         f"\n"
         f"SEQUENCE: Position {sequence_position} of 3"
     )
-    
-    if user_instructions:
-        user_message += f"\n\nUSER INSTRUCTIONS:\n{user_instructions}"
 
     content: Optional[str] = None
     for attempt in range(1, 3):
         try:
-            content = _llm_call(_EMAIL_SYSTEM_PROMPT, user_message, _MAX_TOKENS_EMAIL)
+            content = _llm_call(
+                _EMAIL_SYSTEM_PROMPT,
+                user_message,
+                _MAX_TOKENS_EMAIL,
+                temperature=temperature,
+            )
             # Attempt JSON parse to confirm success; break only on valid JSON
             parsed_check = json.loads(content)
             if isinstance(parsed_check, dict):
@@ -423,20 +583,6 @@ def generate_email_draft(
 
     subject: str = result.get("subject") or ""
     body: str = result.get("body") or ""
-
-    # Post-generation validation: word count check
-    words = body.split()
-    if len(words) > 350:
-        logging.warning(
-            "email body too long (%s words) — truncating", len(words))
-        sentences = body.split(". ")
-        truncated = ""
-        for sentence in sentences:
-            if len((truncated + sentence).split()) <= 300:
-                truncated += sentence + ". "
-            else:
-                break
-        body = truncated.strip()
 
     if "leading manufacturer" in body.lower():
         logger.warning(

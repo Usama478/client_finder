@@ -11,6 +11,7 @@ import {
   Save,
   X,
   ExternalLink,
+  Search,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, Lead, SearchSession } from "../../../lib/api";
@@ -68,6 +69,7 @@ const FILTER_PILLS: { value: string; label: string }[] = [
   { value: "pending_relevancy", label: "Pending Relevancy" },
   { value: "relevant", label: "Relevant" },
   { value: "irrelevant", label: "Irrelevant" },
+  { value: "low_confidence", label: "Low Confidence" },
   { value: "pending_verification", label: "Pending Verification" },
   { value: "verified", label: "Verified" },
   { value: "failed_verification", label: "Failed Verification" },
@@ -113,6 +115,9 @@ function relevancyPill(decision: string | null) {
   if (decision === "low_confidence") {
     return { label: "Low Confidence", bg: "rgba(245,158,11,0.1)", color: "#fbbf24" };
   }
+  if (decision === "unknown") {
+    return { label: "Low Confidence", bg: "rgba(245,158,11,0.1)", color: "#fbbf24" };
+  }
   return { label: humanizeStatus(decision), bg: "var(--border)", color: "var(--muted-foreground)" };
 }
 
@@ -134,7 +139,10 @@ function computeLeadStatus(lead: Lead): { label: string; bg: string; color: stri
     return { label: "Rejected Relevancy", bg: "rgba(239,68,68,0.1)", color: "#f87171" };
   }
   if (lead.relevance_decision === "low_confidence") {
-    return { label: "Low Confidence", bg: "rgba(245,158,11,0.1)", color: "#fbbf24" };
+    return { label: "Site Inaccessible", bg: "rgba(245,158,11,0.1)", color: "#fbbf24" };
+  }
+  if (lead.relevance_decision === "unknown") {
+    return { label: "Site Inaccessible", bg: "rgba(245,158,11,0.1)", color: "#fbbf24" };
   }
   return { label: "Pending Relevancy", bg: "rgba(107,114,128,0.15)", color: "#9ca3af" };
 }
@@ -167,7 +175,10 @@ export default function LeadsPage() {
   const filter = searchParams.get("filter") || "all";
   const sourceParam = searchParams.get("source") || "";
   const sessionParam = searchParams.get("session_id") || "";
+  const qParam = searchParams.get("q") || "";
   const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10) || 1);
+
+  const [searchInput, setSearchInput] = useState(qParam);
 
   const [leads, setLeads] = useState<Lead[]>([]);
   const [total, setTotal] = useState(0);
@@ -226,6 +237,7 @@ export default function LeadsPage() {
         filter: filter === "all" ? undefined : filter,
         source: sourceParam || undefined,
         session_id: sessionId,
+        q: qParam || undefined,
         page,
       })
       .then((res) => {
@@ -240,7 +252,7 @@ export default function LeadsPage() {
         setTotalPages(1);
       })
       .finally(() => setLoading(false));
-  }, [filter, sourceParam, sessionId, page]);
+  }, [filter, sourceParam, sessionId, qParam, page]);
 
   useEffect(() => {
     fetchLeads();
@@ -249,6 +261,19 @@ export default function LeadsPage() {
   useEffect(() => {
     api.sessions().then(setSessions).catch(() => setSessions([]));
   }, []);
+
+  useEffect(() => {
+    if (searchInput === qParam) return;
+    const handle = window.setTimeout(() => {
+      updateParams({ q: searchInput || null, page: "1" });
+    }, 400);
+    return () => window.clearTimeout(handle);
+  }, [searchInput, qParam, updateParams]);
+
+  useEffect(() => {
+    if (qParam !== searchInput) setSearchInput(qParam);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qParam]);
 
   const setRowAction = (id: number, action: string | null) => {
     setActionLoading((prev) => {
@@ -452,6 +477,43 @@ export default function LeadsPage() {
       </div>
 
       <div style={card} className="p-4 space-y-3">
+        <div className="relative">
+          <Search
+            className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5"
+            style={{ color: "var(--muted-foreground)" }}
+          />
+          <input
+            type="text"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search leads by name or website…"
+            className="w-full text-sm rounded-md pl-9 pr-9 py-2"
+            style={{
+              background: "var(--background)",
+              border: "1px solid var(--border)",
+              color: "var(--foreground)",
+              fontFamily: "DM Sans, sans-serif",
+              outline: "none",
+            }}
+          />
+          {searchInput && (
+            <button
+              type="button"
+              onClick={() => setSearchInput("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 rounded flex items-center justify-center hover:bg-accent"
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "var(--muted-foreground)",
+                cursor: "pointer",
+              }}
+              title="Clear search"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+
         <div
           className="flex gap-2 overflow-x-auto pb-1"
           style={{ scrollbarWidth: "thin" }}
@@ -810,11 +872,16 @@ export default function LeadsPage() {
                               width:
                                 lead.relevance_decision === "irrelevant"
                                   ? "0%"
+                                  : lead.relevance_decision === "low_confidence"
+                                  ? "30%"
                                   : `${lead.relevance_score}%`,
-                              background: scoreColor(
-                                lead.relevance_score,
-                                lead.relevance_decision
-                              ),
+                              background:
+                                lead.relevance_decision === "low_confidence"
+                                  ? "#fbbf24"
+                                  : scoreColor(
+                                      lead.relevance_score,
+                                      lead.relevance_decision
+                                    ),
                             }}
                           />
                         </div>

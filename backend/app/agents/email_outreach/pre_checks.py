@@ -48,8 +48,8 @@ def check_lead_is_emailable(
         return _skip("low_score", "verification_score is below 30")
 
     # 6. too_many_risk_flags
-    if len(lead.risk_flags or []) >= 3:
-        return _skip("too_many_risk_flags", "3 or more risk flags present")
+    if len(lead.risk_flags or []) >= 4:
+        return _skip("too_many_risk_flags", "4 or more risk flags present")
 
     # 7. missing_buyer_context
     ctx = lead.email_context or {}

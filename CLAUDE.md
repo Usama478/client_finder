@@ -210,11 +210,3 @@ COMPLETED:
 - Frontend UX crashes/loading states (SearchBusinessesPage, AppLayout, BusinessDetailsPage, CampaignEnginePage)
 - API missing routes/IDOR audit
 
-WHAT IS NEXT:
-- Phase 1: Fix remaining Security vulnerabilities (IDOR on backend).
-- Phase 2: Fix Campaign engine reliability (credit deduction, async event loop blocking).
-- Phase 5: Implement TypeScript type safety across the frontend API layer.
-
-KNOWN ISSUES (being fixed):
-- Real credits never deducted from UserCredit balance in campaign engine.
-- Campaign engine blocks event loop (async def with sync SQLAlchemy calls).

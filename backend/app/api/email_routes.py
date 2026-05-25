@@ -34,6 +34,7 @@ class GenerateDraftRequest(BaseModel):
     sequence_position: int = 1
     user_instructions: str = ""
     exporter_profile_id: int | None = None
+    temperature: float = 0.4
 
 
 class GenerateBatchRequest(BaseModel):
@@ -41,6 +42,7 @@ class GenerateBatchRequest(BaseModel):
     user_id: int
     sequence_position: int = 1
     user_instructions: str = ""
+    temperature: float = 0.4
 
 
 class UpdateDraftRequest(BaseModel):
@@ -67,6 +69,7 @@ def generate_batch(request: GenerateBatchRequest, current_user = Depends(get_cur
             user_id=current_user.user_id,
             sequence_position=request.sequence_position,
             user_instructions=request.user_instructions,
+            temperature=request.temperature,
         )
         return result
     except Exception as exc:
@@ -108,6 +111,7 @@ def generate_draft(business_id: int, request: GenerateDraftRequest, current_user
             sequence_position=request.sequence_position,
             user_instructions=request.user_instructions,
             exporter_profile_id=request.exporter_profile_id,
+            temperature=request.temperature,
         )
         return result
     except ValueError as exc:

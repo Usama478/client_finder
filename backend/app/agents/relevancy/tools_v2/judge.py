@@ -268,12 +268,12 @@ def _build_decision(
     primary_niche: str = "Unknown",
 ) -> LLMRelevanceDecision:
     decision = str(relevance_decision).strip().lower()
-    if decision not in {"relevant", "irrelevant", "unknown"}:
-        decision = "unknown"
+    if decision not in {"relevant", "irrelevant", "low_confidence"}:
+        decision = "low_confidence"
 
     payload = {
         "relevance_decision": decision,
-        "manual_review": bool(manual_review) or decision == "unknown",
+        "manual_review": bool(manual_review) or decision == "low_confidence",
         "confidence": _clamp_float(confidence),
         "match_reasons": _dedupe_limited(match_reasons, limit=8),
         "mismatch_reasons": _dedupe_limited(mismatch_reasons, limit=8),
@@ -394,10 +394,10 @@ def _apply_confidence_policy(decision: LLMRelevanceDecision, policy: str) -> LLM
     relevance_decision = payload.get("relevance_decision")
 
     if policy == "blocked":
-        payload["relevance_decision"] = "unknown"
+        payload["relevance_decision"] = "low_confidence"
         payload["manual_review"] = True
         payload["confidence"] = 0.0
-    elif relevance_decision == "unknown":
+    elif relevance_decision == "low_confidence":
         payload["manual_review"] = True
         payload["confidence"] = _clamp_float(confidence, 0.25, 0.4)
     elif policy == "irrelevant_ecommerce" and relevance_decision == "irrelevant":
@@ -432,7 +432,7 @@ def _deterministic_prejudge(state: RelevancyAgentState, signals: Dict[str, objec
     if _is_blocked(state, signal_tags):
         block_reason = _blocked_reason(state)
         decision = _build_decision(
-            relevance_decision="unknown",
+            relevance_decision="low_confidence",
             manual_review=True,
             confidence=0.0,
             relevance_reason=f"Blocked during collection ({block_reason}).",
@@ -674,7 +674,7 @@ def _deterministic_prejudge(state: RelevancyAgentState, signals: Dict[str, objec
 
     unknown_confidence = _unknown_confidence(signal_tags, has_clean_text=bool(clean_excerpt.strip()))
     unknown = _build_decision(
-        relevance_decision="unknown",
+        relevance_decision="low_confidence",
         manual_review=True,
         confidence=unknown_confidence,
         relevance_reason="Insufficient evidence to classify.",
@@ -697,7 +697,7 @@ def _should_call_llm_refiner(
         return False
     if not _llm_available():
         return False
-    return pre_decision.relevance_decision == "unknown" or float(pre_decision.confidence) < 0.65
+    return pre_decision.relevance_decision == "low_confidence" or float(pre_decision.confidence) < 0.65
 
 
 def _filter_signals_for_contract(candidates: Sequence[str], allowed: Sequence[str]) -> List[str]:
@@ -860,7 +860,7 @@ def llm_relevance_judge(state: RelevancyAgentState) -> Dict[str, object]:
         if blocked:
             reason = f"Blocked during collection ({_blocked_reason(state)})."
             decision = _build_decision(
-                relevance_decision="unknown",
+                relevance_decision="low_confidence",
                 manual_review=True,
                 confidence=0.0,
                 relevance_reason=reason,
@@ -872,7 +872,7 @@ def llm_relevance_judge(state: RelevancyAgentState) -> Dict[str, object]:
         else:
             reason = f"Insufficient evidence to classify ({type(exc).__name__})."
             decision = _build_decision(
-                relevance_decision="unknown",
+                relevance_decision="low_confidence",
                 manual_review=True,
                 confidence=0.25,
                 relevance_reason=reason,

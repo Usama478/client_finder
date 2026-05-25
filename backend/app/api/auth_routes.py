@@ -5,6 +5,7 @@ from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional
 from app.db.session import get_db
 from app.models.user import User
+from app.models.search_context import SearchContext
 from app.core.security import (
     verify_password, hash_password,
     create_access_token, decode_access_token
@@ -94,6 +95,16 @@ def signup(request: SignupRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
     initialize_credits(db, user.user_id, 200)
+    default_context = SearchContext(
+        user_id=user.user_id,
+        name="General Buyer Search",
+        prompt_text=(
+            "This is a B2B search for overseas buyers — fashion brands, boutiques, "
+            "and retailers that could place wholesale or private label orders. "
+            "Target businesses that buy finished garments in bulk."
+        ),
+    )
+    db.add(default_context)
     db.commit()
     send_verification_email(user.email, verification_token)
     return {"message": "Account created. Please check your email to verify your account."}

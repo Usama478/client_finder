@@ -106,39 +106,6 @@ async def enrich_lead_via_serp(search_result_id: int, db) -> dict:
             except Exception as e:
                 logger.error(f"Failed to fetch SERP results for query '{query2}': {e}")
 
-            # Query 3: Company snippets
-            try:
-                params = {
-                    "api_key": api_key,
-                    "q": query3,
-                    "num": 10,
-                    "output": "json"
-                }
-                response = await client.get("https://api.valueserp.com/search", params=params)
-                response.raise_for_status()
-                data = response.json()
-
-                organic_results = data.get("organic_results", [])
-                for item in organic_results:
-                    item_domain = item.get("domain", "") or ""
-                    if any(jd in item_domain for jd in JUNK_DOMAINS):
-                        continue
-                    snippet = item.get("snippet", "").strip()
-                    snippet = snippet.replace("...Read more", "").replace("… Read more", "").replace("... Read more", "").rstrip("…").rstrip("...").strip()
-                    if len(snippet) < 40:
-                        continue
-                    if snippet.count('·') >= 2:
-                        continue
-                    if DATE_PREFIX.match(snippet):
-                        continue
-                    if any(snippet[:60] == s[:60] for s in company_snippets):
-                        continue
-                    company_snippets.append(snippet)
-
-            except Exception as e:
-                logger.error(f"Failed to fetch SERP results for query '{query3}': {e}")
-
-        company_summary = None
         product_summary = None
 
         try:
@@ -146,13 +113,10 @@ async def enrich_lead_via_serp(search_result_id: int, db) -> dict:
             if openai_key:
                 oai = OpenAI(api_key=openai_key)
 
-                company_text = "\n".join(f"- {s}" for s in company_snippets) if company_snippets else ""
                 product_text = "\n".join(f"- {s}" for s in product_snippets) if product_snippets else ""
 
-                if company_text or product_text:
+                if product_text:
                     prompt_parts = []
-                    if company_text:
-                        prompt_parts.append(f"COMPANY SNIPPETS:\n{company_text}")
                     if product_text:
                         prompt_parts.append(f"PRODUCT SNIPPETS:\n{product_text}")
 
@@ -161,12 +125,7 @@ async def enrich_lead_via_serp(search_result_id: int, db) -> dict:
                         f"\n\nThe business you are summarizing is called '{result.business_name}'."
                         "\nIgnore any snippets that are clearly about a different company, "
                         "a historical document, an archive, or an unrelated topic.\n\n"
-                        "Based only on the relevant snippets, write two detailed summaries.\n\n"
-                        "COMPANY_SUMMARY: Write 6-8 sentences covering: who this company is, "
-                        "when and where it was founded, what industry they operate in, "
-                        "their size or scale if mentioned, key milestones or history, "
-                        "their target market, and what makes them notable or unique. "
-                        "Use only facts from the snippets. If no relevant snippets exist, write null.\n\n"
+                        "Based only on the relevant snippets, write a detailed summary.\n\n"
                         "PRODUCT_SUMMARY: Write 6-8 sentences covering: what specific brands or product lines "
                         "they carry, what type of retailer or buyer they are (wholesale, multi-brand, DTC, etc.), "
                         "any pricing or positioning signals (luxury, mid-market, budget), "
@@ -174,7 +133,6 @@ async def enrich_lead_via_serp(search_result_id: int, db) -> dict:
                         "and any wholesale or B2B signals. "
                         "If the snippets do not support this, write null.\n\n"
                         "Respond in this exact format and nothing else:\n"
-                        "COMPANY_SUMMARY: <your summary or null>\n"
                         "PRODUCT_SUMMARY: <your summary or null>"
                     )
 
@@ -198,10 +156,7 @@ async def enrich_lead_via_serp(search_result_id: int, db) -> dict:
 
                     raw = response.choices[0].message.content.strip()
                     for line in raw.splitlines():
-                        if line.startswith("COMPANY_SUMMARY:"):
-                            val = line[len("COMPANY_SUMMARY:"):].strip()
-                            company_summary = None if val.lower() == "null" else val
-                        elif line.startswith("PRODUCT_SUMMARY:"):
+                        if line.startswith("PRODUCT_SUMMARY:"):
                             val = line[len("PRODUCT_SUMMARY:"):].strip()
                             product_summary = None if val.lower() == "null" else val
             else:
@@ -212,9 +167,9 @@ async def enrich_lead_via_serp(search_result_id: int, db) -> dict:
 
         enrichment = {
             "linkedin_url": linkedin_url,
-            "company_snippets": company_snippets,
+            "company_snippets": [],
             "product_snippets": product_snippets,
-            "company_summary": company_summary,
+            "company_summary": None,
             "product_summary": product_summary,
             "raw_queries": [query1, query2, query3]
         }

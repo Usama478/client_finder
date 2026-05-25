@@ -444,7 +444,7 @@ def end_irrelevant_node(state: RelevancyAgentState):
             mismatch_reasons = [f"Website returned HTTP {status_code}."]
             signals_used = ["collect_status"]
         else:
-            decision = "unknown"
+            decision = "low_confidence"
             manual_review = True
             confidence = 0.2
             reason = "[SITE_UNREACHABLE] Website could not be reliably reached."
@@ -507,7 +507,7 @@ def finalize_manual_review_node(state: RelevancyAgentState):
 
     reason = f"{prefix} blocked:{block_reason} status={status_text}"
     decision_output = {
-        "relevance_decision": "unknown",
+        "relevance_decision": "low_confidence",
         "relevance_score": 0,
         "relevance_reason": reason,
         "business_type": "Unknown",
@@ -520,7 +520,7 @@ def finalize_manual_review_node(state: RelevancyAgentState):
     }
 
     return {
-        "relevance_decision": "unknown",
+        "relevance_decision": "low_confidence",
         "relevance_score": 0,
         "relevance_reason": reason,
         "business_type": "Unknown",

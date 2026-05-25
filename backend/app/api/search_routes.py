@@ -9,11 +9,14 @@ from app.models.user import User
 from app.models.search_session import SearchSession
 from app.models.search_result import SearchResult
 from app.models.search_context import SearchContext
+from app.models.email_draft import EmailDraft
 from app.core.security import get_current_user
 from app.services.credit_service import check_credits, deduct_credits
 from app.services.activity_service import log_activity
 
 router = APIRouter(prefix="/api/v1", tags=["search"])
+
+LEADS_PAGE_SIZE = 40
 
 class SearchRequest(BaseModel):
     user_id: Optional[int] = None
@@ -130,7 +133,6 @@ def list_search_sessions(db: Session = Depends(get_db), current_user: User = Dep
         sessions = (
             db.query(SearchSession)
             .filter(SearchSession.user_id == current_user.user_id)
-            .filter(SearchSession.campaign_id.is_(None))
             .order_by(SearchSession.created_at.desc())
             .all()
         )
@@ -186,6 +188,131 @@ def list_search_sessions(db: Session = Depends(get_db), current_user: User = Dep
             result.append(session_dict)
 
         return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/leads")
+def list_leads(
+    filter: Optional[str] = None,
+    source: Optional[str] = None,
+    session_id: Optional[int] = None,
+    q: Optional[str] = None,
+    page: int = 1,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List leads across all sessions for the authenticated user, with filtering and pagination."""
+    try:
+        from sqlalchemy import or_, and_, func
+
+        page = max(1, page)
+
+        query = (
+            db.query(SearchResult)
+            .join(SearchSession, SearchResult.search_id == SearchSession.search_id)
+            .filter(SearchSession.user_id == current_user.user_id)
+        )
+
+        if source:
+            query = query.filter(SearchResult.source == source)
+
+        if session_id is not None:
+            query = query.filter(SearchResult.search_id == session_id)
+
+        if q:
+            pattern = f"%{q}%"
+            query = query.filter(
+                or_(
+                    SearchResult.business_name.ilike(pattern),
+                    SearchResult.website.ilike(pattern),
+                )
+            )
+
+        if filter == "pending_relevancy":
+            query = query.filter(SearchResult.relevance_decision.is_(None))
+        elif filter == "relevant":
+            query = query.filter(SearchResult.relevance_decision == "relevant")
+        elif filter == "irrelevant":
+            query = query.filter(SearchResult.relevance_decision == "irrelevant")
+        elif filter == "low_confidence":
+            query = query.filter(SearchResult.relevance_decision.in_(["low_confidence", "unknown"]))
+        elif filter == "pending_verification":
+            query = query.filter(
+                SearchResult.relevance_decision == "relevant",
+                SearchResult.verification_score.is_(None),
+            )
+        elif filter == "verified":
+            query = query.filter(SearchResult.verification_score >= 50)
+        elif filter == "failed_verification":
+            query = query.filter(
+                SearchResult.verification_score.isnot(None),
+                SearchResult.verification_score < 50,
+            )
+        elif filter in ("has_email", "no_email"):
+            # A lead "has email" if any of these four fields holds a real value.
+            # Strings: not null AND not empty. JSONB arrays: not null AND length > 0
+            # (covers the default=[] case for all_emails_found and empty Hunter results).
+            email_present = or_(
+                and_(
+                    SearchResult.primary_contact_email.isnot(None),
+                    SearchResult.primary_contact_email != "",
+                ),
+                and_(
+                    SearchResult.email_found.isnot(None),
+                    SearchResult.email_found != "",
+                ),
+                and_(
+                    SearchResult.hunter_emails.isnot(None),
+                    func.jsonb_array_length(SearchResult.hunter_emails) > 0,
+                ),
+                and_(
+                    SearchResult.all_emails_found.isnot(None),
+                    func.jsonb_array_length(SearchResult.all_emails_found) > 0,
+                ),
+            )
+            if filter == "has_email":
+                query = query.filter(email_present)
+            else:
+                query = query.filter(~email_present)
+
+        total = query.count()
+        total_pages = max(1, (total + LEADS_PAGE_SIZE - 1) // LEADS_PAGE_SIZE)
+
+        results = (
+            query.order_by(SearchResult.result_id.desc())
+            .offset((page - 1) * LEADS_PAGE_SIZE)
+            .limit(LEADS_PAGE_SIZE)
+            .all()
+        )
+
+        leads = [
+            {
+                "id": r.result_id,
+                "search_id": r.search_id,
+                "name": r.business_name,
+                "website": r.website,
+                "source": r.source,
+                "relevance_decision": r.relevance_decision,
+                "relevance_score": r.relevance_score,
+                "relevance_reason": r.relevance_reason,
+                "verification_score": r.verification_score,
+                "verified_product_catalog": r.verified_product_catalog,
+                "primary_contact_email": r.primary_contact_email,
+                "campaign_status": r.campaign_status,
+                "is_saved_client": r.is_saved_client,
+            }
+            for r in results
+        ]
+
+        return {
+            "leads": leads,
+            "total": total,
+            "total_pages": total_pages,
+            "page": page,
+        }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -343,16 +470,31 @@ def get_saved_clients(db: Session = Depends(get_db), current_user: User = Depend
     """Fetch all saved clients (is_saved_client == True) from the database."""
     try:
         rows = (
-            db.query(SearchResult, SearchSession.search_query)
+            db.query(
+                SearchResult,
+                SearchSession.search_query,
+                SearchSession.ai_context,
+                SearchSession.discovery_platform,
+            )
             .join(SearchSession, SearchResult.search_id == SearchSession.search_id)
             .filter(SearchResult.is_saved_client == True)
             .filter(SearchSession.user_id == current_user.user_id)
             .all()
         )
         result = []
-        for lead, search_query in rows:
+        for lead, search_query, ai_context, discovery_platform in rows:
             d = {c.name: getattr(lead, c.name) for c in lead.__table__.columns}
             d["search_query"] = search_query
+            d["ai_context"] = ai_context or search_query
+            d["discovery_platform"] = discovery_platform
+            draft = (
+                db.query(EmailDraft)
+                .filter(EmailDraft.business_id == lead.result_id)
+                .order_by(EmailDraft.created_at.desc())
+                .first()
+            )
+            d["has_draft"] = draft is not None
+            d["draft_status"] = draft.status if draft else None
             result.append(d)
         return result
     except Exception as e:

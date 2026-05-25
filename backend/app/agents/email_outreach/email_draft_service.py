@@ -69,6 +69,7 @@ def generate_draft_for_lead(
     sequence_position: int = 1,
     user_instructions: str = "",
     exporter_profile_id: int | None = None,
+    temperature: float = 0.4,
 ) -> dict:
     """
     Generate (or attempt to generate) an email draft for a single lead.
@@ -99,6 +100,13 @@ def generate_draft_for_lead(
         )
         if lead is None:
             raise ValueError(f"Business ID {business_id} not found in database.")
+
+        session = (
+            db.query(SearchSession)
+            .filter(SearchSession.search_id == lead.search_id)
+            .first()
+        )
+        ai_context = (session.ai_context or session.search_query or "") if session else ""
 
         # ------------------------------------------------------------------ #
         # Step 3 – Resolve exporter profile                                   #
@@ -151,9 +159,24 @@ def generate_draft_for_lead(
         # Step 6 – LLM generation (strategy → draft)                         #
         # ------------------------------------------------------------------ #
         try:
-            strategy = build_email_strategy(email_context, profile, sequence_position, user_instructions)
+            strategy = build_email_strategy(
+                email_context,
+                profile,
+                sequence_position,
+                user_instructions,
+                lead=lead,
+                ai_context=ai_context,
+                temperature=temperature,
+            )
             draft_content = generate_email_draft(
-                strategy, email_context, profile, sequence_position, user_instructions
+                strategy,
+                email_context,
+                profile,
+                sequence_position,
+                user_instructions,
+                lead=lead,
+                ai_context=ai_context,
+                temperature=temperature,
             )
         except Exception as e:
             draft_content = {"subject": None, "body": None, "error": str(e)}
@@ -223,6 +246,7 @@ def generate_batch_for_session(
     user_id: int,
     sequence_position: int = 1,
     user_instructions: str = "",
+    temperature: float = 0.4,
 ) -> Dict[str, object]:
     """
     Generate email drafts for every verified lead in a search session.
@@ -250,7 +274,13 @@ def generate_batch_for_session(
     failed_ids: List[int] = []
 
     for idx, business_id in enumerate(lead_ids):
-        result = generate_draft_for_lead(business_id, user_id, sequence_position, user_instructions)
+        result = generate_draft_for_lead(
+            business_id,
+            user_id,
+            sequence_position,
+            user_instructions,
+            temperature=temperature,
+        )
 
         if result["status"] == "created":
             created_ids.append(result["draft_id"])
