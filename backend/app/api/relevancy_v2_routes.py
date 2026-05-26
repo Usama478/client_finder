@@ -20,7 +20,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-router = APIRouter(prefix="/api/relevancy/v2", tags=["relevancy-v2"])
+router = APIRouter(prefix="/api/v1/relevancy/v2", tags=["relevancy-v2"])
 
 
 class RelevancyV2RunRequest(BaseModel):
@@ -63,7 +63,10 @@ def run_relevancy_v2(request: RelevancyV2RunRequest, db: Session = Depends(get_d
     if not request.context_id:
         logger.warning("[RELEVANCY DEBUG] context_id is None or missing — agent will run with empty profile_text")
     else:
-        ctx = db.query(SearchContext).filter(SearchContext.id == request.context_id).first()
+        ctx = db.query(SearchContext).filter(
+            SearchContext.id == request.context_id,
+            SearchContext.user_id == current_user.user_id,
+        ).first()
         if not ctx:
             logger.warning(f"[RELEVANCY DEBUG] SearchContext id={request.context_id} NOT FOUND in DB — raising 404")
             raise HTTPException(status_code=404, detail=f"SearchContext id={request.context_id} not found")
@@ -74,7 +77,7 @@ def run_relevancy_v2(request: RelevancyV2RunRequest, db: Session = Depends(get_d
             logger.warning(f"[RELEVANCY DEBUG] SearchContext id={ctx.id} name={ctx.name!r} prompt_text_preview={ctx.prompt_text[:200]!r}")
     logger.warning(f"[RELEVANCY DEBUG] final profile_text passed to agent — length={len(profile_text)} preview={profile_text[:200]!r}")
 
-    check_credits(db, current_user.user_id, 1)
+    check_credits(db, current_user.user_id, 2)
 
     # Fast-path: if the lead already has completed scraped content, skip the
     # expensive full-crawl graph and run only the LLM judge (rescore path).
@@ -115,10 +118,10 @@ def run_relevancy_v2(request: RelevancyV2RunRequest, db: Session = Depends(get_d
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to run relevancy v2: {exc}") from exc
 
-    deduct_credits(db, current_user.user_id, 1, "relevancy", reference_id=str(request.business_id), reference_type="business")
+    deduct_credits(db, current_user.user_id, 2, "relevancy", reference_id=str(request.business_id), reference_type="business")
     db.commit()
     try:
-        log_activity(db, current_user.user_id, "relevancy_run", business_id=request.business_id, credits_consumed=1)
+        log_activity(db, current_user.user_id, "relevancy_run", business_id=request.business_id, credits_consumed=2)
         db.commit()
     except Exception:
         pass

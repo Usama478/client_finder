@@ -1,17 +1,17 @@
 from __future__ import annotations
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, func
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, func
 from app.db.base import Base
 
 class Campaign(Base):
     __tablename__ = "campaigns"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False, index=True)
 
     # User config
     search_intent = Column(Text, nullable=False)
-    context_id = Column(Integer, nullable=True)
+    context_id = Column(Integer, ForeignKey("search_contexts.id"), nullable=True)
     target_count = Column(Integer, nullable=False)
     relevance_threshold = Column(Integer, nullable=False, default=60)
     credit_budget = Column(Integer, nullable=False)

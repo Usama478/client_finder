@@ -86,6 +86,8 @@ def generate_batch(request: GenerateBatchRequest, current_user = Depends(get_cur
             temperature=request.temperature,
         )
         return result
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error(
             "generate_batch FAILED search_id=%s error=%s",
@@ -141,6 +143,8 @@ def generate_draft(business_id: int, request: GenerateDraftRequest, current_user
         return result
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error(
             "generate_draft FAILED business_id=%s error=%s", business_id, exc, exc_info=True

@@ -1,6 +1,6 @@
 # --- Core Backend ---
 fastapi
-slowapi>=0.1.9==0.109.2
+slowapi==0.1.9
 uvicorn==0.27.1
 sqlalchemy==2.0.27
 alembic==1.13.2

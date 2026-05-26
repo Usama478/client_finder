@@ -27,6 +27,8 @@ export default function BusinessDetailsPage() {
   const [hunterEmails, setHunterEmails] = useState<any[]>([]);
   const [primaryContactEmail, setPrimaryContactEmail] = useState<string | null>(null);
   const [hunterLoading, setHunterLoading] = useState(false);
+  const [reVerifying, setReVerifying] = useState(false);
+  const [saving, setSaving] = useState(false);
   
   const formatUrl = (url: string | null | undefined) => {
     if (!url) return '';
@@ -69,15 +71,19 @@ export default function BusinessDetailsPage() {
   if (!business) return null;
 
   const handleSaveClient = async () => {
+    setSaving(true);
     try {
       await api.updateClientStatus(Number(id), true);
       toast.success("Saved to clients");
     } catch (err: any) {
       toast.error(err.message || "Failed to save");
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleReVerify = async () => {
+    setReVerifying(true);
     const toastId = toast.loading("Re-running verification...");
     try {
       await api.verifyBusiness(Number(id));
@@ -86,6 +92,8 @@ export default function BusinessDetailsPage() {
       toast.success("Verification updated", { id: toastId });
     } catch (err: any) {
       toast.error(err.message || "Verification failed", { id: toastId });
+    } finally {
+      setReVerifying(false);
     }
   };
 
@@ -154,11 +162,11 @@ export default function BusinessDetailsPage() {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={handleReVerify}>
+          <Button variant="outline" onClick={handleReVerify} disabled={reVerifying}>
             <RefreshCw className="mr-2 h-4 w-4" />
             Re-verify
           </Button>
-          <Button variant="outline" onClick={handleSaveClient}>
+          <Button variant="outline" onClick={handleSaveClient} disabled={saving}>
             <Save className="mr-2 h-4 w-4" />
             Save to Clients
           </Button>

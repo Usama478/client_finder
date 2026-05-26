@@ -27,6 +27,7 @@ export default function CampaignEnginePage() {
   const [estimate, setEstimate] = useState<CostEstimate | null>(null)
   const [credits, setCredits] = useState<number | null>(null)
   const [launching, setLaunching] = useState(false)
+  const [resuming, setResuming] = useState(false)
   const [formError, setFormError] = useState("")
 
   const [campaign, setCampaign] = useState<Campaign | null>(null)
@@ -226,12 +227,15 @@ export default function CampaignEnginePage() {
 
   async function handleResume() {
     if (!campaign) return
+    setResuming(true)
     try {
       const updated = await campaignsApi.resume(campaign.id)
       setCampaign(updated)
       toast.success("Campaign resumed")
     } catch {
       toast.error("Failed to resume campaign")
+    } finally {
+      setResuming(false)
     }
   }
 
@@ -337,10 +341,11 @@ export default function CampaignEnginePage() {
                   <button
                     type="button"
                     onClick={handleResume}
-                    className="flex items-center gap-2 px-6 py-3 rounded-lg font-semibold text-sm text-white transition-all bg-gradient-to-br from-amber-500 to-amber-600"
+                    disabled={resuming}
+                    className="flex items-center gap-2 px-6 py-3 rounded-lg font-semibold text-sm text-white transition-all bg-gradient-to-br from-amber-500 to-amber-600 disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     <Play className="h-4 w-4" />
-                    {resumeLabel}
+                    {resuming ? "Resuming…" : resumeLabel}
                   </button>
                 </div>
               )}

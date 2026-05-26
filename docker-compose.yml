@@ -35,7 +35,7 @@ services:
       context: ./front_end
       dockerfile: Dockerfile
       args:
-        - VITE_API_BASE_URL=http://localhost:8000/api/v1
+        - VITE_API_URL=http://localhost:8000
     container_name: client_finder_frontend
     restart: always
     ports:

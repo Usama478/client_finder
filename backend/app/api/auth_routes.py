@@ -145,7 +145,7 @@ def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(),
     )
 
 class LoginRequest(BaseModel):
-    email: str
+    email: EmailStr
     password: str
 
 @router.post("/login-json", response_model=LoginResponse)
@@ -210,7 +210,7 @@ def verify_email(request: Request, token: str, db: Session = Depends(get_db)):
     return {"message": "Email verified successfully. You can now log in."}
 
 class ForgotPasswordRequest(BaseModel):
-    email: str
+    email: EmailStr
 
 @router.post("/forgot-password")
 @limiter.limit("3/minute")
@@ -260,7 +260,7 @@ def reset_password(request: Request, body: ResetPasswordRequest,
 
 class UpdateProfileRequest(BaseModel):
     name: Optional[str] = None
-    email: Optional[str] = None
+    email: Optional[EmailStr] = None
     current_password: Optional[str] = None
     new_password: Optional[str] = None
 

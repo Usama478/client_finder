@@ -1,13 +1,16 @@
 import json
+import logging
 from langchain_openai import ChatOpenAI
 from app.agents.verification.state import VerificationAgentState
+
+logger = logging.getLogger(__name__)
 
 def run_llm_analyst(state: VerificationAgentState) -> dict:
     """
     LLM-powered Trust & Safety Auditor.
     Analyzes gathered evidence to semantically validate if the business is a real, functioning B2B brand.
     """
-    print("   🤖 LLM Analyst: Auditing business legitimacy...")
+    logger.debug("   🤖 LLM Analyst: Auditing business legitimacy...")
 
     # 1. Prepare Context
     domain_age = state.get("domain_age_years", "Unknown")
@@ -81,21 +84,21 @@ def run_llm_analyst(state: VerificationAgentState) -> dict:
 
     try:
         # --- 🔎 DEBUG: WHAT THE LLM SEES ---
-        print("\n" + "="*50)
-        print("🧠 DEBUG: WHAT WAS SENT TO THE LLM (EVIDENCE)")
-        print("="*50)
-        print(evidence_block)
+        logger.debug("\n" + "="*50)
+        logger.debug("🧠 DEBUG: WHAT WAS SENT TO THE LLM (EVIDENCE)")
+        logger.debug("="*50)
+        logger.debug(evidence_block)
         
         # 4. Invoke LLM
         response = llm.invoke(messages)
         content = str(response.content)
         
         # --- 🔎 DEBUG: WHAT THE LLM REPLIED ---
-        print("\n" + "="*50)
-        print("🤖 DEBUG: WHAT THE LLM REPLIED (RAW JSON)")
-        print("="*50)
-        print(content)
-        print("="*50 + "\n")
+        logger.debug("\n" + "="*50)
+        logger.debug("🤖 DEBUG: WHAT THE LLM REPLIED (RAW JSON)")
+        logger.debug("="*50)
+        logger.debug(content)
+        logger.debug("="*50 + "\n")
 
         data = json.loads(content)
 
@@ -103,7 +106,7 @@ def run_llm_analyst(state: VerificationAgentState) -> dict:
         flags = data.get("risk_flags", [])
         summary = data.get("evidence_summary", "Analysis failed to generate summary.")
 
-        print(f"   ✅ LLM Analysis Complete. Score: {score}")
+        logger.debug(f"   ✅ LLM Analysis Complete. Score: {score}")
 
         return {
             "verification_score": score,
@@ -113,7 +116,7 @@ def run_llm_analyst(state: VerificationAgentState) -> dict:
         }
 
     except Exception as e:
-        print(f"   ❌ LLM Analyst Failed: {e}")
+        logger.debug(f"   ❌ LLM Analyst Failed: {e}")
         return {
             "verification_score": 0,
             "risk_flags": ["LLM Analysis Failed", str(e)],

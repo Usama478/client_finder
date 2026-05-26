@@ -130,6 +130,11 @@ export default function ContextsPage() {
         </Dialog>
       </div>
 
+      {loading ? (
+        <div className="flex items-center justify-center py-16">
+          <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : (
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
         {displayContexts.map((context) => (
           <Card key={context.id} className="h-[200px] flex flex-col overflow-hidden">
@@ -176,6 +181,7 @@ export default function ContextsPage() {
           </Card>
         ))}
       </div>
+      )}
 
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
         <DialogContent>

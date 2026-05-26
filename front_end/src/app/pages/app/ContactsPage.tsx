@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import { Link } from "react-router"
+import { toast } from "sonner"
 import { api } from "../../../lib/api"
 import { Search, Mail, Phone } from "lucide-react"
 
@@ -17,7 +18,10 @@ export default function ContactsPage() {
   useEffect(() => {
     api.contacts()
       .then(c => setContacts(c || []))
-      .catch(console.error)
+      .catch((e) => {
+        console.error(e)
+        toast.error("Failed to load contacts")
+      })
       .finally(() => setLoading(false))
   }, [])
 

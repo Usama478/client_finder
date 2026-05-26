@@ -13,8 +13,8 @@ class SearchResult(Base):
     place_id = Column(String, index=True, nullable=True)
     source = Column(String, nullable=False, server_default="maps")
 
-    user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
-    search_id = Column(Integer, ForeignKey("search_sessions.search_id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False, index=True)
+    search_id = Column(Integer, ForeignKey("search_sessions.search_id"), nullable=False, index=True)
 
     raw_data = Column(JSON, nullable=False)
 
@@ -107,7 +107,7 @@ class SearchResult(Base):
     email_subject = Column(Text, nullable=True)
     email_body = Column(Text, nullable=True)
 
-    campaign_id = Column(Integer, nullable=True)
+    campaign_id = Column(Integer, ForeignKey("campaigns.id"), nullable=True, index=True)
     campaign_status = Column(String, nullable=True)
     campaign_pass = Column(Integer, nullable=True, default=1)
 

@@ -37,27 +37,6 @@ class BatchVerifyRequest(BaseModel):
 # Routes                                                                       #
 # --------------------------------------------------------------------------- #
 
-from fastapi import Request as RawRequest
-
-@router.post("/verify/batch-debug")
-async def verify_batch_debug(request: RawRequest, current_user = Depends(get_current_user)):
-    """Debugging endpoint - shows exactly what the frontend is sending"""
-    body = await request.body()
-    body_str = body.decode('utf-8')
-    
-    try:
-        import json
-        parsed = json.loads(body_str)
-        logger.info(f"[BATCH_DEBUG] Raw body: {body_str}")
-        logger.info(f"[BATCH_DEBUG] Parsed JSON: {parsed}")
-        logger.info(f"[BATCH_DEBUG] Type of business_ids: {type(parsed.get('business_ids'))}")
-        if 'business_ids' in parsed:
-            logger.info(f"[BATCH_DEBUG] First ID type: {type(parsed['business_ids'][0]) if parsed['business_ids'] else 'empty'}")
-        return {"status": "debug", "received": parsed}
-    except Exception as e:
-        logger.error(f"[BATCH_DEBUG] Failed to parse: {e}")
-        return {"status": "error", "raw": body_str, "error": str(e)}
-
 @router.post("/verify/batch")
 def verify_batch(
     batch_request: BatchVerifyRequest,
@@ -89,15 +68,15 @@ def verify_batch(
             detail=f"IDs not found or not owned: {sorted(missing)}",
         )
 
-    cost = len(owned_ids) * 2
+    cost = len(owned_ids) * 5
     check_credits(db, current_user.user_id, cost)
 
     results = run_verification_batch(owned_ids)
 
-    deduct_credits(db, current_user.user_id, len(owned_ids) * 2, "verification", reference_type="batch")
+    deduct_credits(db, current_user.user_id, len(owned_ids) * 5, "verification", reference_type="batch")
     db.commit()
     try:
-        log_activity(db, current_user.user_id, "verification_run", metadata={"count": len(owned_ids)}, credits_consumed=len(owned_ids) * 2)
+        log_activity(db, current_user.user_id, "verification_run", metadata={"count": len(owned_ids)}, credits_consumed=len(owned_ids) * 5)
         db.commit()
     except Exception:
         pass
@@ -124,7 +103,7 @@ def verify_single(business_id: int, db: Session = Depends(get_db), current_user 
     Returns HTTP 404 if the business_id does not exist in the database.
     Returns HTTP 500 for any other unexpected failure.
     """
-    check_credits(db, current_user.user_id, 2)
+    check_credits(db, current_user.user_id, 5)
     
     uid = int(current_user.user_id)
     lead = db.query(SearchResult).filter(
@@ -137,10 +116,10 @@ def verify_single(business_id: int, db: Session = Depends(get_db), current_user 
     try:
         result = run_verification_for_business(business_id)
         
-        deduct_credits(db, current_user.user_id, 2, "verification", reference_id=str(business_id), reference_type="business")
+        deduct_credits(db, current_user.user_id, 5, "verification", reference_id=str(business_id), reference_type="business")
         db.commit()
         try:
-            log_activity(db, current_user.user_id, "verification_run", business_id=business_id, credits_consumed=2)
+            log_activity(db, current_user.user_id, "verification_run", business_id=business_id, credits_consumed=5)
             db.commit()
         except Exception:
             pass

@@ -1,10 +1,11 @@
 import json
 import logging
-import hmac
-import hashlib
 import os
+import time
+
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse
+from sendgrid.helpers.eventwebhook import EventWebhook, EventWebhookHeader
 
 from app.agents.email_outreach.sendgrid_service import handle_sendgrid_webhook
 
@@ -17,35 +18,42 @@ router = APIRouter(prefix="/api/v1/webhooks", tags=["webhooks"])
 async def sendgrid_webhook(request: Request):
     """
     Receive and process SendGrid webhook events.
-    
+
     SendGrid sends events like: open, click, bounce, delivered, etc.
-    This endpoint always returns 200 to prevent SendGrid from retrying.
+    Signature failures return 403. Processing errors return 500 for retry.
     """
-    webhook_key = os.getenv("SENDGRID_WEBHOOK_KEY")
-    if not webhook_key:
+    public_key = os.getenv("SENDGRID_WEBHOOK_PUBLIC_KEY")
+    if not public_key:
         raise HTTPException(status_code=403, detail="Webhook verification not configured")
-    sig = request.headers.get(
-        "X-Twilio-Email-Event-Webhook-Signature", "")
-    ts = request.headers.get(
-        "X-Twilio-Email-Event-Webhook-Timestamp", "")
+
+    sig = request.headers.get(EventWebhookHeader.SIGNATURE, "")
+    ts = request.headers.get(EventWebhookHeader.TIMESTAMP, "")
     body = await request.body()
-    token = ts.encode() + body
-    expected = hmac.new(
-        webhook_key.encode(), token, hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(expected, sig):
+
+    try:
+        if abs(time.time() - int(ts)) > 300:
+            raise HTTPException(status_code=403, detail="Webhook timestamp too old")
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Invalid timestamp")
+
+    ew = EventWebhook()
+    ec_public_key = ew.convert_public_key(public_key)
+    if not ew.verify_signature(body.decode(), ec_public_key, sig, ts):
         raise HTTPException(status_code=403, detail="Invalid signature")
+
     try:
         events = json.loads(body)
-        
-        # Handle both single event and list of events
+
         if not isinstance(events, list):
             events = [events]
-        
-        result = handle_sendgrid_webhook(events)
-        
+
+        handle_sendgrid_webhook(events)
+
         return JSONResponse({"ok": True}, status_code=200)
-        
+
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in sendgrid webhook: {e}")
+        return JSONResponse({"error": "Invalid payload"}, status_code=400)
     except Exception as e:
-        logger.error(f"Error in sendgrid webhook: {e}")
-        # Always return 200 to prevent SendGrid retries
-        return JSONResponse({"ok": True}, status_code=200)
+        logger.error(f"Error processing sendgrid webhook: {e}")
+        return JSONResponse({"error": "Processing error"}, status_code=500)

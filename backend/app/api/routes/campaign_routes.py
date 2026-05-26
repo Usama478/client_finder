@@ -100,7 +100,7 @@ async def create_campaign(
     active = db.query(Campaign).filter(
         Campaign.user_id == current_user.user_id,
         Campaign.status.in_(["pending", "running"]),
-    ).first()
+    ).with_for_update(skip_locked=True).first()
     if active:
         raise HTTPException(status_code=409, detail="You already have an active campaign. Cancel it first.")
 
@@ -225,11 +225,18 @@ async def resume_campaign(
     campaign = db.query(Campaign).filter(
         Campaign.id == campaign_id,
         Campaign.user_id == current_user.user_id,
-    ).first()
+    ).with_for_update().first()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
     if campaign.status in ("running", "pending"):
         raise HTTPException(status_code=409, detail="Campaign is already running")
+    other_active = db.query(Campaign).filter(
+        Campaign.user_id == current_user.user_id,
+        Campaign.status.in_(["pending", "running"]),
+        Campaign.id != campaign_id,
+    ).with_for_update(skip_locked=True).first()
+    if other_active:
+        raise HTTPException(status_code=409, detail="You already have another active campaign. Cancel it first.")
     pending_count = db.query(SearchResult).filter(
         SearchResult.campaign_id == campaign_id,
         SearchResult.campaign_status == "pending_relevance",

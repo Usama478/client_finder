@@ -227,7 +227,10 @@ export default function SearchBusinessesPage() {
       .then(r => {
         if (isMountedRef.current) setResults((r || []) as BusinessResult[]);
       })
-      .catch(e => console.error(e));
+      .catch(e => {
+        console.error(e);
+        toast.error("Failed to refresh results");
+      });
   }, [selectedSessionId, relevanceCompletedCount, verifyCompletedCount]);
 
   const contexts = apiContexts.length > 0

@@ -4,7 +4,7 @@ from app.db.session import get_db
 from app.models.exporter_profile import ExporterProfile
 from app.api.auth_routes import get_current_user
 from app.models.user import User
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from typing import Optional, List
 
 class ExporterProfileUpdate(BaseModel):
@@ -15,7 +15,7 @@ class ExporterProfileUpdate(BaseModel):
     year_established: Optional[int] = None
     website: Optional[str] = None
     contact_person_name: Optional[str] = None
-    contact_email: Optional[str] = None
+    contact_email: Optional[EmailStr] = None
     product_categories: Optional[List[str]] = None
     key_products: Optional[List[str]] = None
     specializations: Optional[List[str]] = None

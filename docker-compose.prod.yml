@@ -21,8 +21,8 @@ services:
       - DEFAULT_CREDITS=${DEFAULT_CREDITS}
       - VALUESERP_API_KEY=${VALUESERP_API_KEY}
       - HUNTER_API_KEY=${HUNTER_API_KEY}
-      - SCRAPERAPI_KEY=${SCRAPERAPI_KEY}
-      - SENDGRID_WEBHOOK_KEY=${SENDGRID_WEBHOOK_KEY}
+      - SCRAPER_API_KEY=${SCRAPER_API_KEY}
+      - SENDGRID_WEBHOOK_PUBLIC_KEY=${SENDGRID_WEBHOOK_PUBLIC_KEY}
     depends_on:
       db:
         condition: service_healthy
@@ -33,7 +33,7 @@ services:
       context: ./front_end
       dockerfile: Dockerfile
       args:
-        - VITE_API_URL=https://YOURDOMAIN.com
+        - VITE_API_URL=${VITE_API_URL}
     container_name: client_finder_frontend
     restart: always
     depends_on:
@@ -51,7 +51,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d clientfinder"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5

@@ -1,3 +1,4 @@
+import asyncio
 import re
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -15,8 +16,6 @@ from app.services.credit_service import check_credits, deduct_credits
 from app.services.activity_service import log_activity
 
 router = APIRouter(prefix="/api/v1", tags=["search"])
-
-LEADS_PAGE_SIZE = 40
 
 class SearchRequest(BaseModel):
     query: str
@@ -90,7 +89,8 @@ async def search_endpoint(request: SearchRequest, db: Session = Depends(get_db),
                 "next_page_token": None,
             }
         else:
-            result = search_google_maps(
+            result = await asyncio.to_thread(
+                search_google_maps,
                 db=db,
                 user_id=current_user.user_id,
                 query=request.query,
@@ -213,133 +213,8 @@ def list_search_sessions(db: Session = Depends(get_db), current_user: User = Dep
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/leads")
-def list_leads(
-    filter: Optional[str] = None,
-    source: Optional[str] = None,
-    session_id: Optional[int] = None,
-    q: Optional[str] = None,
-    page: int = 1,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """List leads across all sessions for the authenticated user, with filtering and pagination."""
-    try:
-        from sqlalchemy import or_, and_, func
-
-        page = max(1, page)
-
-        query = (
-            db.query(SearchResult)
-            .join(SearchSession, SearchResult.search_id == SearchSession.search_id)
-            .filter(SearchSession.user_id == current_user.user_id)
-        )
-
-        if source:
-            query = query.filter(SearchResult.source == source)
-
-        if session_id is not None:
-            query = query.filter(SearchResult.search_id == session_id)
-
-        if q:
-            pattern = f"%{q}%"
-            query = query.filter(
-                or_(
-                    SearchResult.business_name.ilike(pattern),
-                    SearchResult.website.ilike(pattern),
-                )
-            )
-
-        if filter == "pending_relevancy":
-            query = query.filter(SearchResult.relevance_decision.is_(None))
-        elif filter == "relevant":
-            query = query.filter(SearchResult.relevance_decision == "relevant")
-        elif filter == "irrelevant":
-            query = query.filter(SearchResult.relevance_decision == "irrelevant")
-        elif filter == "low_confidence":
-            query = query.filter(SearchResult.relevance_decision.in_(["low_confidence", "unknown"]))
-        elif filter == "pending_verification":
-            query = query.filter(
-                SearchResult.relevance_decision == "relevant",
-                SearchResult.verification_score.is_(None),
-            )
-        elif filter == "verified":
-            query = query.filter(SearchResult.verification_score >= 50)
-        elif filter == "failed_verification":
-            query = query.filter(
-                SearchResult.verification_score.isnot(None),
-                SearchResult.verification_score < 50,
-            )
-        elif filter in ("has_email", "no_email"):
-            # A lead "has email" if any of these four fields holds a real value.
-            # Strings: not null AND not empty. JSONB arrays: not null AND length > 0
-            # (covers the default=[] case for all_emails_found and empty Hunter results).
-            email_present = or_(
-                and_(
-                    SearchResult.primary_contact_email.isnot(None),
-                    SearchResult.primary_contact_email != "",
-                ),
-                and_(
-                    SearchResult.email_found.isnot(None),
-                    SearchResult.email_found != "",
-                ),
-                and_(
-                    SearchResult.hunter_emails.isnot(None),
-                    func.jsonb_array_length(SearchResult.hunter_emails) > 0,
-                ),
-                and_(
-                    SearchResult.all_emails_found.isnot(None),
-                    func.jsonb_array_length(SearchResult.all_emails_found) > 0,
-                ),
-            )
-            if filter == "has_email":
-                query = query.filter(email_present)
-            else:
-                query = query.filter(~email_present)
-
-        total = query.count()
-        total_pages = max(1, (total + LEADS_PAGE_SIZE - 1) // LEADS_PAGE_SIZE)
-
-        results = (
-            query.order_by(SearchResult.result_id.desc())
-            .offset((page - 1) * LEADS_PAGE_SIZE)
-            .limit(LEADS_PAGE_SIZE)
-            .all()
-        )
-
-        leads = [
-            {
-                "id": r.result_id,
-                "search_id": r.search_id,
-                "name": r.business_name,
-                "website": r.website,
-                "source": r.source,
-                "relevance_decision": r.relevance_decision,
-                "relevance_score": r.relevance_score,
-                "relevance_reason": r.relevance_reason,
-                "verification_score": r.verification_score,
-                "verified_product_catalog": r.verified_product_catalog,
-                "primary_contact_email": r.primary_contact_email,
-                "campaign_status": r.campaign_status,
-                "is_saved_client": r.is_saved_client,
-            }
-            for r in results
-        ]
-
-        return {
-            "leads": leads,
-            "total": total,
-            "total_pages": total_pages,
-            "page": page,
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @router.patch("/sessions/{session_id}/approved-queries")
-async def update_approved_queries(
+def update_approved_queries(
     session_id: int,
     payload: dict,
     db: Session = Depends(get_db),
@@ -588,7 +463,7 @@ async def find_email_for_lead(
         )
     domain = domain_match.group(1)
 
-    check_credits(db, current_user.user_id, 1)
+    check_credits(db, current_user.user_id, 3)
 
     try:
         emails = await find_emails_for_domain(domain)
@@ -605,7 +480,7 @@ async def find_email_for_lead(
     deduct_credits(
         db,
         current_user.user_id,
-        1,
+        3,
         "hunter_lookup",
         reference_id=str(search_result_id),
         reference_type="search_result",
@@ -620,6 +495,6 @@ async def find_email_for_lead(
         "message": (
             f"Found {len(emails)} verified contact email(s)"
             if emails
-            else "No emails above confidence threshold were found for this domain. 1 credit was used."
+            else "No emails above confidence threshold were found for this domain. 3 credits were used."
         ),
     }

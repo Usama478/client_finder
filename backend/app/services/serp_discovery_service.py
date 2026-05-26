@@ -4,6 +4,8 @@ import os
 from datetime import datetime
 from urllib.parse import urlparse
 import httpx
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+
 from app.models.search_result import SearchResult
 
 logger = logging.getLogger(__name__)
@@ -107,28 +109,36 @@ async def discover_via_serp(web_queries: list[str], session_id: int, user_id: in
 
     try:
         for domain, query in domain_to_query.items():
-            existing = db.query(SearchResult).filter(
-                SearchResult.search_id == session_id,
-                SearchResult.website.ilike(f"%{domain}%")
-            ).first()
-
-            if existing:
-                continue
-
-            search_result = SearchResult(
-                place_id=None,
-                source="serp",
-                user_id=user_id,
-                search_id=session_id,
-                raw_data={"domain": domain, "query": query, "source": "valueserp"},
-                business_name=domain,
-                website=f"https://{domain}",
-                scraping_status="pending",
-                relevance_status="pending",
-                verification_status="pending",
+            website = f"https://{domain}"
+            stmt = (
+                pg_insert(SearchResult)
+                .values(
+                    place_id=None,
+                    source="serp",
+                    user_id=user_id,
+                    search_id=session_id,
+                    raw_data={"domain": domain, "query": query, "source": "valueserp"},
+                    business_name=domain,
+                    website=website,
+                    scraping_status="pending",
+                    relevance_status="pending",
+                    verification_status="pending",
+                )
+                .on_conflict_do_nothing(
+                    constraint="uq_search_results_search_id_website",
+                )
+                .returning(SearchResult.result_id)
             )
-            db.add(search_result)
-            created_records.append(search_result)
+            result = db.execute(stmt)
+            row = result.fetchone()
+            if row:
+                inserted = (
+                    db.query(SearchResult)
+                    .filter(SearchResult.result_id == row[0])
+                    .first()
+                )
+                if inserted:
+                    created_records.append(inserted)
 
         db.commit()
         logger.info(f"Created {len(created_records)} new SERP-based SearchResult records")

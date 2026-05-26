@@ -131,7 +131,7 @@ async def validation_exception_handler(request, exc):
 
     safe_errors = []
     for error in exc.errors():
-        safe_error = {k: str(v) if k == "ctx" else v for k, v in error.items()}
+        safe_error = {k: str(v) if k == "ctx" else v for k, v in error.items() if k != "input"}
         safe_errors.append(safe_error)
 
     return JSONResponse(

@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from urllib.parse import urlparse
 
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
@@ -25,6 +26,9 @@ CREDIT_COSTS = {
     "hunter_email": 3,
     "discovery_pass": 3,
 }
+
+MAX_PASSES = 10
+MAX_CONSECUTIVE_EMPTY = 3
 
 
 def estimate_campaign_cost(target_count: int, platform: str) -> dict:
@@ -240,6 +244,11 @@ def _build_seen_domains(db: Session, campaign_id: int) -> set:
 
 
 def _finalize_campaign(db: Session, campaign: Campaign) -> None:
+    if campaign.status in ("exhausted", "failed"):
+        if not campaign.completed_at:
+            campaign.completed_at = datetime.now(timezone.utc)
+        db.commit()
+        return
     campaign.completed_at = datetime.now(timezone.utc)
     if campaign.verified_count >= campaign.target_count:
         campaign.status = "completed"
@@ -272,6 +281,12 @@ def _process_candidate(
     db.commit()
     _append_log(db, campaign, f"Checking relevance: {lead.business_name or lead.website}")
 
+    if campaign.credits_used + CREDIT_COSTS["relevance_agent"] > campaign.credit_budget:
+        lead.campaign_status = "pending_relevance"
+        db.commit()
+        _append_log(db, campaign, "Budget would be exceeded by next relevance check. Stopping.", "warn")
+        return True
+
     try:
         output = _run_relevance_sync(
             lead.result_id, context_text, campaign.search_intent, campaign.context_id
@@ -303,6 +318,22 @@ def _process_candidate(
             db.commit()
             _append_log(db, campaign, f"✗ Relevance failed ({decision}, {score}%) — {lead.business_name}")
             return False
+    except HTTPException as e:
+        if e.status_code == 402:
+            lead.campaign_status = "pending_relevance"
+            campaign.status = "exhausted"
+            campaign.error_message = "Insufficient credits — campaign stopped"
+            campaign.completed_at = datetime.now(timezone.utc)
+            db.commit()
+            _append_log(db, campaign, "Campaign stopped: user credits exhausted.", "warn")
+            return True
+        lead.campaign_status = "error"
+        db.commit()
+        if relevance_error_prefix == "Relevance error on":
+            _append_log(db, campaign, f"{relevance_error_prefix} {lead.website}: {e.detail}", "error")
+        else:
+            _append_log(db, campaign, f"{relevance_error_prefix}: {e.detail}", "error")
+        return False
     except Exception as e:
         lead.campaign_status = "error"
         db.commit()
@@ -315,6 +346,13 @@ def _process_candidate(
     db.refresh(campaign)
     if campaign.credits_used >= campaign.credit_budget:
         _append_log(db, campaign, "Credit budget reached before verification.", "warn")
+        return True
+
+    verification_cost = CREDIT_COSTS["verification_agent"] + CREDIT_COSTS["serp_enrichment"]
+    if campaign.credits_used + verification_cost > campaign.credit_budget:
+        lead.campaign_status = "queued_for_verification"
+        db.commit()
+        _append_log(db, campaign, "Budget would be exceeded by verification. Stopping.", "warn")
         return True
 
     lead.campaign_status = "running_verification"
@@ -349,6 +387,19 @@ def _process_candidate(
             lead.campaign_status = "rejected_verification"
             db.commit()
             _append_log(db, campaign, f"✗ Verification failed (score: {v_score}) — {lead.business_name}")
+    except HTTPException as e:
+        if e.status_code == 402:
+            lead.campaign_status = "queued_for_verification"
+            campaign.status = "exhausted"
+            campaign.error_message = "Insufficient credits — campaign stopped"
+            campaign.completed_at = datetime.now(timezone.utc)
+            db.commit()
+            _append_log(db, campaign, "Campaign stopped: user credits exhausted.", "warn")
+            return True
+        lead.campaign_status = "error"
+        db.commit()
+        _append_log(db, campaign, f"Verification error on {lead.website}: {e.detail}", "error")
+        return False
     except Exception as e:
         lead.campaign_status = "error"
         db.commit()
@@ -389,6 +440,8 @@ def run_campaign_resume(campaign_id: int) -> None:
             if campaign.status == "paused":
                 _append_log(db, campaign, "Campaign paused by user.")
                 return
+            if campaign.status == "exhausted":
+                break
             if campaign.credits_used >= campaign.credit_budget:
                 _append_log(db, campaign, "Credit budget reached.", "warn")
                 break
@@ -404,11 +457,17 @@ def run_campaign_resume(campaign_id: int) -> None:
                 relevance_pass_suffix="",
                 relevance_error_prefix="Relevance error",
             ):
+                db.refresh(campaign)
+                if campaign.status == "exhausted":
+                    break
                 break
 
         db.refresh(campaign)
         if campaign.status == "paused":
             _append_log(db, campaign, "Campaign paused by user.")
+            return
+        if campaign.status == "exhausted":
+            _finalize_campaign(db, campaign)
             return
 
         if (
@@ -420,15 +479,19 @@ def run_campaign_resume(campaign_id: int) -> None:
             seen_domains = _build_seen_domains(db, campaign_id)
             previous_queries: list[str] = []
             pass_number = campaign.current_pass or 0
+            consecutive_empty_passes = 0
 
             while (
                 campaign.verified_count < campaign.target_count
                 and campaign.credits_used < campaign.credit_budget
+                and pass_number < MAX_PASSES
             ):
                 db.refresh(campaign)
                 if campaign.status == "paused":
                     _append_log(db, campaign, "Campaign paused by user.")
                     return
+                if campaign.status == "exhausted":
+                    break
 
                 pass_number += 1
                 campaign.current_pass = pass_number
@@ -471,6 +534,7 @@ def run_campaign_resume(campaign_id: int) -> None:
                         )
                     )
                     campaign.total_discovered += len(new_result_ids)
+                    consecutive_empty_passes = 0
                     db.commit()
                     _append_log(
                         db,
@@ -482,11 +546,19 @@ def run_campaign_resume(campaign_id: int) -> None:
                     continue
 
                 if not new_result_ids:
+                    consecutive_empty_passes += 1
                     _append_log(
                         db,
                         campaign,
-                        f"Pass {pass_number} found no new candidates. Trying next query variation.",
+                        f"Pass {pass_number} found no new candidates ({consecutive_empty_passes}/{MAX_CONSECUTIVE_EMPTY} empty).",
                     )
+                    if consecutive_empty_passes >= MAX_CONSECUTIVE_EMPTY:
+                        campaign.status = "exhausted"
+                        campaign.error_message = "Discovery exhausted — no new candidates found after multiple passes"
+                        campaign.completed_at = datetime.now(timezone.utc)
+                        db.commit()
+                        _append_log(db, campaign, "Campaign stopped: discovery exhausted.", "warn")
+                        break
                     continue
 
                 campaign.credits_used += CREDIT_COSTS["discovery_pass"]
@@ -508,6 +580,8 @@ def run_campaign_resume(campaign_id: int) -> None:
                     if campaign.status == "paused":
                         _append_log(db, campaign, "Campaign paused by user.")
                         return
+                    if campaign.status == "exhausted":
+                        break
                     if campaign.credits_used >= campaign.credit_budget:
                         _append_log(db, campaign, "Credit budget reached.", "warn")
                         break
@@ -519,7 +593,21 @@ def run_campaign_resume(campaign_id: int) -> None:
                         continue
 
                     if _process_candidate(db, campaign, lead, context_text, campaign_id):
+                        db.refresh(campaign)
+                        if campaign.status == "exhausted":
+                            break
                         break
+
+            if (
+                pass_number >= MAX_PASSES
+                and campaign.verified_count < campaign.target_count
+                and campaign.status == "running"
+            ):
+                campaign.status = "exhausted"
+                campaign.error_message = f"Maximum passes ({MAX_PASSES}) reached"
+                campaign.completed_at = datetime.now(timezone.utc)
+                db.commit()
+                _append_log(db, campaign, f"Campaign stopped: max passes ({MAX_PASSES}) reached.", "warn")
 
         _finalize_campaign(db, campaign)
 
@@ -565,14 +653,21 @@ def run_campaign_engine(campaign_id: int) -> None:
         seen_domains: set = set()
         previous_queries: list[str] = []
         pass_number = 0
+        consecutive_empty_passes = 0
 
         context_text = _get_context_text(db, campaign)
 
-        while campaign.verified_count < campaign.target_count and campaign.credits_used < campaign.credit_budget:
+        while (
+            campaign.verified_count < campaign.target_count
+            and campaign.credits_used < campaign.credit_budget
+            and pass_number < MAX_PASSES
+        ):
             db.refresh(campaign)
             if campaign.status == "paused":
                 _append_log(db, campaign, "Campaign paused by user.")
                 return
+            if campaign.status == "exhausted":
+                break
             pass_number += 1
             campaign.current_pass = pass_number
             db.commit()
@@ -617,6 +712,7 @@ def run_campaign_engine(campaign_id: int) -> None:
             try:
                 new_result_ids = asyncio.run(_run_discovery_pass(campaign, db, pass_number, maps_query, web_query, seen_domains, campaign.user_id))
                 campaign.total_discovered += len(new_result_ids)
+                consecutive_empty_passes = 0
                 db.commit()
                 _append_log(db, campaign, f"Pass {pass_number} discovered {len(new_result_ids)} new candidates.")
             except Exception as e:
@@ -624,7 +720,19 @@ def run_campaign_engine(campaign_id: int) -> None:
                 continue
 
             if not new_result_ids:
-                _append_log(db, campaign, f"Pass {pass_number} found no new candidates. Trying next query variation.")
+                consecutive_empty_passes += 1
+                _append_log(
+                    db,
+                    campaign,
+                    f"Pass {pass_number} found no new candidates ({consecutive_empty_passes}/{MAX_CONSECUTIVE_EMPTY} empty).",
+                )
+                if consecutive_empty_passes >= MAX_CONSECUTIVE_EMPTY:
+                    campaign.status = "exhausted"
+                    campaign.error_message = "Discovery exhausted — no new candidates found after multiple passes"
+                    campaign.completed_at = datetime.now(timezone.utc)
+                    db.commit()
+                    _append_log(db, campaign, "Campaign stopped: discovery exhausted.", "warn")
+                    break
                 continue
 
             campaign.credits_used += CREDIT_COSTS["discovery_pass"]
@@ -640,6 +748,8 @@ def run_campaign_engine(campaign_id: int) -> None:
                 if campaign.status == "paused":
                     _append_log(db, campaign, "Campaign paused by user.")
                     return
+                if campaign.status == "exhausted":
+                    break
                 if campaign.credits_used >= campaign.credit_budget:
                     _append_log(db, campaign, "Credit budget reached.", "warn")
                     break
@@ -651,7 +761,21 @@ def run_campaign_engine(campaign_id: int) -> None:
                     continue
 
                 if _process_candidate(db, campaign, lead, context_text, campaign_id):
+                    db.refresh(campaign)
+                    if campaign.status == "exhausted":
+                        break
                     break
+
+        if (
+            pass_number >= MAX_PASSES
+            and campaign.verified_count < campaign.target_count
+            and campaign.status == "running"
+        ):
+            campaign.status = "exhausted"
+            campaign.error_message = f"Maximum passes ({MAX_PASSES}) reached"
+            campaign.completed_at = datetime.now(timezone.utc)
+            db.commit()
+            _append_log(db, campaign, f"Campaign stopped: max passes ({MAX_PASSES}) reached.", "warn")
 
         _finalize_campaign(db, campaign)
 

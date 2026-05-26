@@ -353,7 +353,7 @@ export const api = {
 
   // Relevancy
   runRelevancy: (business: any, searchId: number, contextId: number | null, signal?: AbortSignal) =>
-    request<{ status: string; decision: string | null; score: number | null; reason: string | null }>("/api/relevancy/v2/run", {
+    request<{ status: string; decision: string | null; score: number | null; reason: string | null }>("/api/v1/relevancy/v2/run", {
       method: "POST",
       signal,
       body: JSON.stringify({
@@ -374,7 +374,7 @@ export const api = {
       relevance_decision: string | null;
       relevance_score: number | null;
       current_phase: string | null;
-    }>(`/api/relevancy/v2/${businessId}/status`),
+    }>(`/api/v1/relevancy/v2/${businessId}/status`),
 
   // Email drafts
   emailDrafts: (businessId: number) => request<EmailDraft[]>(`/api/v1/email/drafts/${businessId}?t=${Date.now()}`),

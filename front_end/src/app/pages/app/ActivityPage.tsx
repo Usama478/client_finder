@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router"
+import { toast } from "sonner"
 import { api } from "../../../lib/api"
 import { Search, Target, ShieldCheck, Mail, Download, Clock } from "lucide-react"
 
@@ -59,7 +60,10 @@ export default function ActivityPage() {
   useEffect(() => {
     api.activityLog(50)
       .then(e => setEvents(e || []))
-      .catch(() => setEvents([]))
+      .catch(() => {
+        toast.error("Failed to load activity")
+        setEvents([])
+      })
       .finally(() => setLoading(false))
   }, [])
 

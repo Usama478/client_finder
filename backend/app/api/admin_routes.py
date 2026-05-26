@@ -3,19 +3,12 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List, Literal
 from app.core.security import get_current_admin_user
-from app.db.session import SessionLocal
+from app.db.session import get_db
 from app.models.user import User
 from app.models.user_credit import UserCredit
 from app.services.credit_service import add_credits, set_credits, deduct_credits
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 class UserWithCredits(BaseModel):
     user_id: int

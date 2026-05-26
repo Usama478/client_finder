@@ -131,9 +131,6 @@ def search_google_maps(db: Session, user_id: int, query: str, page_token: str = 
                 SearchResult.user_id == user_id
             ).first()
             if exists:
-                # Associate existing lead with current search session so it appears
-                exists.search_id = search_session.search_id
-                results_added += 1
                 continue
 
             # Check if another user already scraped this place

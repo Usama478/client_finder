@@ -4,7 +4,10 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy.orm import Session
 import os
+
+from app.db.session import get_db
 
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY:
@@ -38,8 +41,10 @@ def decode_access_token(token: str) -> Optional[dict]:
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
-def get_current_user(token: str = Depends(oauth2_scheme)):
-    from app.db.session import SessionLocal
+def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
     from app.models.user import User
 
     credentials_exception = HTTPException(
@@ -53,14 +58,10 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
     user_id: Optional[int] = payload.get("sub")
     if user_id is None:
         raise credentials_exception
-    db = SessionLocal()
-    try:
-        user = db.query(User).filter(User.user_id == int(user_id)).first()
-        if user is None:
-            raise credentials_exception
-        return user
-    finally:
-        db.close()
+    user = db.query(User).filter(User.user_id == int(user_id)).first()
+    if user is None:
+        raise credentials_exception
+    return user
 
 def get_current_admin_user(current_user=Depends(get_current_user)):
     if not getattr(current_user, "is_admin", False):
