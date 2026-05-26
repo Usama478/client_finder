@@ -11,12 +11,14 @@ from app.agents.email_outreach.email_draft_service import (
     generate_batch_for_session,
     generate_draft_for_lead,
 )
-from app.agents.email_outreach.followup_scheduler import run_followup_check
 from app.agents.email_outreach.sendgrid_service import send_approved_draft
 from app.core.security import get_current_user
 from app.db.session import SessionLocal
 from app.models.email_draft import EmailDraft
+from app.models.exporter_profile import ExporterProfile
 from app.models.search_result import SearchResult
+from app.models.search_session import SearchSession
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +65,18 @@ def generate_batch(request: GenerateBatchRequest, current_user = Depends(get_cur
     """
     if not EMAIL_AGENT_ENABLED:
         raise HTTPException(status_code=503, detail="Email agent temporarily disabled")
+    db = SessionLocal()
+    try:
+        session = (
+            db.query(SearchSession)
+            .filter(SearchSession.search_id == request.search_id)
+            .filter(SearchSession.user_id == current_user.user_id)
+            .first()
+        )
+        if not session:
+            raise HTTPException(status_code=404, detail="Not found")
+    finally:
+        db.close()
     try:
         result = generate_batch_for_session(
             search_id=request.search_id,
@@ -103,6 +117,17 @@ def generate_draft(business_id: int, request: GenerateDraftRequest, current_user
             )
             if not lead:
                 raise HTTPException(status_code=404, detail=f"Business ID {business_id} not found.")
+            if request.exporter_profile_id is not None:
+                profile = (
+                    db.query(ExporterProfile)
+                    .filter(
+                        ExporterProfile.id == request.exporter_profile_id,
+                        ExporterProfile.user_id == current_user.user_id,
+                    )
+                    .first()
+                )
+                if not profile:
+                    raise HTTPException(status_code=404, detail="Exporter profile not found")
         finally:
             db.close()
         result = generate_draft_for_lead(
@@ -395,9 +420,83 @@ def followup_check(current_user = Depends(get_current_user)) -> Dict[str, Any]:
     """
     if not EMAIL_AGENT_ENABLED:
         raise HTTPException(status_code=503, detail="Email agent temporarily disabled")
+    db = SessionLocal()
+    checked = 0
+    generated = 0
+    skipped = 0
+    failed = 0
     try:
-        result = run_followup_check()
-        return result
+        cutoff = datetime.now(timezone.utc) - timedelta(days=5)
+        qualifying_drafts = (
+            db.query(EmailDraft)
+            .join(SearchResult, EmailDraft.business_id == SearchResult.result_id)
+            .filter(
+                SearchResult.user_id == current_user.user_id,
+                EmailDraft.status == "sent",
+                EmailDraft.sequence_position < 3,
+                EmailDraft.sent_at < cutoff,
+            )
+            .all()
+        )
+        for draft in qualifying_drafts:
+            checked += 1
+            try:
+                lead = (
+                    db.query(SearchResult)
+                    .filter(
+                        SearchResult.result_id == draft.business_id,
+                        SearchResult.user_id == current_user.user_id,
+                    )
+                    .first()
+                )
+                if lead is None:
+                    skipped += 1
+                    continue
+                if lead.email_status == "bounced":
+                    skipped += 1
+                    continue
+                next_position = draft.sequence_position + 1
+                existing_followup = (
+                    db.query(EmailDraft)
+                    .filter(
+                        EmailDraft.business_id == draft.business_id,
+                        EmailDraft.sequence_position == next_position,
+                        EmailDraft.exporter_profile_id == draft.exporter_profile_id,
+                    )
+                    .first()
+                )
+                if existing_followup is not None:
+                    skipped += 1
+                    continue
+                result = generate_draft_for_lead(
+                    business_id=draft.business_id,
+                    user_id=current_user.user_id,
+                    sequence_position=next_position,
+                )
+                if result["status"] == "created":
+                    generated += 1
+                elif result["status"] == "skipped":
+                    skipped += 1
+                elif result["status"] == "failed":
+                    failed += 1
+            except Exception as exc:
+                logger.error(
+                    "followup_check FAILED draft_id=%s error=%s",
+                    draft.id,
+                    exc,
+                    exc_info=True,
+                )
+                failed += 1
+        return {
+            "checked": checked,
+            "generated": generated,
+            "skipped": skipped,
+            "failed": failed,
+        }
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error("followup_check FAILED error=%s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail=f"Follow-up check failed: {exc}")
+    finally:
+        db.close()

@@ -79,7 +79,7 @@ export default function DashboardPage() {
   // `relevant_leads` (only those that passed). These are intentionally different.
   const pipeline = [
     { stage: "Search",       count: stats?.total_searches         ?? "—", icon: Search,      path: "/app/search",  active: true  },
-    { stage: "Relevancy",    count: stats?.relevancy_processed    ?? "—", icon: Target,      path: "/app/search",  active: false },
+    { stage: "Relevancy",    count: stats?.relevancy_processed    ?? "—", icon: Target,      path: "/app/leads?filter=relevant",  active: false },
     { stage: "Verification", count: stats?.verification_processed ?? "—", icon: ShieldCheck, path: "/app/clients", active: false },
     { stage: "Clients",      count: stats?.clients_count          ?? stats?.total_clients ?? "—", icon: Users, path: "/app/clients", active: false },
     { stage: "Outreach",     count: stats?.emails_drafted         ?? "—", icon: Mail,        path: "/app/email",   active: false },

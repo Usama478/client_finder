@@ -17,7 +17,8 @@ async function req<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (res.status === 401) {
     localStorage.removeItem("cf_token")
     localStorage.removeItem("cf_user")
-    window.location.href = "/auth/login?reason=session_expired"
+    const returnTo = encodeURIComponent(window.location.pathname + window.location.search)
+    window.location.replace(`/auth/login?reason=session_expired&returnTo=${returnTo}`)
     throw new Error("Unauthorized")
   }
   if (!res.ok) {

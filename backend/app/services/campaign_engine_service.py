@@ -22,6 +22,7 @@ CREDIT_COSTS = {
     "relevance_agent": 2,
     "verification_agent": 5,
     "serp_enrichment": 1,
+    "hunter_email": 3,
     "discovery_pass": 3,
 }
 
@@ -391,6 +392,8 @@ def run_campaign_resume(campaign_id: int) -> None:
             if campaign.credits_used >= campaign.credit_budget:
                 _append_log(db, campaign, "Credit budget reached.", "warn")
                 break
+            if campaign.verified_count >= campaign.target_count:
+                break
 
             if _process_candidate(
                 db,
@@ -455,20 +458,6 @@ def run_campaign_resume(campaign_id: int) -> None:
                     db.commit()
                     return
 
-                campaign.credits_used += CREDIT_COSTS["discovery_pass"]
-                deduct_credits(
-                    db,
-                    campaign.user_id,
-                    CREDIT_COSTS["discovery_pass"],
-                    "campaign_discovery",
-                    reference_id=str(campaign_id),
-                    reference_type="campaign",
-                )
-                db.commit()
-                if campaign.credits_used >= campaign.credit_budget:
-                    _append_log(db, campaign, "Credit budget reached before discovery.", "warn")
-                    break
-
                 try:
                     new_result_ids = asyncio.run(
                         _run_discovery_pass(
@@ -490,7 +479,7 @@ def run_campaign_resume(campaign_id: int) -> None:
                     )
                 except Exception as e:
                     _append_log(db, campaign, f"Discovery failed: {e}", "error")
-                    break
+                    continue
 
                 if not new_result_ids:
                     _append_log(
@@ -499,6 +488,20 @@ def run_campaign_resume(campaign_id: int) -> None:
                         f"Pass {pass_number} found no new candidates. Trying next query variation.",
                     )
                     continue
+
+                campaign.credits_used += CREDIT_COSTS["discovery_pass"]
+                deduct_credits(
+                    db,
+                    campaign.user_id,
+                    CREDIT_COSTS["discovery_pass"],
+                    "campaign_discovery",
+                    reference_id=str(campaign_id),
+                    reference_type="campaign",
+                )
+                db.commit()
+                if campaign.credits_used >= campaign.credit_budget:
+                    _append_log(db, campaign, "Credit budget reached after discovery.", "warn")
+                    break
 
                 for result_id in new_result_ids:
                     db.refresh(campaign)
@@ -529,8 +532,11 @@ def run_campaign_resume(campaign_id: int) -> None:
                 campaign.status = "failed"
                 campaign.error_message = str(e)
                 db.commit()
-        except Exception:
-            pass
+        except Exception as commit_exc:
+            logger.error(
+                f"[CAMPAIGN_RESUME {campaign_id}] Failed to persist failed status: {commit_exc}",
+                exc_info=True,
+            )
     finally:
         db.close()
 
@@ -608,13 +614,6 @@ def run_campaign_engine(campaign_id: int) -> None:
                 return
 
             # Discovery
-            campaign.credits_used += CREDIT_COSTS["discovery_pass"]
-            deduct_credits(db, campaign.user_id, CREDIT_COSTS["discovery_pass"], "campaign_discovery", reference_id=str(campaign_id), reference_type="campaign")
-            db.commit()
-            if campaign.credits_used >= campaign.credit_budget:
-                _append_log(db, campaign, "Credit budget reached before discovery.", "warn")
-                break
-
             try:
                 new_result_ids = asyncio.run(_run_discovery_pass(campaign, db, pass_number, maps_query, web_query, seen_domains, campaign.user_id))
                 campaign.total_discovered += len(new_result_ids)
@@ -622,11 +621,18 @@ def run_campaign_engine(campaign_id: int) -> None:
                 _append_log(db, campaign, f"Pass {pass_number} discovered {len(new_result_ids)} new candidates.")
             except Exception as e:
                 _append_log(db, campaign, f"Discovery failed: {e}", "error")
-                break
+                continue
 
             if not new_result_ids:
                 _append_log(db, campaign, f"Pass {pass_number} found no new candidates. Trying next query variation.")
                 continue
+
+            campaign.credits_used += CREDIT_COSTS["discovery_pass"]
+            deduct_credits(db, campaign.user_id, CREDIT_COSTS["discovery_pass"], "campaign_discovery", reference_id=str(campaign_id), reference_type="campaign")
+            db.commit()
+            if campaign.credits_used >= campaign.credit_budget:
+                _append_log(db, campaign, "Credit budget reached after discovery.", "warn")
+                break
 
             # Combined relevance → verification loop (one candidate at a time)
             for result_id in new_result_ids:
@@ -658,7 +664,10 @@ def run_campaign_engine(campaign_id: int) -> None:
                 campaign.status = "failed"
                 campaign.error_message = str(e)
                 db.commit()
-        except Exception:
-            pass
+        except Exception as commit_exc:
+            logger.error(
+                f"[CAMPAIGN {campaign_id}] Failed to persist failed status: {commit_exc}",
+                exc_info=True,
+            )
     finally:
         db.close()

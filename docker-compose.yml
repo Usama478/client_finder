@@ -20,7 +20,7 @@ services:
       - HUNTER_API_KEY=${HUNTER_API_KEY}
       - SECRET_KEY=your-secret-key-here-make-it-long-and-random
       - GMAIL_ADDRESS=usamaarshad1012@gmail.com
-      - GMAIL_APP_PASSWORD=stxv dcii evma knad
+      - GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD}
       - FRONTEND_URL=http://localhost:5173
     volumes:
       - ./backend:/app

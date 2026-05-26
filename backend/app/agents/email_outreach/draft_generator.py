@@ -24,7 +24,9 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _MODEL = "gpt-4o-mini"
-_DEFAULT_TEMPERATURE = 0.4
+# temperature=0 for deterministic output; callers may override via the temperature param
+# for A/B testing variation if needed
+_DEFAULT_TEMPERATURE = 0.0
 _MAX_TOKENS_STRATEGY = 600
 _MAX_TOKENS_EMAIL = 1200
 

@@ -8,10 +8,12 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.campaign import Campaign
+from app.models.search_context import SearchContext
 from app.models.search_result import SearchResult
 from app.core.security import get_current_user
 from app.models.user import User
 from app.services.campaign_engine_service import estimate_campaign_cost, run_campaign_engine, run_campaign_resume
+from app.services.credit_service import get_balance
 import json
 
 router = APIRouter(prefix="/api/v1/campaigns", tags=["campaigns"])
@@ -101,6 +103,20 @@ async def create_campaign(
     ).first()
     if active:
         raise HTTPException(status_code=409, detail="You already have an active campaign. Cancel it first.")
+
+    if data.context_id is not None:
+        context = db.query(SearchContext).filter(
+            SearchContext.id == data.context_id,
+            SearchContext.user_id == current_user.user_id,
+        ).first()
+        if not context:
+            raise HTTPException(status_code=404, detail="Not found")
+
+    if data.credit_budget <= 0:
+        raise HTTPException(status_code=400, detail="Credit budget must be positive")
+    balance = get_balance(db, current_user.user_id)
+    if data.credit_budget > balance:
+        raise HTTPException(status_code=400, detail="Credit budget exceeds available credits")
 
     estimate = estimate_campaign_cost(data.target_count, data.discovery_platform)
     campaign = Campaign(

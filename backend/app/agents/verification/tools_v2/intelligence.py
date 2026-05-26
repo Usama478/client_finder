@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _MODEL = "gpt-4o-mini"
-_TEMPERATURE = 0.1
+_TEMPERATURE = 0.0
 _MAX_TOKENS = 800
 _MAX_TEXT_CHARS = 6000
 

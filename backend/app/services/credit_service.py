@@ -4,13 +4,6 @@ from app.models.user_credit import UserCredit
 from app.models.credit_transaction import CreditTransaction
 from typing import Optional
 
-CREDIT_COSTS = {
-    "search_session": 10,
-    "relevancy": 1,
-    "verification": 2,
-    "export": 5,
-}
-
 def initialize_credits(db: Session, user_id: int, amount: int = 200) -> UserCredit:
     credit = UserCredit(user_id=user_id, credits_remaining=amount,
                         credits_used_total=0, allocated_total=amount)
@@ -38,6 +31,10 @@ def deduct_credits(db: Session, user_id: int, amount: int, action_type: str,
             UserCredit.user_id == user_id).with_for_update().first()
         if not credit:
             raise HTTPException(status_code=404, detail="Credit account not found")
+        if amount <= 0:
+            raise ValueError("Invalid deduction amount")
+        if credit.credits_remaining < amount:
+            raise ValueError("Insufficient credits")
         credit.credits_remaining -= amount
         credit.credits_used_total += amount
         new_balance = credit.credits_remaining
@@ -52,6 +49,12 @@ def deduct_credits(db: Session, user_id: int, amount: int, action_type: str,
     except HTTPException:
         sp.rollback()
         raise
+    except ValueError as e:
+        sp.rollback()
+        msg = str(e)
+        if "Insufficient" in msg:
+            raise HTTPException(status_code=402, detail=msg)
+        raise HTTPException(status_code=400, detail=msg)
     except Exception as e:
         sp.rollback()
         raise HTTPException(status_code=500, detail=f"Credit deduction failed: {e}")

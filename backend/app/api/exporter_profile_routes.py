@@ -38,6 +38,16 @@ class ExporterProfileUpdate(BaseModel):
 
 router = APIRouter(prefix="/api/v1/exporter-profiles", tags=["exporter-profiles"])
 
+ALLOWED_FIELDS = {
+    "profile_name", "company_name", "company_location", "year_established",
+    "website", "contact_person_name", "contact_email", "product_categories",
+    "key_products", "specializations", "preferred_categories_for_outreach",
+    "moq", "monthly_capacity", "sampling_available", "sampling_turnaround_days",
+    "bulk_lead_time_days", "sample_policy", "minimum_order_flexibility_note",
+    "certifications", "export_markets", "client_types", "target_buyer_types",
+    "value_proposition", "production_strengths", "services", "shipping_terms",
+}
+
 @router.get("/me")
 def get_my_profile(current_user: User = Depends(get_current_user),
                    db: Session = Depends(get_db)):
@@ -60,7 +70,8 @@ def create_profile(data: ExporterProfileUpdate,
     if existing:
         update_data = data.model_dump(exclude_none=True)
         for key, value in update_data.items():
-            setattr(existing, key, value)
+            if key in ALLOWED_FIELDS:
+                setattr(existing, key, value)
         db.commit()
         db.refresh(existing)
         return existing.__dict__
@@ -85,7 +96,7 @@ def update_profile(profile_id: int, data: ExporterProfileUpdate,
         raise HTTPException(status_code=404, detail="Profile not found")
     update_data = data.model_dump(exclude_none=True)
     for key, value in update_data.items():
-        if key not in ("id", "user_id", "is_default"):
+        if key in ALLOWED_FIELDS:
             setattr(profile, key, value)
     db.commit()
     db.refresh(profile)

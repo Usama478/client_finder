@@ -64,6 +64,7 @@ export default function EmailWorkspacePage() {
   const [selectedClientIds, setSelectedClientIds] = useState<string[]>([]);
   const [campaignDrafts, setCampaignDrafts] = useState<Record<string, { draftId: number; subject: string; body: string; status: DraftStatus }>>({});
   const [campaignPhase, setCampaignPhase] = useState<CampaignPhase>("select");
+  const [campaignGenerating, setCampaignGenerating] = useState(false);
   const [campaignSearchQuery, setCampaignSearchQuery] = useState("");
   const [campaignFilter, setCampaignFilter] = useState<CampaignFilter>("all");
   const [campaignView, setCampaignView] = useState<CampaignView>("setup");
@@ -513,6 +514,8 @@ export default function EmailWorkspacePage() {
     if (!exporterProfileId) { toast.error("Set up your exporter profile in Settings first"); return; }
     if (selectedClientIds.length === 0) return;
 
+    setCampaignGenerating(true);
+    try {
     setCampaignPhase("generating");
     setCampaignView("setup");
     const drafts: Record<string, { draftId: number; subject: string; body: string; status: DraftStatus }> = {};
@@ -578,6 +581,9 @@ export default function EmailWorkspacePage() {
 
     setCampaignPhase("review");
     setCampaignView("review");
+    } finally {
+      setCampaignGenerating(false);
+    }
   };
 
   const openEmailDetail = async (client: any) => {
@@ -1188,36 +1194,42 @@ export default function EmailWorkspacePage() {
         )}
 
         <div className="flex-1 overflow-y-auto">
-          {filtered.map(c => {
-            const id = getClientId(c);
-            return (
-              <CampaignClientRow
-                key={id}
-                client={c}
-                selected={selectedClientIds.includes(id)}
-                interactive={interactive}
-                onToggle={() => {
-                  if (selectedClientIds.includes(id)) {
-                    setSelectedClientIds(selectedClientIds.filter(x => x !== id));
-                  } else {
-                    setSelectedClientIds([...selectedClientIds, id]);
-                  }
-                }}
-              />
-            );
-          })}
+          {campaignClients.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full p-6 text-muted-foreground text-sm text-center">
+              Select a campaign to view emails
+            </div>
+          ) : (
+            filtered.map(c => {
+              const id = getClientId(c);
+              return (
+                <CampaignClientRow
+                  key={id}
+                  client={c}
+                  selected={selectedClientIds.includes(id)}
+                  interactive={interactive}
+                  onToggle={() => {
+                    if (selectedClientIds.includes(id)) {
+                      setSelectedClientIds(selectedClientIds.filter(x => x !== id));
+                    } else {
+                      setSelectedClientIds([...selectedClientIds, id]);
+                    }
+                  }}
+                />
+              );
+            })
+          )}
         </div>
 
         {interactive && (
           <div className="p-3 space-y-2" style={{ borderTop: "1px solid var(--border)", background: "#0a0d12" }}>
             <div className="text-[12px] font-semibold text-foreground">{selectedClientIds.length} clients selected</div>
             <button
-              style={{ ...btnPrimary, width: "100%", justifyContent: "center", opacity: selectedClientIds.length === 0 || !exporterProfileId ? 0.5 : 1 }}
-              disabled={selectedClientIds.length === 0 || !exporterProfileId}
-              title={!exporterProfileId ? "Set up your exporter profile in Settings first" : selectedClientIds.length === 0 ? "Select at least one client" : undefined}
+              style={{ ...btnPrimary, width: "100%", justifyContent: "center", opacity: selectedClientIds.length === 0 || !exporterProfileId || campaignGenerating ? 0.5 : 1 }}
+              disabled={selectedClientIds.length === 0 || !exporterProfileId || campaignGenerating}
+              title={!exporterProfileId ? "Set up your exporter profile in Settings first" : selectedClientIds.length === 0 ? "Select at least one client" : campaignGenerating ? "Generating…" : undefined}
               onClick={handleCampaignGenerate}
             >
-              Generate Emails →
+              {campaignGenerating ? "Generating…" : "Generate Emails →"}
             </button>
           </div>
         )}
@@ -1550,6 +1562,11 @@ export default function EmailWorkspacePage() {
         <div className="flex flex-col gap-3 min-w-0 min-h-0">
           <ContextStrip client={selectedClient} />
 
+          {!selectedClient ? (
+            <div className="flex flex-col items-center justify-center flex-1 text-muted-foreground text-sm" style={{ ...card }}>
+              Select a lead to draft an email
+            </div>
+          ) : (
           <div style={{ ...card, display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }} className="min-w-0">
             <div className="px-4 py-3 flex items-center justify-between gap-3" style={{ borderBottom: "1px solid var(--border)" }}>
               <div>
@@ -1707,6 +1724,7 @@ export default function EmailWorkspacePage() {
               </button>
             </div>
           </div>
+          )}
         </div>
       </div>
     );

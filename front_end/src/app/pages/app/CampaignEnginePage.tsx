@@ -33,6 +33,7 @@ export default function CampaignEnginePage() {
   const [results, setResults] = useState<CampaignResult[]>([])
   const [savingId, setSavingId] = useState<number | null>(null)
   const [history, setHistory] = useState<Campaign[]>([])
+  const [pollingError, setPollingError] = useState(false)
 
   const logRef = useRef<HTMLDivElement>(null)
   const historyAutoExpandDone = useRef(false)
@@ -103,14 +104,21 @@ export default function CampaignEnginePage() {
 
   useEffect(() => {
     if (!campaign || (campaign.status !== "running" && campaign.status !== "pending")) return
+    setPollingError(false)
+    let failCount = 0
     const iv = setInterval(async () => {
       try {
         const updated = await campaignsApi.get(campaign.id)
         setCampaign(updated)
         const r = await campaignsApi.getResults(campaign.id)
         setResults(r ?? [])
+        failCount = 0
       } catch {
-        /* polling errors are non-fatal */
+        failCount++
+        if (failCount >= 3) {
+          clearInterval(iv)
+          setPollingError(true)
+        }
       }
     }, 4000)
     return () => clearInterval(iv)
@@ -232,7 +240,7 @@ export default function CampaignEnginePage() {
   const isDone = campaign && !isRunning && !isPaused
 
   const filteredResults = useMemo(() => {
-    return results.filter(r => {
+    return (results ?? []).filter(r => {
       if (activeTab === "passed") return isPassedRelevance(r.campaign_status)
       if (activeTab === "verified") return r.campaign_status === "verified"
       return true
@@ -240,17 +248,17 @@ export default function CampaignEnginePage() {
   }, [results, activeTab])
 
   const pendingCount = useMemo(
-    () => results.filter(r => r.campaign_status === "pending_relevance").length,
+    () => (results ?? []).filter(r => r.campaign_status === "pending_relevance").length,
     [results]
   )
 
   const passedCount = useMemo(
-    () => results.filter(r => isPassedRelevance(r.campaign_status)).length,
+    () => (results ?? []).filter(r => isPassedRelevance(r.campaign_status)).length,
     [results]
   )
 
   const verifiedCount = useMemo(
-    () => results.filter(r => r.campaign_status === "verified").length,
+    () => (results ?? []).filter(r => r.campaign_status === "verified").length,
     [results]
   )
 
@@ -306,6 +314,11 @@ export default function CampaignEnginePage() {
                 onBack={handleBackToCampaigns}
                 onCancel={handleCancel}
               />
+              {pollingError && (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+                  Live updates unavailable — refresh manually.
+                </div>
+              )}
               <LiveLogCard campaign={campaign} logRef={logRef} />
               {results.length > 0 && (
                 <ResultsCard

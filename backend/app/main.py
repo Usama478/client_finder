@@ -1,5 +1,10 @@
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from app.core.limiter import limiter
 from app.api import (
     search_routes,
     relevancy_v2_routes,
@@ -23,6 +28,9 @@ import logging
 from contextlib import asynccontextmanager
 from apscheduler.schedulers.background import BackgroundScheduler
 from app.agents.verification.service import reset_stale_processing_leads
+from app.db.session import SessionLocal
+from app.models.campaign import Campaign
+from app.models.search_result import SearchResult
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +47,37 @@ def _reset_stale_job() -> None:
     except Exception as exc:
         logger.error("scheduler: reset_stale_processing_leads failed: %s", exc)
 
+
+def _recover_crashed_campaigns() -> None:
+    """Reset campaigns/leads stuck in running states after an unclean shutdown."""
+    recovery_db = SessionLocal()
+    try:
+        stuck_campaigns = recovery_db.query(Campaign).filter(Campaign.status == "running").all()
+        for campaign in stuck_campaigns:
+            campaign.status = "paused"
+
+        relevance_reset = recovery_db.query(SearchResult).filter(
+            SearchResult.campaign_status == "running_relevance"
+        ).update({"campaign_status": "pending_relevance"}, synchronize_session=False)
+
+        verification_reset = recovery_db.query(SearchResult).filter(
+            SearchResult.campaign_status == "running_verification"
+        ).update({"campaign_status": "queued_for_verification"}, synchronize_session=False)
+
+        recovery_db.commit()
+        logger.info(
+            "startup recovery: %d campaigns paused, %d relevance reset, %d verification reset",
+            len(stuck_campaigns),
+            relevance_reset,
+            verification_reset,
+        )
+    except Exception as exc:
+        logger.error("startup recovery failed: %s", exc)
+        recovery_db.rollback()
+    finally:
+        recovery_db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
@@ -48,6 +87,8 @@ async def lifespan(app: FastAPI):
             logger.warning("startup: reset %d stale verification row(s)", count)
     except Exception as exc:
         logger.error("startup: reset_stale_processing_leads failed: %s", exc)
+
+    _recover_crashed_campaigns()
 
     scheduler = BackgroundScheduler()
     scheduler.add_job(_reset_stale_job, "interval", minutes=10, id="reset_stale")
@@ -61,16 +102,14 @@ async def lifespan(app: FastAPI):
     logger.info("shutdown: stale-verification scheduler stopped")
 
 app = FastAPI(title="Client Finder MVP", lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+origins = os.getenv("FRONTEND_URL", "http://localhost:5173").split(",")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost",
-        "http://127.0.0.1",
-        "http://localhost:80",
-        "http://127.0.0.1:80",
-    ],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -78,12 +117,17 @@ app.add_middleware(
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request, exc):
-    body_bytes = await request.body()
-    body_str = body_bytes.decode('utf-8')
+    field_names = []
+    for error in exc.errors():
+        loc = error.get("loc", ())
+        if loc:
+            field_names.append(".".join(str(part) for part in loc))
 
-    logger.error(f"[VALIDATION_ERROR] Path: {request.url.path}")
-    logger.error(f"[VALIDATION_ERROR] Raw body: {body_str}")
-    logger.error(f"[VALIDATION_ERROR] Error details: {exc.errors()}")
+    logger.error(
+        "[VALIDATION_ERROR] Path: %s Fields: %s",
+        request.url.path,
+        field_names,
+    )
 
     safe_errors = []
     for error in exc.errors():
@@ -92,7 +136,7 @@ async def validation_exception_handler(request, exc):
 
     return JSONResponse(
         status_code=422,
-        content={"detail": safe_errors, "body_received": body_str}
+        content={"detail": safe_errors}
     )
 
 @app.get("/health")

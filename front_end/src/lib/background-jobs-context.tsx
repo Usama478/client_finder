@@ -134,9 +134,11 @@ export function BackgroundJobsProvider({ children }: { children: ReactNode }) {
 
   const startVerifyPolling = useCallback(
     (id: string) => {
+      let failCount = 0;
       const handle = setInterval(async () => {
         try {
           const status = await api.verificationStatus(Number(id));
+          failCount = 0;
           const isTerminal =
             status.verification_status !== null &&
             status.verification_status !== undefined &&
@@ -188,7 +190,11 @@ export function BackgroundJobsProvider({ children }: { children: ReactNode }) {
             verification_score: status.verification_score,
           });
         } catch (err) {
+          failCount++;
           console.error(`Polling failed for business ${id}`, err);
+          if (failCount >= 3) {
+            stopPollingId(id);
+          }
         }
       }, 1200);
       pollingIntervalsRef.current.set(id, handle);
@@ -214,9 +220,11 @@ export function BackgroundJobsProvider({ children }: { children: ReactNode }) {
   const startRelevancePolling = useCallback(
     (id: string) => {
       const key = `relevance_${id}`;
+      let failCount = 0;
       const handle = setInterval(async () => {
         try {
           const status = await api.relevancyStatus(Number(id));
+          failCount = 0;
           const isTerminal =
             status.relevance_status === "completed" ||
             status.relevance_status === "failed" ||
@@ -262,7 +270,11 @@ export function BackgroundJobsProvider({ children }: { children: ReactNode }) {
             relevance_score: status.relevance_score,
           });
         } catch (err) {
+          failCount++;
           console.error(`Relevance polling failed for business ${id}`, err);
+          if (failCount >= 3) {
+            stopRelevancePollingId(id);
+          }
         }
       }, 1200);
       pollingIntervalsRef.current.set(key, handle);

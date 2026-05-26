@@ -19,7 +19,6 @@ router = APIRouter(prefix="/api/v1", tags=["search"])
 LEADS_PAGE_SIZE = 40
 
 class SearchRequest(BaseModel):
-    user_id: Optional[int] = None
     query: str
     search_location: Optional[str] = None
     page_token: Optional[str] = None
@@ -50,6 +49,22 @@ async def search_endpoint(request: SearchRequest, db: Session = Depends(get_db),
         raise HTTPException(status_code=404, detail="User not found")
 
     check_credits(db, current_user.user_id, 10)
+
+    if request.context_id is not None:
+        context = db.query(SearchContext).filter(
+            SearchContext.id == request.context_id,
+            SearchContext.user_id == current_user.user_id,
+        ).first()
+        if not context:
+            raise HTTPException(status_code=404, detail="Not found")
+
+    if request.session_id is not None:
+        session = db.query(SearchSession).filter(
+            SearchSession.search_id == request.session_id,
+            SearchSession.user_id == current_user.user_id,
+        ).first()
+        if not session:
+            raise HTTPException(status_code=404, detail="Not found")
 
     try:
         # If skip_discovery is True, create the session record only (no Maps/SERP calls)
@@ -117,6 +132,10 @@ async def search_endpoint(request: SearchRequest, db: Session = Depends(get_db),
             pass
         
         return result
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -188,6 +207,8 @@ def list_search_sessions(db: Session = Depends(get_db), current_user: User = Dep
             result.append(session_dict)
 
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -416,6 +437,8 @@ def get_search_results(
             
         # If no results found (e.g., all were deduplicated), return empty array instead of 404
         return results
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -497,6 +520,8 @@ def get_saved_clients(db: Session = Depends(get_db), current_user: User = Depend
             d["draft_status"] = draft.status if draft else None
             result.append(d)
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -520,6 +545,8 @@ def delete_clients(
         
         db.commit()
         return {"status": "success", "updated_count": updated_count}
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))

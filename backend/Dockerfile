@@ -16,6 +16,7 @@ COPY requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir --timeout=120 --retries=5 -r requirements.txt
+# For dev/test dependencies: pip install -r requirements-dev.txt
 
 # (We do NOT need 'playwright install' here because the image already has it!)
 

@@ -162,6 +162,11 @@ export function clearToken(): void {
   localStorage.removeItem("cf_user")
 }
 
+function redirectToLogin(): void {
+  const returnTo = encodeURIComponent(window.location.pathname + window.location.search)
+  window.location.replace(`/auth/login?reason=session_expired&returnTo=${returnTo}`)
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken()
   const headers: Record<string, string> = {
@@ -172,7 +177,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, { ...options, headers })
   if (res.status === 401) {
     clearToken()
-    window.location.href = "/auth/login?reason=session_expired"
+    redirectToLogin()
     throw new Error("Unauthorized")
   }
   if (res.status === 402) {
@@ -184,6 +189,29 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     throw new Error(error.detail || "Request failed")
   }
   return res.json()
+}
+
+async function requestBlob(path: string, options: RequestInit = {}): Promise<Blob> {
+  const token = getToken()
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(options.headers as Record<string, string> || {}),
+  }
+  if (token) headers["Authorization"] = `Bearer ${token}`
+  const res = await fetch(`${BASE_URL}${path}`, { ...options, headers })
+  if (res.status === 401) {
+    clearToken()
+    redirectToLogin()
+    throw new Error("Unauthorized")
+  }
+  if (res.status === 402) {
+    const error = await res.json().catch(() => ({ detail: "Insufficient credits" }))
+    throw new CreditError(error.detail || "Insufficient credits. Contact your team to top up.")
+  }
+  if (!res.ok) {
+    throw new Error(`Request failed: ${res.status}`)
+  }
+  return res.blob()
 }
 
 export const api = {
@@ -254,10 +282,20 @@ export const api = {
       `/api/v1/sessions/${sessionId}/approved-queries`,
       { method: "PATCH", body: JSON.stringify(queries) }
     ),
-  triggerDiscovery: (sessionId: number, platform: string) =>
+  triggerDiscovery: (
+    sessionId: number,
+    platform: string,
+    query = "",
+    skipDiscovery = false
+  ) =>
     request<{ status: string; message: string }>("/api/v1/search", {
       method: "POST",
-      body: JSON.stringify({ session_id: sessionId, query: "", discovery_platform: platform, skip_discovery: false })
+      body: JSON.stringify({
+        session_id: sessionId,
+        query,
+        discovery_platform: platform,
+        skip_discovery: skipDiscovery,
+      }),
     }),
 
   // Leads Hub
@@ -418,32 +456,13 @@ export async function exportClients(params: {
   status?: string;
   ids?: string[];
 }): Promise<void> {
-  const token = getToken()
   const queryParams = new URLSearchParams({ format: params.format })
   if (params.status) queryParams.set("status", params.status)
 
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  }
-
-  const res = await fetch(`${BASE_URL}/api/v1/export?${queryParams.toString()}`, {
+  const blob = await requestBlob(`/api/v1/export?${queryParams.toString()}`, {
     method: "POST",
-    headers,
     body: JSON.stringify(params.ids ?? null),
   })
-
-  if (res.status === 401) {
-    clearToken()
-    window.location.href = "/auth/login?reason=session_expired"
-    throw new Error("Unauthorized")
-  }
-
-  if (!res.ok) {
-    throw new Error(`Export failed: ${res.status}`)
-  }
-
-  const blob = await res.blob()
   const url = URL.createObjectURL(blob)
   const a = document.createElement("a")
   a.href = url

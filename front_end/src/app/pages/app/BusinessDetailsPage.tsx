@@ -145,10 +145,12 @@ export default function BusinessDetailsPage() {
               <MapPin className="h-4 w-4" />
               {business.address}
             </span>
-            <a href={formatUrl(business.website)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-blue-600 hover:text-blue-700">
-              <ExternalLink className="h-4 w-4" />
-              {business.website}
-            </a>
+            {business.website && (
+              <a href={formatUrl(business.website)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-blue-600 hover:text-blue-700">
+                <ExternalLink className="h-4 w-4" />
+                {business.website}
+              </a>
+            )}
           </div>
         </div>
         <div className="flex gap-2">
@@ -273,9 +275,13 @@ export default function BusinessDetailsPage() {
                     <div>
                       <dt className="text-sm text-muted-foreground">Website</dt>
                       <dd>
-                        <a href={formatUrl(business.website)} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700">
-                          {business.website}
-                        </a>
+                        {business.website ? (
+                          <a href={formatUrl(business.website)} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700">
+                            {business.website}
+                          </a>
+                        ) : (
+                          "—"
+                        )}
                       </dd>
                     </div>
                   </dl>
@@ -707,9 +713,13 @@ export default function BusinessDetailsPage() {
                     <span className="font-semibold">Website</span>
                   </div>
                   <div className="pl-8">
-                    <a href={formatUrl(business.website)} target="_blank" rel="noopener noreferrer" className="font-medium text-blue-600 hover:text-blue-700">
-                      {business.website}
-                    </a>
+                    {business.website ? (
+                      <a href={formatUrl(business.website)} target="_blank" rel="noopener noreferrer" className="font-medium text-blue-600 hover:text-blue-700">
+                        {business.website}
+                      </a>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
                   </div>
                 </div>
               </div>

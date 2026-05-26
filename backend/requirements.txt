@@ -1,5 +1,6 @@
 # --- Core Backend ---
-fastapi==0.109.2
+fastapi
+slowapi>=0.1.9==0.109.2
 uvicorn==0.27.1
 sqlalchemy==2.0.27
 alembic==1.13.2
@@ -38,8 +39,8 @@ python-whois==0.8.0
 dnspython==2.6.0
 openpyxl==3.1.2
 
-pytest
-pytest-asyncio
-
 # --- Email Sending ---
 sendgrid>=6.11.0
+
+email-validator>=2.0.0
+apscheduler>=3.10.0

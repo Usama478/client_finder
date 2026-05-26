@@ -54,9 +54,11 @@ def search_google_maps(db: Session, user_id: int, query: str, page_token: str = 
     if session_id:
         search_session = db.query(SearchSession).filter(
             SearchSession.search_id == session_id
+        ).filter(
+            SearchSession.user_id == user_id
         ).first()
         if not search_session:
-            return {"error": f"Session {session_id} not found"}
+            raise ValueError("Session not found")
     else:
         search_session = SearchSession(
             user_id=user_id,

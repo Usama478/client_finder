@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from app.core.limiter import limiter
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr, field_validator
@@ -72,9 +73,10 @@ def get_current_user(
     return user
 
 @router.post("/signup")
-def signup(request: SignupRequest, db: Session = Depends(get_db)):
+@limiter.limit("3/minute")
+def signup(request: Request, body: SignupRequest, db: Session = Depends(get_db)):
     existing = db.query(User).filter(
-        User.email == request.email.lower().strip()).first()
+        User.email == body.email.lower().strip()).first()
     if existing:
         raise HTTPException(
             status_code=400,
@@ -83,9 +85,9 @@ def signup(request: SignupRequest, db: Session = Depends(get_db)):
     verification_token = secrets.token_urlsafe(32)
     verification_expires = datetime.now(timezone.utc) + timedelta(hours=1)
     user = User(
-        name=request.name.strip(),
-        email=request.email.lower().strip(),
-        password_hash=hash_password(request.password),
+        name=body.name.strip(),
+        email=body.email.lower().strip(),
+        password_hash=hash_password(body.password),
         is_verified=False,
         is_active=True,
         verification_token=verification_token,
@@ -110,7 +112,8 @@ def signup(request: SignupRequest, db: Session = Depends(get_db)):
     return {"message": "Account created. Please check your email to verify your account."}
 
 @router.post("/login", response_model=LoginResponse)
-def login(form_data: OAuth2PasswordRequestForm = Depends(),
+@limiter.limit("5/minute")
+def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(),
           db: Session = Depends(get_db)):
     user = db.query(User).filter(
         User.email == form_data.username.lower().strip()).first()
@@ -146,10 +149,11 @@ class LoginRequest(BaseModel):
     password: str
 
 @router.post("/login-json", response_model=LoginResponse)
-def login_json(request: LoginRequest, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def login_json(request: Request, body: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(
-        User.email == request.email.lower().strip()).first()
-    if not user or not verify_password(request.password, user.password_hash):
+        User.email == body.email.lower().strip()).first()
+    if not user or not verify_password(body.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -190,7 +194,8 @@ def logout(current_user: User = Depends(get_current_user)):
     return {"message": "Logged out successfully"}
 
 @router.post("/verify-email")
-def verify_email(token: str, db: Session = Depends(get_db)):
+@limiter.limit("3/minute")
+def verify_email(request: Request, token: str, db: Session = Depends(get_db)):
     user = db.query(User).filter(
         User.verification_token == token).first()
     if not user:
@@ -208,10 +213,11 @@ class ForgotPasswordRequest(BaseModel):
     email: str
 
 @router.post("/forgot-password")
-def forgot_password(request: ForgotPasswordRequest,
+@limiter.limit("3/minute")
+def forgot_password(request: Request, body: ForgotPasswordRequest,
                     db: Session = Depends(get_db)):
     user = db.query(User).filter(
-        User.email == request.email.lower().strip()).first()
+        User.email == body.email.lower().strip()).first()
     if user:
         token = secrets.token_urlsafe(32)
         user.verification_token = token
@@ -236,16 +242,17 @@ class ResetPasswordRequest(BaseModel):
         return v
 
 @router.post("/reset-password")
-def reset_password(request: ResetPasswordRequest,
+@limiter.limit("3/minute")
+def reset_password(request: Request, body: ResetPasswordRequest,
                    db: Session = Depends(get_db)):
     user = db.query(User).filter(
-        User.verification_token == request.token).first()
+        User.verification_token == body.token).first()
     if not user:
         raise HTTPException(status_code=400, detail="Invalid or expired reset token")
     if user.verification_token_expires is None or \
        datetime.now(timezone.utc) > user.verification_token_expires.replace(tzinfo=timezone.utc):
         raise HTTPException(status_code=400, detail="Reset token has expired")
-    user.password_hash = hash_password(request.password)
+    user.password_hash = hash_password(body.password)
     user.verification_token = None
     user.verification_token_expires = None
     db.commit()

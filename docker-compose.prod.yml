@@ -19,6 +19,10 @@ services:
       - FRONTEND_URL=${FRONTEND_URL}
       - EMAIL_AGENT_ENABLED=${EMAIL_AGENT_ENABLED}
       - DEFAULT_CREDITS=${DEFAULT_CREDITS}
+      - VALUESERP_API_KEY=${VALUESERP_API_KEY}
+      - HUNTER_API_KEY=${HUNTER_API_KEY}
+      - SCRAPERAPI_KEY=${SCRAPERAPI_KEY}
+      - SENDGRID_WEBHOOK_KEY=${SENDGRID_WEBHOOK_KEY}
     depends_on:
       db:
         condition: service_healthy
@@ -29,7 +33,7 @@ services:
       context: ./front_end
       dockerfile: Dockerfile
       args:
-        - VITE_API_BASE_URL=https://${DOMAIN}/api/v1
+        - VITE_API_URL=https://YOURDOMAIN.com
     container_name: client_finder_frontend
     restart: always
     depends_on:

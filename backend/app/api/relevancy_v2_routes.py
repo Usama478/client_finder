@@ -82,6 +82,8 @@ def run_relevancy_v2(request: RelevancyV2RunRequest, db: Session = Depends(get_d
         SearchResult.result_id == request.business_id,
         SearchResult.user_id == current_user.user_id
     ).first()
+    if lead is None or lead.user_id != current_user.user_id:
+        raise HTTPException(status_code=404, detail="Not found")
     use_fast_path = (
         lead is not None
         and lead.scraping_status == "completed"

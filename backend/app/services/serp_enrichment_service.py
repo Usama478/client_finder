@@ -106,6 +106,27 @@ async def enrich_lead_via_serp(search_result_id: int, db) -> dict:
             except Exception as e:
                 logger.error(f"Failed to fetch SERP results for query '{query2}': {e}")
 
+            # Query 3: Company snippets (about/founded/headquarters)
+            try:
+                params = {
+                    "api_key": api_key,
+                    "q": query3,
+                    "num": 10,
+                    "output": "json"
+                }
+                response = await client.get("https://api.valueserp.com/search", params=params)
+                response.raise_for_status()
+                data = response.json()
+
+                organic_results = data.get("organic_results", [])
+                for item in organic_results:
+                    snippet = item.get("snippet", "").strip()
+                    if len(snippet) >= 40:
+                        company_snippets.append(snippet)
+
+            except Exception as e:
+                logger.error(f"Failed to fetch SERP results for query '{query3}': {e}")
+
         product_summary = None
 
         try:
@@ -167,7 +188,7 @@ async def enrich_lead_via_serp(search_result_id: int, db) -> dict:
 
         enrichment = {
             "linkedin_url": linkedin_url,
-            "company_snippets": [],
+            "company_snippets": company_snippets,
             "product_snippets": product_snippets,
             "company_summary": None,
             "product_summary": product_summary,

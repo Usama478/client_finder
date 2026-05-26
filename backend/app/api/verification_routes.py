@@ -14,7 +14,7 @@ from app.agents.verification.service import (
     run_verification_batch,
     run_verification_for_business,
 )
-from app.core.security import get_current_user
+from app.core.security import get_current_user, get_current_admin_user
 from app.db.session import SessionLocal, get_db
 from app.models.search_result import SearchResult
 from app.services.credit_service import check_credits, deduct_credits
@@ -75,14 +75,19 @@ def verify_batch(
     if not batch_request.business_ids:
         raise HTTPException(status_code=400, detail="No business_ids provided.")
 
+    requested = set(batch_request.business_ids)
     owned_ids = [
         r.result_id for r in db.query(SearchResult).filter(
-            SearchResult.result_id.in_(batch_request.business_ids),
+            SearchResult.result_id.in_(requested),
             SearchResult.user_id == current_user.user_id
         ).all()
     ]
-    if not owned_ids:
-        raise HTTPException(status_code=404, detail="No matching business IDs found.")
+    missing = requested - set(owned_ids)
+    if missing:
+        raise HTTPException(
+            status_code=404,
+            detail=f"IDs not found or not owned: {sorted(missing)}",
+        )
 
     cost = len(owned_ids) * 2
     check_credits(db, current_user.user_id, cost)
@@ -151,7 +156,7 @@ def verify_single(business_id: int, db: Session = Depends(get_db), current_user 
 
 
 @router.post("/admin/reset-stale")
-def reset_stale(max_age_minutes: int = 15, current_user = Depends(get_current_user)) -> Dict[str, Any]:
+def reset_stale(max_age_minutes: int = 15, current_user = Depends(get_current_admin_user)) -> Dict[str, Any]:
     """
     Reset leads permanently stuck in ``verification_status="processing"``.
 
