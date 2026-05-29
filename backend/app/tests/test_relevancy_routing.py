@@ -449,3 +449,29 @@ class TestGraphSmoke:
             result = relevancy_graph.invoke(state)
         assert result["relevance_decision"] == "irrelevant"
         assert result.get("is_finalized") is True
+
+
+# ---------------------------------------------------------------------------
+# Schema contract
+# ---------------------------------------------------------------------------
+
+def test_llm_relevance_decision_accepts_low_confidence():
+    """Judge outputs low_confidence; schema must accept it without crashing."""
+    from app.agents.relevancy.schemas import LLMRelevanceDecision
+
+    decision = LLMRelevanceDecision.model_validate(
+        {
+            "relevance_decision": "low_confidence",
+            "manual_review": True,
+            "confidence": 0.25,
+            "match_reasons": [],
+            "mismatch_reasons": ["Insufficient evidence to classify."],
+            "signals_used": ["collect_status"],
+            "relevance_score": 0,
+            "relevance_reason": "Insufficient evidence to classify.",
+            "business_type": "Unknown",
+            "primary_niche": "Unknown",
+        }
+    )
+    assert decision.relevance_decision == "low_confidence"
+    assert decision.manual_review is True

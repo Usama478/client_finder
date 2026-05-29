@@ -1,8 +1,7 @@
 from __future__ import annotations
 
+import concurrent.futures
 import logging
-import multiprocessing
-import queue as _queue_module
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -18,8 +17,16 @@ logger = logging.getLogger(__name__)
 _PHASE: dict[int, str] = {}
 _PHASE_LOCK = threading.Lock()
 
+# Redis-backed phase tracking so the API server (a different process from the
+# Celery worker) can read live verification progress. In-process _PHASE remains
+# a same-process fallback when Redis is unavailable.
+_PHASE_KIND = "verif"
+
 
 def _set_phase(business_id: int, phase: str | None) -> None:
+    from app.core.redis_client import set_phase as _redis_set_phase
+
+    _redis_set_phase(_PHASE_KIND, business_id, phase)
     with _PHASE_LOCK:
         if phase is None:
             _PHASE.pop(business_id, None)
@@ -28,6 +35,11 @@ def _set_phase(business_id: int, phase: str | None) -> None:
 
 
 def get_phase(business_id: int) -> str | None:
+    from app.core.redis_client import get_phase as _redis_get_phase
+
+    phase = _redis_get_phase(_PHASE_KIND, business_id)
+    if phase is not None:
+        return phase
     with _PHASE_LOCK:
         return _PHASE.get(business_id)
 
@@ -463,48 +475,27 @@ def _persist_verification_to_db(
         db.close()
 
 
-def _run_graph_subprocess(
-    initial_state: dict,
-    result_queue: "multiprocessing.Queue[tuple]",
-) -> None:
+_HEAVY_STATE_KEYS = (
+    "homepage_html",
+    "contact_page_html",
+    "about_page_html",
+    "full_site_text",
+    "scraped_text_content",
+    "relevancy_artifacts",
+)
+
+
+def _invoke_verification_graph(initial_state: dict) -> dict:
     """
-    Subprocess worker: invokes the verification graph and puts a
-    ``("ok", final_state)`` or ``("error", exc)`` tuple into *result_queue*.
+    Thread worker: invokes the verification graph and strips heavy fields.
 
-    Running the graph in a dedicated subprocess means that
-    ``Process.terminate()`` (SIGTERM) physically kills every blocking I/O
-    operation — Playwright sessions, WHOIS sockets, LLM HTTP connections —
-    when the outer timeout fires.  ``ThreadPoolExecutor`` + ``Future.cancel()``
-    cannot do this because ``cancel()`` is a no-op once the thread has started.
-
-    Note: all DB sessions in the parent must be closed *before* the process is
-    started so that the fork'd child does not inherit live connection file
-    descriptors.  The lock and initial-state queries both close their sessions
-    in ``finally`` blocks before this function is called.
+    Celery prefork workers are daemonic and cannot spawn child processes, so
+    graph execution runs in a dedicated thread with an outer timeout instead.
     """
-    try:
-        # Import inside the worker so the module is re-initialised cleanly in
-        # the child process (important for non-fork start methods).
-        from app.agents.verification.graph import verification_graph  # noqa: PLC0415
-
-        final_state = verification_graph.invoke(initial_state)
-        for _heavy_key in (
-            "homepage_html",
-            "contact_page_html",
-            "about_page_html",
-            "full_site_text",
-            "scraped_text_content",
-            "relevancy_artifacts",
-        ):
-            final_state[_heavy_key] = None
-        result_queue.put(("ok", final_state))
-    except Exception as exc:  # noqa: BLE001
-        try:
-            result_queue.put(("error", exc))
-        except Exception:
-            # Some exceptions are not picklable; wrap them so the queue put
-            # never itself raises.
-            result_queue.put(("error", RuntimeError(f"{type(exc).__name__}: {exc}")))
+    final_state = verification_graph.invoke(initial_state)
+    for _heavy_key in _HEAVY_STATE_KEYS:
+        final_state[_heavy_key] = None
+    return final_state
 
 
 def run_verification_for_business(business_id: int) -> Dict[str, object]:
@@ -622,7 +613,7 @@ def run_verification_for_business(business_id: int) -> Dict[str, object]:
         _lead_for_enrich = _enrich_db.query(SearchResult).filter(SearchResult.result_id == business_id).first()
         if _lead_for_enrich and _lead_for_enrich.serp_enrichment is None:
             import asyncio
-            import concurrent.futures
+
             def _run_enrich():
                 new_loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(new_loop)
@@ -647,42 +638,20 @@ def run_verification_for_business(business_id: int) -> Dict[str, object]:
     logger.info(f"[VERIFICATION] Starting web verification for business_id={business_id}")
 
     try:
-        _result_queue: multiprocessing.Queue = multiprocessing.Queue()
-        _process = multiprocessing.Process(
-            target=_run_graph_subprocess,
-            args=(initial_state, _result_queue),
-            daemon=True,
-        )
-        _process.start()
-        _process.join(timeout=GRAPH_EXEC_TIMEOUT_S)
-
-        if _process.is_alive():
-            # Hard timeout: SIGTERM terminates the subprocess and all blocking
-            # I/O it owns (Playwright, WHOIS, LLM sockets).  Unlike
-            # Future.cancel(), this actually stops the work.
-            _process.terminate()
-            _process.join(timeout=5)
-            if _process.is_alive():
-                # SIGTERM was ignored (e.g. a C-extension signal mask); escalate.
-                _process.kill()
-                _process.join(timeout=2)
-            raise TimeoutError(
-                f"Graph execution exceeded {GRAPH_EXEC_TIMEOUT_S}s hard limit"
-            )
-
-        # Subprocess exited normally — retrieve the result.
+        _executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         try:
-            _status, _payload = _result_queue.get(timeout=5)
-        except _queue_module.Empty:
-            raise RuntimeError(
-                f"Graph subprocess exited (code={_process.exitcode}) without returning a result"
-            )
+            _future = _executor.submit(_invoke_verification_graph, initial_state)
+            try:
+                final_state = _future.result(timeout=GRAPH_EXEC_TIMEOUT_S)
+            except concurrent.futures.TimeoutError:
+                _future.cancel()
+                raise TimeoutError(
+                    f"Graph execution exceeded {GRAPH_EXEC_TIMEOUT_S}s hard limit"
+                )
+        finally:
+            # Do not wait for a stuck thread; cancel pending work and return.
+            _executor.shutdown(wait=False, cancel_futures=True)
 
-        if _status == "error":
-            raise _payload  # re-raise the original graph exception
-
-        final_state = _payload
-        
         logger.info(f"[VERIFICATION] Website accessible check for business_id={business_id}: {final_state.get('website_alive')}")
         logger.info(f"[VERIFICATION] Contact page found for business_id={business_id}: {final_state.get('has_contact_page')}")
         logger.info(f"[VERIFICATION] Legitimacy score for business_id={business_id}: {final_state.get('legitimacy_score')}")

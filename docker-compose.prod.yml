@@ -23,9 +23,65 @@ services:
       - HUNTER_API_KEY=${HUNTER_API_KEY}
       - SCRAPER_API_KEY=${SCRAPER_API_KEY}
       - SENDGRID_WEBHOOK_PUBLIC_KEY=${SENDGRID_WEBHOOK_PUBLIC_KEY}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - REDIS_URL=redis://redis:6379/2
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - client_finder_net
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: client_finder_celery_worker
+    restart: always
+    # prefork pool is mandatory (multiprocessing.Process + asyncio.run are
+    # fork-safe only under prefork); --concurrency=1 fits the t2.micro RAM budget.
+    command: celery -A app.celery_app:celery_app worker --loglevel=info --concurrency=1 --pool=prefork --max-memory-per-child=400000
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - MAPS_API_KEY=${MAPS_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SENDGRID_API_KEY=${SENDGRID_API_KEY}
+      - SENDGRID_FROM_EMAIL=${SENDGRID_FROM_EMAIL}
+      - SENDGRID_FROM_NAME=${SENDGRID_FROM_NAME}
+      - SECRET_KEY=${SECRET_KEY}
+      - GMAIL_ADDRESS=${GMAIL_ADDRESS}
+      - GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD}
+      - FRONTEND_URL=${FRONTEND_URL}
+      - EMAIL_AGENT_ENABLED=${EMAIL_AGENT_ENABLED}
+      - DEFAULT_CREDITS=${DEFAULT_CREDITS}
+      - VALUESERP_API_KEY=${VALUESERP_API_KEY}
+      - HUNTER_API_KEY=${HUNTER_API_KEY}
+      - SCRAPER_API_KEY=${SCRAPER_API_KEY}
+      - SENDGRID_WEBHOOK_PUBLIC_KEY=${SENDGRID_WEBHOOK_PUBLIC_KEY}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - REDIS_URL=redis://redis:6379/2
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - client_finder_net
+  redis:
+    image: redis:7-alpine
+    container_name: client_finder_redis
+    restart: always
+    # Internal-only (no published ports). noeviction protects queued tasks.
+    command: redis-server --maxmemory 128mb --maxmemory-policy noeviction
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - client_finder_net
   frontend:
@@ -75,6 +131,7 @@ services:
       - client_finder_net
 volumes:
   pgdata:
+  redisdata:
 networks:
   client_finder_net:
     driver: bridge

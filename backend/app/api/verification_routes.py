@@ -5,20 +5,20 @@ from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi import Request as FastAPIRequest
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.agents.verification.service import (
     get_phase,
     reset_stale_processing_leads,
-    run_verification_batch,
-    run_verification_for_business,
 )
 from app.core.security import get_current_user, get_current_admin_user
 from app.db.session import SessionLocal, get_db
 from app.models.search_result import SearchResult
 from app.services.credit_service import check_credits, deduct_credits
 from app.services.activity_service import log_activity
+from app.tasks.agent_tasks import run_verification_task
 
 logger = logging.getLogger(__name__)
 
@@ -71,27 +71,31 @@ def verify_batch(
     cost = len(owned_ids) * 5
     check_credits(db, current_user.user_id, cost)
 
-    results = run_verification_batch(owned_ids)
+    # Stamp queued + clear stale verification fields so polling cannot report
+    # a previous run's terminal state while these tasks wait in the queue.
+    # Skip rows currently mid-processing so we do not clobber an in-flight run.
+    leads_to_queue: List[int] = []
+    for lead in db.query(SearchResult).filter(SearchResult.result_id.in_(owned_ids)).all():
+        if lead.verification_status == "processing":
+            continue
+        lead.verification_status = "queued"
+        lead.verification_result = None
+        lead.verification_score = None
+        leads_to_queue.append(lead.result_id)
+    db.commit()
 
-    deduct_credits(db, current_user.user_id, len(owned_ids) * 5, "verification", reference_type="batch")
+    for bid in leads_to_queue:
+        run_verification_task.delay(bid, current_user.user_id)
+
+    deduct_credits(db, current_user.user_id, len(leads_to_queue) * 5, "verification", reference_type="batch")
     db.commit()
     try:
-        log_activity(db, current_user.user_id, "verification_run", metadata={"count": len(owned_ids)}, credits_consumed=len(owned_ids) * 5)
+        log_activity(db, current_user.user_id, "verification_run", metadata={"count": len(leads_to_queue)}, credits_consumed=len(leads_to_queue) * 5)
         db.commit()
     except Exception:
         pass
 
-    total = len(owned_ids)
-    succeeded = sum(1 for r in results if r["status"] == "ok")
-    skipped = sum(1 for r in results if r.get("result", {}).get("status") == "skipped")
-
-    return {
-        "total": total,
-        "succeeded": succeeded,
-        "skipped": skipped,
-        "failed": total - succeeded - skipped,
-        "results": results,
-    }
+    return JSONResponse(status_code=202, content={"status": "queued", "count": len(leads_to_queue)})
 
 
 @router.post("/verify/{business_id}")
@@ -104,7 +108,7 @@ def verify_single(business_id: int, db: Session = Depends(get_db), current_user 
     Returns HTTP 500 for any other unexpected failure.
     """
     check_credits(db, current_user.user_id, 5)
-    
+
     uid = int(current_user.user_id)
     lead = db.query(SearchResult).filter(
         SearchResult.result_id == business_id,
@@ -112,26 +116,25 @@ def verify_single(business_id: int, db: Session = Depends(get_db), current_user 
     ).first()
     if not lead:
         raise HTTPException(status_code=404, detail=f"Business ID {business_id} not found.")
-    
+    if lead.verification_status == "processing":
+        raise HTTPException(status_code=409, detail="Verification already running for this business.")
+
+    # Stamp queued + clear stale verification fields so polling cannot report
+    # a previous run's terminal state while this task waits in the queue.
+    lead.verification_status = "queued"
+    lead.verification_result = None
+    lead.verification_score = None
+    db.commit()
+
+    run_verification_task.delay(business_id, current_user.user_id)
+    deduct_credits(db, current_user.user_id, 5, "verification", reference_id=str(business_id), reference_type="business")
+    db.commit()
     try:
-        result = run_verification_for_business(business_id)
-        
-        deduct_credits(db, current_user.user_id, 5, "verification", reference_id=str(business_id), reference_type="business")
+        log_activity(db, current_user.user_id, "verification_run", business_id=business_id, credits_consumed=5)
         db.commit()
-        try:
-            log_activity(db, current_user.user_id, "verification_run", business_id=business_id, credits_consumed=5)
-            db.commit()
-        except Exception:
-            pass
-        
-        return {"business_id": business_id, "result": result}
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except Exception as exc:
-        logger.error(
-            "verify_single FAILED business_id=%s error=%s", business_id, exc, exc_info=True
-        )
-        raise HTTPException(status_code=500, detail=f"Verification failed: {exc}")
+    except Exception:
+        pass
+    return JSONResponse(status_code=202, content={"status": "queued", "business_id": business_id})
 
 
 @router.post("/admin/reset-stale")
@@ -160,6 +163,34 @@ def reset_stale(max_age_minutes: int = 15, current_user = Depends(get_current_ad
     except Exception as exc:
         logger.error("reset_stale FAILED error=%s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail=f"Reset failed: {exc}")
+
+
+@router.get("/in-flight")
+def get_in_flight_verification(
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user),
+) -> Dict[str, Any]:
+    leads = (
+        db.query(SearchResult)
+        .filter(
+            SearchResult.user_id == current_user.user_id,
+            SearchResult.verification_status.in_(("queued", "processing")),
+        )
+        .order_by(SearchResult.result_id.asc())
+        .all()
+    )
+    return {
+        "items": [
+            {
+                "business_id": lead.result_id,
+                "search_id": lead.search_id,
+                "business_name": lead.business_name,
+                "status": lead.verification_status,
+                "current_phase": get_phase(lead.result_id),
+            }
+            for lead in leads
+        ]
+    }
 
 
 @router.get("/{business_id}/status")

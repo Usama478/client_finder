@@ -430,19 +430,7 @@ def test_stale_field_wipe_in_service():
     with patch("app.agents.verification.service.SessionLocal", return_value=mock_session), \
          patch("app.agents.verification.service._build_initial_state", return_value=_base_state()), \
          patch("app.agents.verification.service._persist_verification_to_db"), \
-         patch("app.agents.verification.service.multiprocessing.Process") as mock_process_class, \
-         patch("app.agents.verification.service.multiprocessing.Queue") as mock_queue_class:
-
-        # Configure mocked Process to bypass real execution and timeout logic
-        mock_process = MagicMock()
-        mock_process.is_alive.return_value = False
-        mock_process_class.return_value = mock_process
-
-        # Let the mocked Queue yield our mocked final state when .get() is called
-        # service.py expects a tuple: (status, payload)
-        mock_queue = MagicMock()
-        mock_queue.get.return_value = ("success", mock_final_state)
-        mock_queue_class.return_value = mock_queue
+         patch("app.agents.verification.service._invoke_verification_graph", return_value=mock_final_state) as mock_invoke_graph:
 
         run_verification_for_business(999)
 
@@ -478,9 +466,8 @@ def test_stale_field_wipe_in_service():
     # ---- Assert: commit was called (wipe was persisted before graph) ----
     assert mock_session.commit.called, "DB commit must be called after the stale-field wipe"
 
-    # ---- Assert: process was created and started (Task 2 initiated) ----
-    assert mock_process_class.called, "multiprocessing.Process must be instantiated in Task 2"
-    assert mock_process_class.return_value.start.called, "The graph subprocess must be started"
+    # ---- Assert: graph was invoked via thread worker (Task 2 initiated) ----
+    assert mock_invoke_graph.called, "_invoke_verification_graph must be called in Task 2"
 
 
 # ---------------------------------------------------------------------------

@@ -94,16 +94,17 @@ function patchJob(prev: JobState | null, patch: Partial<JobState>): JobState | n
 }
 
 export function BackgroundJobsProvider({ children }: { children: ReactNode }) {
-  const { refreshCredits } = useAuth();
+  const { refreshCredits, user, loading } = useAuth();
   const [relevanceJob, setRelevanceJob] = useState<JobState | null>(null);
   const [verifyJob, setVerifyJob] = useState<JobState | null>(null);
 
   const pollingIntervalsRef = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
   const abortControllerRef = useRef<AbortController | null>(null);
   const cancelAIRef = useRef(false);
-  const relevanceOnItemUpdateRef = useRef<((id: string, partial: RelevanceItemUpdate) => void) | undefined>();
-  const relevanceOnSessionRefreshRef = useRef<(() => void | Promise<void>) | undefined>();
-  const verifyOnItemUpdateRef = useRef<((id: string, partial: VerifyItemUpdate) => void) | undefined>();
+  const resumedForUserRef = useRef<number | null>(null);
+  const relevanceOnItemUpdateRef = useRef<((id: string, partial: RelevanceItemUpdate) => void) | undefined>(undefined);
+  const relevanceOnSessionRefreshRef = useRef<(() => void | Promise<void>) | undefined>(undefined);
+  const verifyOnItemUpdateRef = useRef<((id: string, partial: VerifyItemUpdate) => void) | undefined>(undefined);
 
   useEffect(() => {
     return () => {
@@ -142,6 +143,7 @@ export function BackgroundJobsProvider({ children }: { children: ReactNode }) {
           const isTerminal =
             status.verification_status !== null &&
             status.verification_status !== undefined &&
+            status.verification_status !== "queued" &&
             status.verification_status !== "processing" &&
             status.verification_status !== "skipped";
 
@@ -202,84 +204,111 @@ export function BackgroundJobsProvider({ children }: { children: ReactNode }) {
     [stopPollingId]
   );
 
-  const stopRelevancePollingId = useCallback((id: string) => {
-    const key = `relevance_${id}`;
-    const handle = pollingIntervalsRef.current.get(key);
-    if (handle !== undefined) {
-      clearInterval(handle);
-      pollingIntervalsRef.current.delete(key);
-    }
-    setRelevanceJob(prev => {
-      if (!prev) return prev;
-      const processingIds = new Set(prev.processingIds);
-      processingIds.delete(id);
-      return patchJob(prev, { processingIds })!;
-    });
-  }, []);
-
   const startRelevancePolling = useCallback(
-    (id: string) => {
+    (id: string): Promise<"completed" | "failed"> => {
       const key = `relevance_${id}`;
       let failCount = 0;
-      const handle = setInterval(async () => {
-        try {
-          const status = await api.relevancyStatus(Number(id));
-          failCount = 0;
-          const isTerminal =
-            status.relevance_status === "completed" ||
-            status.relevance_status === "failed" ||
-            (status.relevance_decision !== null &&
-              status.relevance_decision !== undefined &&
-              status.relevance_status !== "processing");
+      let sawFreshRun = false;
+      return new Promise(resolve => {
+        const finish = (result: "completed" | "failed") => {
+          const handle = pollingIntervalsRef.current.get(key);
+          if (handle !== undefined) {
+            clearInterval(handle);
+            pollingIntervalsRef.current.delete(key);
+          }
+          resolve(result);
+        };
 
-          if (!isTerminal) {
-            if (status.current_phase) {
+        const handle = setInterval(async () => {
+          try {
+            const status = await api.relevancyStatus(Number(id));
+            failCount = 0;
+            if (
+              status.relevance_status === "queued" ||
+              status.relevance_status === "processing" ||
+              status.current_phase
+            ) {
+              sawFreshRun = true;
+            }
+            const isTerminal =
+              sawFreshRun &&
+              (status.relevance_status === "completed" ||
+                status.relevance_status === "failed" ||
+                (status.relevance_decision !== null &&
+                  status.relevance_decision !== undefined &&
+                  status.relevance_status !== "processing"));
+
+            if (!isTerminal) {
+              if (status.current_phase) {
+                setRelevanceJob(prev => {
+                  if (!prev) return prev;
+                  return patchJob(prev, {
+                    phaseById: { ...prev.phaseById, [id]: status.current_phase! },
+                    activeItemId: prev.activeItemId ?? id,
+                  })!;
+                });
+              } else {
+                setRelevanceJob(prev =>
+                  prev && !prev.activeItemId ? patchJob(prev, { activeItemId: id })! : prev
+                );
+              }
+              return;
+            }
+
+            setRelevanceJob(prev => {
+              if (!prev) return prev;
+              const completedIds = new Set(prev.completedIds).add(id);
+              const processingIds = new Set(prev.processingIds);
+              processingIds.delete(id);
+              const phaseById = { ...prev.phaseById };
+              delete phaseById[id];
+              const progress = prev.totalCount > 0 ? (completedIds.size / prev.totalCount) * 100 : 100;
+              const isRunning = processingIds.size > 0;
+              const isComplete = !isRunning && completedIds.size >= prev.totalCount;
+              return patchJob(prev, {
+                completedIds,
+                processingIds,
+                phaseById,
+                activeItemId: prev.activeItemId === id ? null : prev.activeItemId,
+                progress,
+                isRunning,
+                isComplete,
+              })!;
+            });
+
+            relevanceOnItemUpdateRef.current?.(id, {
+              relevance_decision: status.relevance_decision,
+              relevance_score: status.relevance_score,
+            });
+            finish(status.relevance_status === "failed" ? "failed" : "completed");
+          } catch (err) {
+            failCount++;
+            console.error(`Relevance polling failed for business ${id}`, err);
+            if (failCount >= 3) {
               setRelevanceJob(prev => {
                 if (!prev) return prev;
+                const completedIds = new Set(prev.completedIds).add(id);
+                const processingIds = new Set(prev.processingIds);
+                processingIds.delete(id);
+                const phaseById = { ...prev.phaseById };
+                delete phaseById[id];
+                const progress = prev.totalCount > 0 ? (completedIds.size / prev.totalCount) * 100 : 100;
                 return patchJob(prev, {
-                  phaseById: { ...prev.phaseById, [id]: status.current_phase! },
-                  activeItemId: prev.activeItemId ?? id,
+                  completedIds,
+                  processingIds,
+                  phaseById,
+                  activeItemId: prev.activeItemId === id ? null : prev.activeItemId,
+                  progress,
                 })!;
               });
-            } else {
-              setRelevanceJob(prev =>
-                prev && !prev.activeItemId ? patchJob(prev, { activeItemId: id })! : prev
-              );
+              finish("failed");
             }
-            return;
           }
-
-          stopRelevancePollingId(id);
-          setRelevanceJob(prev => {
-            if (!prev) return prev;
-            const completedIds = new Set(prev.completedIds).add(id);
-            const processingIds = new Set(prev.processingIds);
-            processingIds.delete(id);
-            const phaseById = { ...prev.phaseById };
-            delete phaseById[id];
-            return patchJob(prev, {
-              completedIds,
-              processingIds,
-              phaseById,
-              activeItemId: prev.activeItemId === id ? null : prev.activeItemId,
-            })!;
-          });
-
-          relevanceOnItemUpdateRef.current?.(id, {
-            relevance_decision: status.relevance_decision,
-            relevance_score: status.relevance_score,
-          });
-        } catch (err) {
-          failCount++;
-          console.error(`Relevance polling failed for business ${id}`, err);
-          if (failCount >= 3) {
-            stopRelevancePollingId(id);
-          }
-        }
-      }, 1200);
-      pollingIntervalsRef.current.set(key, handle);
+        }, 1200);
+        pollingIntervalsRef.current.set(key, handle);
+      });
     },
-    [stopRelevancePollingId]
+    []
   );
 
   const pauseRelevanceJob = useCallback(() => {
@@ -349,7 +378,29 @@ export function BackgroundJobsProvider({ children }: { children: ReactNode }) {
       let passed = 0;
       let failed = 0;
       let creditErrorHit = false;
-      let processedCount = 0;
+
+      const markRelevanceItemComplete = (id: string) => {
+        setRelevanceJob(prev => {
+          if (!prev) return prev;
+          const completedIds = new Set(prev.completedIds).add(id);
+          const processingIds = new Set(prev.processingIds);
+          processingIds.delete(id);
+          const phaseById = { ...prev.phaseById };
+          delete phaseById[id];
+          const progress = prev.totalCount > 0 ? (completedIds.size / prev.totalCount) * 100 : 100;
+          const isRunning = processingIds.size > 0;
+          const isComplete = !isRunning && completedIds.size >= prev.totalCount;
+          return patchJob(prev, {
+            completedIds,
+            processingIds,
+            phaseById,
+            activeItemId: prev.activeItemId === id ? null : prev.activeItemId,
+            progress,
+            isRunning,
+            isComplete,
+          })!;
+        });
+      };
 
       const processSingleLead = async (id: string): Promise<void> => {
         if (cancelAIRef.current) return;
@@ -361,9 +412,11 @@ export function BackgroundJobsProvider({ children }: { children: ReactNode }) {
         });
 
         const businessObject = businesses.find(b => String(b.result_id) === id);
-        if (!businessObject) return;
-
-        startRelevancePolling(id);
+        if (!businessObject) {
+          failed++;
+          markRelevanceItemComplete(id);
+          return;
+        }
 
         try {
           if (!businessObject.website) {
@@ -372,43 +425,25 @@ export function BackgroundJobsProvider({ children }: { children: ReactNode }) {
               relevance_reason: "No website — skipped",
             });
             failed++;
+            markRelevanceItemComplete(id);
             return;
           }
 
-          const response = (await api.runRelevancy(
+          const pollingPromise = startRelevancePolling(id);
+
+          await api.runRelevancy(
             businessObject,
             sessionId,
             contextId,
             controller.signal
-          )) as {
-            relevance_decision?: string | null;
-            relevance_score?: number | null;
-            relevance_reason?: string | null;
-            decision?: string | null;
-            score?: number | null;
-            reason?: string | null;
-            confidence?: number | null;
-          };
+          );
 
-          const decision =
-            response.relevance_decision ?? response.decision ?? null;
-          const score =
-            response.relevance_score != null
-              ? response.relevance_score
-              : response.score != null
-                ? response.score
-                : decision === "irrelevant"
-                  ? 0
-                  : response.confidence ?? null;
-          const reason =
-            response.relevance_reason ?? response.reason ?? undefined;
-
-          onItemUpdate?.(id, {
-            relevance_decision: decision,
-            relevance_score: score,
-            relevance_reason: reason,
-          });
-          passed++;
+          const result = await pollingPromise;
+          if (result === "completed") {
+            passed++;
+          } else {
+            failed++;
+          }
         } catch (err: unknown) {
           if ((err as DOMException).name === "AbortError") return;
           if (err instanceof CreditError) {
@@ -422,25 +457,7 @@ export function BackgroundJobsProvider({ children }: { children: ReactNode }) {
             relevance_reason: (err as Error).message,
           });
           failed++;
-        } finally {
-          stopRelevancePollingId(id);
-          processedCount++;
-          const progress = Math.min((processedCount / totalIds) * 100, 95);
-          setRelevanceJob(prev => {
-            if (!prev) return prev;
-            const completedIds = new Set(prev.completedIds).add(id);
-            const processingIds = new Set(prev.processingIds);
-            processingIds.delete(id);
-            const phaseById = { ...prev.phaseById };
-            delete phaseById[id];
-            return patchJob(prev, {
-              completedIds,
-              processingIds,
-              phaseById,
-              activeItemId: null,
-              progress,
-            })!;
-          });
+          markRelevanceItemComplete(id);
         }
       };
 
@@ -492,7 +509,7 @@ export function BackgroundJobsProvider({ children }: { children: ReactNode }) {
         );
       }
     },
-    [refreshCredits, startRelevancePolling, stopRelevancePollingId]
+    [refreshCredits, startRelevancePolling]
   );
 
   const startVerifyJob = useCallback(
@@ -540,6 +557,78 @@ export function BackgroundJobsProvider({ children }: { children: ReactNode }) {
     },
     [refreshCredits, startVerifyPolling]
   );
+
+  useEffect(() => {
+    if (loading) return;
+    if (!user) {
+      resumedForUserRef.current = null;
+      return;
+    }
+    if (resumedForUserRef.current === user.user_id) return;
+
+    resumedForUserRef.current = user.user_id;
+    let cancelled = false;
+
+    const buildResumedJob = (
+      items: Array<{
+        business_id: number;
+        search_id: number | null;
+        current_phase: string | null;
+      }>
+    ): JobState => {
+      const ids = items.map(item => String(item.business_id));
+      const phaseById = items.reduce<Record<string, string>>((acc, item) => {
+        if (item.current_phase) {
+          acc[String(item.business_id)] = item.current_phase;
+        }
+        return acc;
+      }, {});
+
+      return {
+        sessionId: items[0]?.search_id ?? 0,
+        totalCount: ids.length,
+        processingIds: new Set(ids),
+        completedIds: new Set(),
+        phaseById,
+        activeItemId: ids[0] ?? null,
+        progress: 0,
+        isRunning: true,
+        isComplete: false,
+        isPaused: false,
+        bannerVisible: true,
+      };
+    };
+
+    const resumeInFlightJobs = async () => {
+      try {
+        const [relevance, verification] = await Promise.all([
+          api.inFlightRelevancy(),
+          api.inFlightVerification(),
+        ]);
+        if (cancelled) return;
+
+        if (relevance.items.length > 0) {
+          setRelevanceJob(prev => (prev?.isRunning ? prev : buildResumedJob(relevance.items)));
+          Promise.all(relevance.items.map(item => startRelevancePolling(String(item.business_id))))
+            .then(() => refreshCredits())
+            .catch(() => {});
+        }
+
+        if (verification.items.length > 0) {
+          setVerifyJob(prev => (prev?.isRunning ? prev : buildResumedJob(verification.items)));
+          verification.items.forEach(item => startVerifyPolling(String(item.business_id)));
+        }
+      } catch (err) {
+        console.error("Failed to resume in-flight manual jobs", err);
+      }
+    };
+
+    void resumeInFlightJobs();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, refreshCredits, startRelevancePolling, startVerifyPolling, user]);
 
   return (
     <BackgroundJobsContext.Provider

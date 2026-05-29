@@ -44,3 +44,7 @@ sendgrid>=6.11.0
 
 email-validator>=2.0.0
 apscheduler>=3.10.0
+
+# --- Task Queue (Celery + Redis) ---
+celery[redis]==5.6.3
+redis==5.3.1

@@ -300,7 +300,7 @@ class BusinessModelIntelligenceOutput(CompactModel):
 
 
 class LLMRelevanceDecision(CompactModel):
-    relevance_decision: Literal["relevant", "irrelevant", "unknown"]
+    relevance_decision: Literal["relevant", "irrelevant", "unknown", "low_confidence"]
     manual_review: bool = False
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     match_reasons: List[str] = Field(default_factory=list, max_length=8)

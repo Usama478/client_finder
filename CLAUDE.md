@@ -112,6 +112,19 @@ front_end/src/app/layouts/        — AppLayout wraps all authenticated pages
 8. Credit deduction happens via credit_service.py only. Never deduct credits
    by directly modifying the UserCredit model anywhere else.
 
+9. Route handlers that perform synchronous database queries or operations must be
+   defined as standard `def` (not `async def`) so FastAPI automatically runs them
+   on a worker threadpool, preventing main event loop blockage.
+
+10. Campaign resumption endpoints must obtain a row-level lock (`with_for_update()`)
+    on the target `Campaign` row before checking status or launching background
+    tasks to prevent duplicate background workers from running concurrently on the
+    same campaign.
+
+11. State variables (like agent processing phases) must be persisted in database
+    columns or Redis rather than in-memory module-level global variables to ensure
+    horizontal scalability.
+
 ---
 
 ## Database Fields
@@ -138,6 +151,39 @@ front_end/src/app/layouts/        — AppLayout wraps all authenticated pages
 - **API State**: `google_api_request_hash`, `next_page_token`, `result_count`.
 - **Discovery**: `ai_context`, `approved_queries`, `discovery_platform`.
 - **Timestamps**: `created_at`.
+
+### Campaign Model Fields
+- **Core Info**: `id` (PK), `user_id` (FK), `search_intent`, `context_id` (FK), `target_count`, `relevance_threshold` (default 60), `credit_budget`, `discovery_platform` (default "both").
+- **Runtime Stats**: `status` (pending/running/paused/completed/exhausted/failed), `current_pass`, `verified_count`, `credits_used`, `estimated_cost_low`, `estimated_cost_high`.
+- **Results Count**: `total_discovered`, `total_relevance_passed`, `total_verification_passed`.
+- **Log / Error**: `activity_log` (Text/JSON), `error_message`.
+- **Timestamps**: `started_at`, `completed_at`, `created_at`, `updated_at`.
+
+### ExporterProfile Model Fields
+- **Core Info**: `id` (PK), `user_id` (FK), `is_default`, `profile_name`, `company_name`, `company_location`, `year_established`, `website`, `contact_person_name`, `contact_email`.
+- **Lists / JSONB**: `product_categories`, `key_products`, `specializations`, `preferred_categories_for_outreach`, `certifications`, `export_markets`, `client_types`, `target_buyer_types`, `production_strengths`, `services`, `shipping_terms`.
+- **MOQ / Logistics**: `moq`, `monthly_capacity`, `sampling_available`, `sampling_turnaround_days`, `bulk_lead_time_days`, `sample_policy`, `minimum_order_flexibility_note`.
+- **Timestamps**: `created_at`, `updated_at`.
+
+### EmailDraft Model Fields
+- **Keys**: `id` (PK), `business_id` (FK), `exporter_profile_id` (FK), `sequence_position` (default 1).
+- **Content**: `subject`, `body`, `strategy` (JSONB).
+- **Status & Outreach**: `status` (pending_review/approved/sent/bounced/failed/replied), `sendgrid_message_id`, `sendgrid_message_id_normalized`.
+- **Analytics**: `sent_at`, `opened_at`, `clicked_at`, `bounced_at`, `bounce_reason`.
+- **Model details**: `generation_model`, `generation_error`.
+- **Timestamps**: `created_at`, `updated_at`.
+
+### User Model Fields
+- **Core**: `user_id` (PK), `name`, `email`, `password_hash`.
+- **Flags**: `is_admin`, `is_verified`, `is_active`.
+- **Auth state**: `last_login`, `verification_token`, `verification_token_expires`.
+- **Timestamps**: `created_at`, `updated_at`.
+
+### SearchContext Model Fields
+- **Fields**: `id` (PK), `user_id` (FK), `name`, `prompt_text`.
+
+### UserCredit Model Fields
+- **Fields**: `user_id` (PK/FK), `credits_remaining`, `credits_used_total`, `allocated_total`, `last_updated`.
 
 ---
 
@@ -206,7 +252,16 @@ COMPLETED:
 - Campaign engine (automated loop with credit metering)
 - Campaign resume logic
 - Frontend: all main pages built
-- Full audit completed (42 issues identified across security, reliability, UX)
+- Production readiness audit executed, scoring 74/100 initially (Needs Work)
+- **Remediation & Bugfixes Applied**:
+  - Resolved Alembic schema bootstrap by generating the missing `email_drafts` table migrations.
+  - Aligned all manual/standalone endpoints (relevance, single/batch verification, Hunter lookup) to charge correct credit rates, sealing the billing leakage.
+  - Offloaded blocking database queries in `async def` route handlers to the threadpool (converted to synchronous `def` definitions).
+  - Fixed concurrency race conditions on campaign resume by applying row-level locks (`with_for_update()`).
+  - Addressed N+1 database performance queries on search sessions, client lists, and follow-up loops.
+  - Replaced mutable, thread-local dictionary caches for relevance/verification phases with database-backed columns, enabling horizontal scaling.
+  - Optimized production deployment configurations (Uvicorn workers scaled for multi-core, error output sanitization, runtime engine watchdog limits).
 - Frontend UX crashes/loading states (SearchBusinessesPage, AppLayout, BusinessDetailsPage, CampaignEnginePage)
 - API missing routes/IDOR audit
+
 

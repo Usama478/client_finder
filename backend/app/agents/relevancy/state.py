@@ -51,7 +51,7 @@ class RelevancyAgentState(TypedDict):
     should_run_shopify_probe: Optional[bool]
     
     # --- Final Output (Analyst Decisions) ---
-    relevance_decision: Optional[Literal["relevant", "irrelevant", "unknown"]]
+    relevance_decision: Optional[Literal["relevant", "irrelevant", "unknown", "low_confidence"]]
     relevance_score: Optional[int]    # 0-100; persisted as float in DB
     relevance_reason: Optional[str]   # Human-readable explanation
     business_type: Optional[str]      # e.g., 'Retailer', 'Wholesaler'

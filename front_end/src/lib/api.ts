@@ -83,6 +83,18 @@ export interface LeadsResponse {
   total_pages: number
 }
 
+export interface InFlightManualJob {
+  business_id: number
+  search_id: number | null
+  business_name: string | null
+  status: string | null
+  current_phase: string | null
+}
+
+export interface InFlightManualJobsResponse {
+  items: InFlightManualJob[]
+}
+
 export interface SearchResult {
   result_id: number
   session_id: number
@@ -342,18 +354,20 @@ export const api = {
 
   // Verification
   verifyBusiness: (businessId: number) =>
-    request<{ status: string; message: string }>(`/api/v1/verification/verify/${businessId}`, { method: "POST" }),
+    request<{ status: string; business_id: number }>(`/api/v1/verification/verify/${businessId}`, { method: "POST" }),
   verifyBatch: (businessIds: number[]) =>
-    request<{ status: string; results: unknown[] }>("/api/v1/verification/verify/batch",
+    request<{ status: string; count: number }>("/api/v1/verification/verify/batch",
       { method: "POST", body: JSON.stringify({ business_ids: businessIds }) }),
   verificationStatus: (businessId: number) =>
     request<{ business_id: number; verification_status: string | null; verification_result: string | null; verification_score: number | null; current_phase: string | null }>(
-      `/api/v1/verification/${businessId}/status`
+      `/api/v1/verification/${businessId}/status?t=${Date.now()}`
     ),
+  inFlightVerification: () =>
+    request<InFlightManualJobsResponse>("/api/v1/verification/in-flight"),
 
   // Relevancy
   runRelevancy: (business: any, searchId: number, contextId: number | null, signal?: AbortSignal) =>
-    request<{ status: string; decision: string | null; score: number | null; reason: string | null }>("/api/v1/relevancy/v2/run", {
+    request<{ status: string; business_id: number }>("/api/v1/relevancy/v2/run", {
       method: "POST",
       signal,
       body: JSON.stringify({
@@ -374,7 +388,9 @@ export const api = {
       relevance_decision: string | null;
       relevance_score: number | null;
       current_phase: string | null;
-    }>(`/api/v1/relevancy/v2/${businessId}/status`),
+    }>(`/api/v1/relevancy/v2/${businessId}/status?t=${Date.now()}`),
+  inFlightRelevancy: () =>
+    request<InFlightManualJobsResponse>("/api/v1/relevancy/v2/in-flight"),
 
   // Email drafts
   emailDrafts: (businessId: number) => request<EmailDraft[]>(`/api/v1/email/drafts/${businessId}?t=${Date.now()}`),

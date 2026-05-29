@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import List, Optional
-from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -12,7 +12,8 @@ from app.models.search_context import SearchContext
 from app.models.search_result import SearchResult
 from app.core.security import get_current_user
 from app.models.user import User
-from app.services.campaign_engine_service import estimate_campaign_cost, run_campaign_engine, run_campaign_resume
+from app.services.campaign_engine_service import estimate_campaign_cost
+from app.tasks.campaign_tasks import run_campaign_task, resume_campaign_task
 from app.services.credit_service import get_balance
 import json
 
@@ -92,7 +93,6 @@ def get_estimate(target_count: int = 10, platform: str = "both"):
 @router.post("")
 async def create_campaign(
     data: CampaignCreateRequest,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -135,7 +135,7 @@ async def create_campaign(
     db.commit()
     db.refresh(campaign)
 
-    background_tasks.add_task(run_campaign_engine, campaign.id)
+    run_campaign_task.delay(campaign.id)
     return _serialize_campaign(campaign)
 
 
@@ -218,7 +218,6 @@ def get_campaign_results(
 @router.post("/{campaign_id}/resume")
 async def resume_campaign(
     campaign_id: int,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -253,7 +252,7 @@ async def resume_campaign(
     campaign.status = "running"
     campaign.error_message = None
     db.commit()
-    background_tasks.add_task(run_campaign_resume, campaign_id)
+    resume_campaign_task.delay(campaign_id)
     return _serialize_campaign(campaign)
 
 
