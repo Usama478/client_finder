@@ -16,7 +16,7 @@ from app.agents.verification.service import (
 from app.core.security import get_current_user, get_current_admin_user
 from app.db.session import SessionLocal, get_db
 from app.models.search_result import SearchResult
-from app.services.credit_service import check_credits, deduct_credits
+from app.services.credit_service import check_credits, deduct_credits, add_credits
 from app.services.activity_service import log_activity
 from app.tasks.agent_tasks import run_verification_task
 
@@ -84,18 +84,35 @@ def verify_batch(
         leads_to_queue.append(lead.result_id)
     db.commit()
 
-    for bid in leads_to_queue:
-        run_verification_task.delay(bid, current_user.user_id)
-
-    deduct_credits(db, current_user.user_id, len(leads_to_queue) * 5, "verification", reference_type="batch")
+    batch_cost = len(leads_to_queue) * 5
+    deduct_credits(db, current_user.user_id, batch_cost, "verification", reference_type="batch")
     db.commit()
+
+    enqueued: List[int] = []
+    failed: List[int] = []
+    for bid in leads_to_queue:
+        try:
+            run_verification_task.delay(bid, current_user.user_id)
+            enqueued.append(bid)
+        except Exception as enqueue_exc:
+            logger.error("verify_batch: failed to enqueue bid=%s: %s", bid, enqueue_exc)
+            failed.append(bid)
+
+    if failed:
+        refund = len(failed) * 5
+        try:
+            add_credits(db, current_user.user_id, refund, reason="enqueue_refund")
+            db.commit()
+        except Exception as refund_exc:
+            logger.error("verify_batch: refund failed for %d leads: %s", len(failed), refund_exc)
+
     try:
-        log_activity(db, current_user.user_id, "verification_run", metadata={"count": len(leads_to_queue)}, credits_consumed=len(leads_to_queue) * 5)
+        log_activity(db, current_user.user_id, "verification_run", metadata={"count": len(enqueued)}, credits_consumed=len(enqueued) * 5)
         db.commit()
     except Exception:
         pass
 
-    return JSONResponse(status_code=202, content={"status": "queued", "count": len(leads_to_queue)})
+    return JSONResponse(status_code=202, content={"status": "queued", "count": len(enqueued)})
 
 
 @router.post("/verify/{business_id}")
@@ -126,9 +143,20 @@ def verify_single(business_id: int, db: Session = Depends(get_db), current_user 
     lead.verification_score = None
     db.commit()
 
-    run_verification_task.delay(business_id, current_user.user_id)
     deduct_credits(db, current_user.user_id, 5, "verification", reference_id=str(business_id), reference_type="business")
     db.commit()
+
+    try:
+        run_verification_task.delay(business_id, current_user.user_id)
+    except Exception as enqueue_exc:
+        logger.error("verify_single: failed to enqueue bid=%s: %s", business_id, enqueue_exc)
+        try:
+            add_credits(db, current_user.user_id, 5, reason="enqueue_refund")
+            db.commit()
+        except Exception as refund_exc:
+            logger.error("verify_single: refund failed bid=%s: %s", business_id, refund_exc)
+        raise HTTPException(status_code=502, detail="Failed to queue verification task. Credits refunded.")
+
     try:
         log_activity(db, current_user.user_id, "verification_run", business_id=business_id, credits_consumed=5)
         db.commit()

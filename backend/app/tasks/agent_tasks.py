@@ -77,3 +77,19 @@ def run_verification_task(self, result_id: int, user_id: int) -> str:
 
     run_verification_for_business(result_id)
     return "ok"
+
+
+@celery_app.task(
+    bind=True,
+    name="app.tasks.agent_tasks.run_rescore_task",
+    acks_late=True,
+    reject_on_worker_lost=True,
+)
+def run_rescore_task(self, result_id: int, user_id: int) -> str:
+    """Re-run the LLM judge using cached scraped_text_content (rescore only)."""
+    if not _assert_ownership(result_id, user_id):
+        return "forbidden"
+    from app.agents.relevancy.service_v2 import rescore_relevancy_v2_for_business
+
+    rescore_relevancy_v2_for_business(business_id=result_id, exporter_profile="")
+    return "ok"

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import asyncio
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -91,7 +91,7 @@ def get_estimate(target_count: int = 10, platform: str = "both"):
 
 
 @router.post("")
-async def create_campaign(
+def create_campaign(
     data: CampaignCreateRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -132,7 +132,11 @@ async def create_campaign(
         status="pending",
     )
     db.add(campaign)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="You already have an active campaign. Cancel it first.")
     db.refresh(campaign)
 
     run_campaign_task.delay(campaign.id)
@@ -216,7 +220,7 @@ def get_campaign_results(
 
 
 @router.post("/{campaign_id}/resume")
-async def resume_campaign(
+def resume_campaign(
     campaign_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),

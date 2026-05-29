@@ -1,7 +1,10 @@
+import logging
 import re
 import dns.resolver
 from typing import Dict, Any, List, Set
 from app.agents.verification.state import VerificationAgentState
+
+logger = logging.getLogger(__name__)
 
 # Common junk patterns to filter out
 JUNK_PATTERNS = [
@@ -76,7 +79,7 @@ def run_contact_hunter(state: VerificationAgentState) -> Dict[str, Any]:
             
     # --- 3. DNS Validation ---
     valid_emails = []
-    print(f"   📧 CONTACT HUNTER: Validating {len(unique_candidates)} candidates...")
+    logger.info("CONTACT HUNTER: validating %d candidates", len(unique_candidates))
     
     for email in unique_candidates:
         domain = email.split('@')[-1]
@@ -90,7 +93,7 @@ def run_contact_hunter(state: VerificationAgentState) -> Dict[str, Any]:
         if check_mx_record(domain):
             valid_emails.append(email)
         else:
-            print(f"      ⚠️ Dropped {email}: No MX records for {domain}")
+            logger.warning("CONTACT HUNTER: dropped %s — no MX records for %s", email, domain)
 
     # --- 4. Social Link Audit ---
     # We assume 'deep_checks' might have populated this, but let's re-verify from state or dedupe

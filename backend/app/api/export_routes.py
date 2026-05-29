@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Body, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -6,6 +7,8 @@ from datetime import datetime
 import io
 import csv
 import openpyxl
+
+logger = logging.getLogger(__name__)
 from openpyxl.styles import Font, Alignment, PatternFill
 from openpyxl.utils import get_column_letter
 
@@ -315,4 +318,5 @@ def export_clients(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+        logger.error("export endpoint failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Export failed due to an internal error")

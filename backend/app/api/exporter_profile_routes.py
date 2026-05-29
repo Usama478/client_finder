@@ -38,6 +38,12 @@ class ExporterProfileUpdate(BaseModel):
 
 router = APIRouter(prefix="/api/v1/exporter-profiles", tags=["exporter-profiles"])
 
+
+def _profile_to_dict(profile) -> dict:
+    """Serialize an ExporterProfile ORM object, excluding SQLAlchemy internals."""
+    return {k: v for k, v in profile.__dict__.items() if not k.startswith("_")}
+
+
 ALLOWED_FIELDS = {
     "profile_name", "company_name", "company_location", "year_established",
     "website", "contact_person_name", "contact_email", "product_categories",
@@ -57,7 +63,7 @@ def get_my_profile(current_user: User = Depends(get_current_user),
     ).first()
     if not profile:
         return None
-    return profile.__dict__
+    return _profile_to_dict(profile)
 
 @router.post("")
 def create_profile(data: ExporterProfileUpdate,
@@ -74,7 +80,7 @@ def create_profile(data: ExporterProfileUpdate,
                 setattr(existing, key, value)
         db.commit()
         db.refresh(existing)
-        return existing.__dict__
+        return _profile_to_dict(existing)
     profile_data = data.model_dump(exclude_none=True)
     profile_data["user_id"] = current_user.user_id
     profile_data["is_default"] = True
@@ -82,7 +88,7 @@ def create_profile(data: ExporterProfileUpdate,
     db.add(profile)
     db.commit()
     db.refresh(profile)
-    return profile.__dict__
+    return _profile_to_dict(profile)
 
 @router.put("/{profile_id}")
 def update_profile(profile_id: int, data: ExporterProfileUpdate,
@@ -100,4 +106,4 @@ def update_profile(profile_id: int, data: ExporterProfileUpdate,
             setattr(profile, key, value)
     db.commit()
     db.refresh(profile)
-    return profile.__dict__
+    return _profile_to_dict(profile)

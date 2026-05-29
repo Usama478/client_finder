@@ -1,7 +1,11 @@
+import logging
 from app.agents.email_outreach.state import EmailOutreachState
 
+logger = logging.getLogger(__name__)
+
+
 def llm_router(state: EmailOutreachState) -> dict:
-    print("🧠 ROUTER: Deciding Outreach Step...")
+    logger.info("ROUTER: deciding outreach step")
 
     # 1. If status is skipped, stop.
     if state.get("outreach_status") == "skipped":
@@ -15,7 +19,7 @@ def llm_router(state: EmailOutreachState) -> dict:
     # FOR NOW: Auto-approve to show the cycle
     # LATER: Return "wait_for_human"
     if not state.get("approved"):
-        print("   👤 HUMAN: Auto-Approving Draft (Mock)...")
+        logger.info("ROUTER: auto-approving draft (mock)")
         return {"next_action": "auto_approve"}
 
     # 4. If approved, Send it

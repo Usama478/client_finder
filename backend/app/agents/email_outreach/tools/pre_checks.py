@@ -1,11 +1,14 @@
+import logging
 from app.agents.email_outreach.state import EmailOutreachState
+
+logger = logging.getLogger(__name__)
 
 _MIN_EMAIL_CONFIDENCE = 50
 _MIN_DOMAIN_MATCH_CONFIDENCE = 0.4
 
 
 def _skip(code: str, reason: str) -> dict:
-    print(f"   ❌ GATE [{code}]: {reason}. Skipping outreach.")
+    logger.info("GATE [%s]: %s. Skipping outreach.", code, reason)
     return {
         "outreach_status": "skipped",
         "eligibility_block_code": code,
@@ -14,13 +17,13 @@ def _skip(code: str, reason: str) -> dict:
 
 
 def check_outreach_history(state: EmailOutreachState) -> dict:
-    print("   📧 CHECK: Have we contacted them before?")
+    logger.info("CHECK: Have we contacted them before?")
     # MOCK: No previous contact
     return {}
 
 
 def verify_verification_eligibility(state: EmailOutreachState) -> dict:
-    print("   🛡️ CHECK: Is verification output safe for outreach?")
+    logger.info("CHECK: Is verification output safe for outreach?")
 
     if state.get("verification_status") != "completed":
         return _skip(
@@ -102,7 +105,7 @@ def verify_email_presence(state: EmailOutreachState) -> dict:
     if gate.get("outreach_status") == "skipped":
         return gate
 
-    print("   📧 CHECK: Is the email address valid?")
+    logger.info("CHECK: Is the email address valid?")
     if not state.get("contact_email"):
         return _skip("no_contact_email", "no contact email")
     return {}

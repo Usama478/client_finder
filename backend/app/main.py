@@ -24,6 +24,7 @@ from app.api import (
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 import logging
+import redis as redis_lib
 
 from contextlib import asynccontextmanager
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -38,6 +39,27 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s"
 )
+
+_SCHEDULER_LOCK_KEY = "scheduler_leader"
+_SCHEDULER_LOCK_TTL_MS = 660_000  # 11 min — slightly longer than the 10-min job interval
+
+
+def _try_acquire_scheduler_lock() -> bool:
+    """Return True if this process wins the scheduler-leader election.
+
+    Uses Redis SET NX so that only one uvicorn worker process (out of N spawned
+    by --workers N) runs the BackgroundScheduler. The lock has an 11-minute TTL
+    so it auto-expires if the leader worker crashes without releasing it.
+    """
+    try:
+        r = redis_lib.from_url(os.getenv("REDIS_URL", "redis://redis:6379/2"))
+        acquired = r.set(_SCHEDULER_LOCK_KEY, os.getpid(), nx=True, px=_SCHEDULER_LOCK_TTL_MS)
+        r.close()
+        return bool(acquired)
+    except Exception as exc:
+        logger.warning("scheduler lock check failed (%s); starting scheduler anyway", exc)
+        return True
+
 
 def _reset_stale_job() -> None:
     try:
@@ -90,16 +112,21 @@ async def lifespan(app: FastAPI):
 
     _recover_crashed_campaigns()
 
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(_reset_stale_job, "interval", minutes=10, id="reset_stale")
-    scheduler.start()
-    logger.info("startup: stale-verification scheduler started (interval=10m)")
+    scheduler = None
+    if _try_acquire_scheduler_lock():
+        scheduler = BackgroundScheduler()
+        scheduler.add_job(_reset_stale_job, "interval", minutes=10, id="reset_stale")
+        scheduler.start()
+        logger.info("startup: stale-verification scheduler started (interval=10m, pid=%d)", os.getpid())
+    else:
+        logger.info("startup: scheduler lock held by another worker; skipping scheduler (pid=%d)", os.getpid())
 
     yield
 
     # Shutdown
-    scheduler.shutdown(wait=False)
-    logger.info("shutdown: stale-verification scheduler stopped")
+    if scheduler is not None:
+        scheduler.shutdown(wait=False)
+        logger.info("shutdown: stale-verification scheduler stopped")
 
 app = FastAPI(title="Client Finder MVP", lifespan=lifespan)
 app.state.limiter = limiter

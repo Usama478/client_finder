@@ -1,5 +1,5 @@
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.orm import sessionmaker
 import os
 
 # Get DB URL from environment variable, or use default for local Docker
@@ -16,8 +16,6 @@ engine = create_engine(
     pool_recycle=1800,
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-Base = declarative_base()
 
 # Dependency to get DB session
 def get_db():

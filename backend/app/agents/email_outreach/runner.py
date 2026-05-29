@@ -1,7 +1,10 @@
+import logging
 from sqlalchemy.orm import Session
 from app.models.search_result import SearchResult
 from app.agents.email_outreach.graph import outreach_graph
 from app.agents.email_outreach.tools import pre_checks
+
+logger = logging.getLogger(__name__)
 
 
 _BLOCKED_STATUS_CODES = {401, 403, 405, 429, 503}
@@ -75,13 +78,13 @@ def _persist_gate_skip(lead: SearchResult, block_code: str, block_reason: str) -
     lead.email_context = context
 
 def run_outreach_agent(db: Session, business_id: int, min_verification_score: int = None):
-    print(f"\n📧 STARTING OUTREACH for Business ID {business_id}...")
+    logger.info("STARTING OUTREACH for business_id=%d", business_id)
 
     # 1. Fetch Lead (verification must have finished successfully)
     lead = db.query(SearchResult).filter(SearchResult.result_id == business_id).first()
-    
+
     if not lead:
-        print("❌ Error: Lead not found.")
+        logger.error("OUTREACH ERROR: lead not found for business_id=%d", business_id)
         return
 
     if min_verification_score is not None and (lead.verification_score or 0) < min_verification_score:
@@ -94,9 +97,11 @@ def run_outreach_agent(db: Session, business_id: int, min_verification_score: in
             ),
         )
         db.commit()
-        print(
-            f"❌ Error: Verification score {(lead.verification_score or 0)} "
-            f"is below threshold {min_verification_score}."
+        logger.warning(
+            "OUTREACH SKIPPED: verification_score=%s below threshold %s for business_id=%d",
+            lead.verification_score or 0,
+            min_verification_score,
+            business_id,
         )
         return
 
@@ -144,18 +149,18 @@ def run_outreach_agent(db: Session, business_id: int, min_verification_score: in
             block_reason=gate.get("eligibility_block_reason") or "eligibility gate denied outreach",
         )
         db.commit()
-        print(f"❌ Error: {gate.get('eligibility_block_reason')}")
+        logger.info("OUTREACH GATE DENIED: %s", gate.get("eligibility_block_reason"))
         return
 
     # 3. Run Graph
     final_state = outreach_graph.invoke(initial_state)
 
-    print(f"💾 SAVING: {final_state['outreach_status'].upper()}")
-    
+    logger.info("SAVING outreach_status=%s for business_id=%d", final_state["outreach_status"].upper(), business_id)
+
     # 4. Save
     lead.outreach_status = final_state["outreach_status"]
     lead.email_subject = final_state["email_subject"]
     lead.email_body = final_state["email_body"]
-    
+
     db.commit()
-    print("✅ OUTREACH CYCLE COMPLETE.")
+    logger.info("OUTREACH CYCLE COMPLETE for business_id=%d", business_id)

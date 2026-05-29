@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
     container_name: client_finder_backend
     restart: always
-    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-4}"
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - MAPS_API_KEY=${MAPS_API_KEY}
@@ -26,6 +26,7 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - REDIS_URL=redis://redis:6379/2
+      - UVICORN_WORKERS=${UVICORN_WORKERS:-4}
     depends_on:
       db:
         condition: service_healthy
@@ -40,8 +41,9 @@ services:
     container_name: client_finder_celery_worker
     restart: always
     # prefork pool is mandatory (multiprocessing.Process + asyncio.run are
-    # fork-safe only under prefork); --concurrency=1 fits the t2.micro RAM budget.
-    command: celery -A app.celery_app:celery_app worker --loglevel=info --concurrency=1 --pool=prefork --max-memory-per-child=400000
+    # fork-safe only under prefork). Scale CELERY_CONCURRENCY to server vCPU count;
+    # Playwright is RAM-heavy so cap per-child memory accordingly.
+    command: sh -c "celery -A app.celery_app:celery_app worker --loglevel=info --concurrency=${CELERY_CONCURRENCY:-4} --pool=prefork --max-memory-per-child=400000"
     environment:
       - DATABASE_URL=${DATABASE_URL}
       - MAPS_API_KEY=${MAPS_API_KEY}
@@ -62,6 +64,7 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - REDIS_URL=redis://redis:6379/2
+      - CELERY_CONCURRENCY=${CELERY_CONCURRENCY:-4}
     depends_on:
       db:
         condition: service_healthy

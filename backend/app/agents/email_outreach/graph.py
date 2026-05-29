@@ -1,7 +1,10 @@
+import logging
 from langgraph.graph import StateGraph, END
 from app.agents.email_outreach.state import EmailOutreachState
 from app.agents.email_outreach.llm_router import llm_router
 from app.agents.email_outreach.tools import pre_checks, dispatch
+
+logger = logging.getLogger(__name__)
 
 # --- Nodes ---
 def pre_check_node(state: EmailOutreachState):
@@ -21,7 +24,7 @@ def send_node(state: EmailOutreachState):
     return dispatch.send_email(state)
 
 def finalize_node(state: EmailOutreachState):
-    print(f"🏁 FINALIZE: Outreach Status = {state.get('outreach_status')}")
+    logger.info("FINALIZE: outreach_status=%s", state.get("outreach_status"))
     return {}
 
 # --- Graph ---

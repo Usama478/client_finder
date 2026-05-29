@@ -1,9 +1,12 @@
+import logging
 import re
 from urllib.parse import urljoin
 from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
 from typing import Dict, Any, List
 from app.agents.verification.state import VerificationAgentState
+
+logger = logging.getLogger(__name__)
 
 # Real browser header + stealthy config
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
@@ -52,7 +55,7 @@ def run_trust_scanner(state: VerificationAgentState) -> Dict[str, Any]:
     if not url.startswith("http"): 
         url = f"https://{url}"
         
-    print(f"   🕵️‍♀️ TRUST SCANNER: Scanning {url}...")
+    logger.info("TRUST SCANNER: Scanning %s", url)
 
     try:
         with sync_playwright() as p:
@@ -76,7 +79,7 @@ def run_trust_scanner(state: VerificationAgentState) -> Dict[str, Any]:
                 page.goto(url, timeout=30000, wait_until="domcontentloaded")
                 page.wait_for_timeout(3000)
             except Exception as e:
-                print(f"      ⚠️ Page load warning: {e}")
+                logger.warning("TRUST SCANNER: page load warning: %s", e)
                 # Continue anyway, we might have partial content
 
             content = page.content()
@@ -187,7 +190,7 @@ def run_trust_scanner(state: VerificationAgentState) -> Dict[str, Any]:
             subpage_texts = []
             for sub_link in sub_links[:8]:
                 try:
-                    print(f"      🔗 Crawling sub-page: {sub_link}")
+                    logger.info("TRUST SCANNER: crawling sub-page: %s", sub_link)
                     # Change 1: Wait for domcontentloaded so Javascript accordions fully render after a pause
                     page.goto(sub_link, timeout=15000, wait_until="domcontentloaded")
                     page.wait_for_timeout(2000)
@@ -207,7 +210,7 @@ def run_trust_scanner(state: VerificationAgentState) -> Dict[str, Any]:
                         subpage_texts.append(clean_sub_text)
                         hidden_emails.update(extract_emails_from_text(clean_sub_text))
                 except Exception as e:
-                    print(f"      ⚠️ Sub-page load warning ({sub_link}): {e}")
+                    logger.warning("TRUST SCANNER: sub-page load warning (%s): %s", sub_link, e)
             
             browser.close()
 
@@ -227,7 +230,7 @@ def run_trust_scanner(state: VerificationAgentState) -> Dict[str, Any]:
             }
 
     except Exception as e:
-        print(f"   ❌ TRUST SCANNER FAILED: {e}")
+        logger.error("TRUST SCANNER FAILED: %s", e)
         return {
             "full_site_text": "", 
             "social_links": [], 

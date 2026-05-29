@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import threading
 from typing import Optional
 
 from pydantic import BaseModel
@@ -9,15 +8,14 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.agents.relevancy.phase_tracker import get_relevance_phase
-from app.agents.relevancy.service_v2 import rescore_relevancy_v2_for_business
 from app.db.session import get_db
 from app.models.search_context import SearchContext
 from app.models.search_result import SearchResult
 from app.core.security import get_current_user
 from app.models.user import User
-from app.services.credit_service import check_credits, deduct_credits
+from app.services.credit_service import check_credits, deduct_credits, add_credits
 from app.services.activity_service import log_activity
-from app.tasks.agent_tasks import run_relevancy_task
+from app.tasks.agent_tasks import run_relevancy_task, run_rescore_task
 import logging
 logger = logging.getLogger(__name__)
 
@@ -124,15 +122,26 @@ def run_relevancy_v2(request: RelevancyV2RunRequest, db: Session = Depends(get_d
     lead.relevance_score = None
     db.commit()
 
-    run_relevancy_task.delay(
-        request.business_id,
-        current_user.user_id,
-        profile_text,
-        "",
-        request.context_id,
-    )
     deduct_credits(db, current_user.user_id, 2, "relevancy", reference_id=str(request.business_id), reference_type="business")
     db.commit()
+
+    try:
+        run_relevancy_task.delay(
+            request.business_id,
+            current_user.user_id,
+            profile_text,
+            "",
+            request.context_id,
+        )
+    except Exception as enqueue_exc:
+        logger.error("run_relevancy: failed to enqueue bid=%s: %s", request.business_id, enqueue_exc)
+        try:
+            add_credits(db, current_user.user_id, 2, reason="enqueue_refund")
+            db.commit()
+        except Exception as refund_exc:
+            logger.error("run_relevancy: refund failed bid=%s: %s", request.business_id, refund_exc)
+        raise HTTPException(status_code=502, detail="Failed to queue relevancy task. Credits refunded.")
+
     try:
         log_activity(db, current_user.user_id, "relevancy_run", business_id=request.business_id, credits_consumed=2)
         db.commit()
@@ -149,37 +158,23 @@ def rescore_relevancy_v2_endpoint(
 ):
     """
     Re-runs only the LLM judge using cached scraped_text_content.
-    Skips all collection nodes. Runs in background thread.
+    Skips all collection nodes. Runs as a Celery task.
     """
-    # Verify the lead belongs to current_user
     lead = db.query(SearchResult).filter(
         SearchResult.result_id == business_id,
         SearchResult.user_id == current_user.user_id
     ).first()
-    
+
     if not lead:
         raise HTTPException(
             status_code=404,
             detail=f"Business ID {business_id} not found or does not belong to current user"
         )
-    
-    profile_text = ""
-    
-    # Run rescore in background thread
-    def _rescore_task():
-        try:
-            rescore_relevancy_v2_for_business(
-                business_id=business_id,
-                exporter_profile=profile_text,
-            )
-        except Exception:
-            pass
-    
-    thread = threading.Thread(target=_rescore_task, daemon=True)
-    thread.start()
-    
+
+    run_rescore_task.delay(business_id, current_user.user_id)
+
     return {
-        "status": "started",
-        "message": f"Rescore started for business_id={business_id}",
+        "status": "queued",
+        "message": f"Rescore queued for business_id={business_id}",
         "business_id": business_id
     }

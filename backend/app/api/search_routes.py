@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import re
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -8,6 +9,8 @@ from app.db.session import get_db
 from app.services.google_maps_service import search_google_maps
 from app.models.user import User
 from app.models.search_session import SearchSession
+
+logger = logging.getLogger(__name__)
 from app.models.search_result import SearchResult
 from app.models.search_context import SearchContext
 from app.models.email_draft import EmailDraft
@@ -16,6 +19,11 @@ from app.services.credit_service import check_credits, deduct_credits
 from app.services.activity_service import log_activity
 
 router = APIRouter(prefix="/api/v1", tags=["search"])
+
+
+def _result_to_dict(result) -> dict:
+    """Serialize a SearchResult ORM object, excluding SQLAlchemy internals."""
+    return {k: v for k, v in result.__dict__.items() if not k.startswith("_")}
 
 class SearchRequest(BaseModel):
     query: str
@@ -137,7 +145,8 @@ async def search_endpoint(request: SearchRequest, db: Session = Depends(get_db),
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("search endpoint failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/sessions/{user_id}")
 def get_search_sessions_deprecated(user_id: int, current_user: User = Depends(get_current_user)):
@@ -311,11 +320,12 @@ def get_search_results(
             result_item.context_prompt = context_prompt
             
         # If no results found (e.g., all were deduplicated), return empty array instead of 404
-        return results
+        return [_result_to_dict(r) for r in results]
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("get_search_results failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/lead/{place_id}")
@@ -325,12 +335,13 @@ def get_lead_details(place_id: str, db: Session = Depends(get_db), current_user:
         lead = db.query(SearchResult).join(SearchSession, SearchResult.search_id == SearchSession.search_id).filter(SearchResult.place_id == place_id).filter(SearchSession.user_id == current_user.user_id).first()
         if not lead:
             raise HTTPException(status_code=404, detail="Lead not found")
-        
-        return lead
+
+        return _result_to_dict(lead)
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("get_lead_details failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.put("/results/{result_id}/client-status")
 def update_client_status(
