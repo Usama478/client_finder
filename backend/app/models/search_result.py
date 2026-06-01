@@ -73,10 +73,10 @@ class SearchResult(Base):
 
     # Verification agent — contact
     contactability_score = Column(Integer, default=0)
-    email_type = Column(String(50), nullable=True)
+    email_type = Column(String(255)), nullable=True)
     all_emails_found = Column(JSONB, default=list)
     all_phones_found = Column(JSONB, default=list)
-    whatsapp_number = Column(String(50), nullable=True)
+    whatsapp_number = Column(String(500)), nullable=True)
     linkedin_company_url = Column(String(500), nullable=True)
     social_links = Column(JSONB, default=dict)
     contact_form_present = Column(Boolean, default=False)
