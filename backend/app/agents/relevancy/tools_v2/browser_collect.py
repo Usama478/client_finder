@@ -467,7 +467,7 @@ def _collect_page_with_browser(page: Page, requested_url: str, timeout_s: int) -
     rendered_excerpt = _visible_text_excerpt(page, limit=1800)
     if not rendered_excerpt:
         rendered_excerpt = _extract_text_from_html(html, limit=1200)
-    text_excerpt = rendered_excerpt[:900] if rendered_excerpt else ""
+    text_excerpt = rendered_excerpt[:3000] if rendered_excerpt else ""
     blocked, block_reason = _detect_block(status_code, html, text_excerpt)
 
     if isinstance(status_code, int):

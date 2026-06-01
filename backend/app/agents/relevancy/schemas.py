@@ -27,7 +27,7 @@ class PageSource(CompactModel):
     status_code: Optional[int] = Field(default=None, ge=100, le=599)
     title: Optional[str] = Field(default=None, max_length=240)
     rendered_title: Optional[str] = Field(default=None, max_length=240)
-    text_excerpt: Optional[str] = Field(default=None, max_length=900)
+    text_excerpt: Optional[str] = Field(default=None, max_length=3000)
     rendered_text_excerpt: Optional[str] = Field(default=None, max_length=1200)
     content_type: Optional[str] = Field(default=None, max_length=100)
     html: Optional[str] = Field(default=None, max_length=40000)
@@ -54,7 +54,7 @@ class PageSource(CompactModel):
     @field_validator("text_excerpt")
     @classmethod
     def _cap_text_excerpt(cls, value: Optional[str]) -> Optional[str]:
-        return _clip(value, 900)
+        return _clip(value, 3000)
 
     @field_validator("rendered_text_excerpt")
     @classmethod

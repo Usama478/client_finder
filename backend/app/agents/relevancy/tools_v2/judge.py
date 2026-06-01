@@ -18,7 +18,7 @@ from app.agents.relevancy.utils import dedupe_limited as _dedupe_limited
 from app.agents.relevancy.utils import safe_list as _safe_list
 
 MAX_ENTITIES = 5
-MAX_CLEAN_EXCERPT = 900
+MAX_CLEAN_EXCERPT = 3000
 B2B_KEYWORDS: Tuple[str, ...] = (
     "wholesale",
     "manufacturer",

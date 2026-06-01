@@ -71,7 +71,7 @@ def _extract_text_snippet(html: Optional[str]) -> Optional[str]:
     text = WS_RE.sub(" ", unescape(no_tags)).strip()
     if not text:
         return None
-    return text[:900]
+    return text[:3000]
 
 
 def _is_html_too_short(html: Optional[str]) -> bool:
