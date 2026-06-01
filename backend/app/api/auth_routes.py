@@ -88,7 +88,7 @@ def signup(request: Request, body: SignupRequest, db: Session = Depends(get_db))
         name=body.name.strip(),
         email=body.email.lower().strip(),
         password_hash=hash_password(body.password),
-        is_verified=False,
+        is_verified=True,
         is_active=True,
         verification_token=verification_token,
         verification_token_expires=verification_expires,
@@ -108,8 +108,8 @@ def signup(request: Request, body: SignupRequest, db: Session = Depends(get_db))
     )
     db.add(default_context)
     db.commit()
-    send_verification_email(user.email, verification_token)
-    return {"message": "Account created. Please check your email to verify your account."}
+    # send_verification_email(user.email, verification_token)
+    return {"message": "Account created successfully. You can now log in."}
 
 @router.post("/login", response_model=LoginResponse)
 @limiter.limit("5/minute")
