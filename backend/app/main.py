@@ -144,16 +144,18 @@ app.add_middleware(
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request, exc):
-    field_names = []
+    field_details = []
     for error in exc.errors():
         loc = error.get("loc", ())
-        if loc:
-            field_names.append(".".join(str(part) for part in loc))
+        field = ".".join(str(part) for part in loc) if loc else ""
+        msg = error.get("msg", "")
+        err_type = error.get("type", "")
+        field_details.append(f"{field} \u2014 {msg} ({err_type})")
 
     logger.error(
         "[VALIDATION_ERROR] Path: %s Fields: %s",
         request.url.path,
-        field_names,
+        "; ".join(field_details),
     )
 
     safe_errors = []

@@ -123,12 +123,16 @@ def _detect_block(status_code: Optional[int], html: Optional[str], text_snippet:
     if status_code in (403, 429):
         return True, f"http_{status_code}"
     lowered = (html or "").lower()
-    
+
     is_rich = bool(status_code == 200 and len((text_snippet or "").strip()) > 350)
-    
+    is_passive_status = isinstance(status_code, int) and status_code in (
+        200, 301, 302, 303, 304, 307, 308, 400, 404, 410
+    )
+    soft_markers = {"captcha", "bot_challenge", "cloudflare_challenge"}
+
     for keyword, reason in BLOCK_MARKERS:
         if keyword in lowered:
-            if is_rich and reason in {"captcha", "bot_challenge", "cloudflare_challenge"}:
+            if reason in soft_markers and (is_rich or is_passive_status):
                 continue
             return True, reason
     return False, None
@@ -142,6 +146,8 @@ def _weak_content_reason(
 ) -> Optional[str]:
     if status_code in (403, 429):
         return f"http_{status_code}"
+    if isinstance(status_code, int) and status_code in (404, 410, 400):
+        return None
     if status_code in (204, 205):
         return "empty_status_body"
     if _contains_js_gate(html):

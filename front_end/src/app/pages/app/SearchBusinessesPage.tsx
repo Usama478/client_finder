@@ -28,7 +28,7 @@ interface BusinessResult {
   source: "maps" | "serp" | null;
   email_found: string | null;
   all_phones_found: string[];
-  relevance_decision: "relevant" | "irrelevant" | "unknown" | "skipped" | "error" | null;
+  relevance_decision: "relevant" | "irrelevant" | "low_confidence" | "unknown" | "skipped" | "error" | null;
   relevance_score: number | null;
   relevance_reason: string;
   verification_status: string | null;
@@ -503,18 +503,18 @@ export default function SearchBusinessesPage() {
   const toggleAll = () => setSelectedIds(p => p.length === filtered.length ? [] : filtered.map(r => r.id));
 
   const tableData = results.length > 0 ? results.map(r => {
-    const verificationRawStatus = r.verification_result || r.verification_status || "pending";
     const verificationScore = r.verification_score != null ? Math.round(r.verification_score) : null;
     const verificationProcessed =
-      (r.verification_status != null && r.verification_status !== "pending")
-      || (r.verification_result != null && r.verification_result !== "pending")
+      r.verification_result != null
+      || (r.verification_status != null && r.verification_status !== "pending")
       || r.verification_score != null;
     const verificationStatus = r.manual_review
-      || verificationRawStatus === "manual_review"
-      || verificationRawStatus === "manual_review_required"
-      || (verificationRawStatus === "partial" && verificationScore !== null && verificationScore < 50)
       ? "manual_review"
-      : verificationRawStatus;
+      : r.verification_result === "verified"      ? "verified"
+      : r.verification_result === "partial"       ? "partial"
+      : r.verification_result === "manual_review" ? "manual_review"
+      : r.verification_status === "failed"        ? "failed"
+      : "pending";
 
     return {
       id: String(r.result_id),
@@ -530,6 +530,7 @@ export default function SearchBusinessesPage() {
         : (r.relevance_score != null ? Math.round(r.relevance_score) : null),
       relevanceStatus: r.relevance_decision === "relevant" ? "passed"
         : r.relevance_decision === "irrelevant" ? "failed"
+        : r.relevance_decision === "low_confidence" ? "low-confidence"
         : r.relevance_decision === "unknown" ? "low-confidence"
         : "pending",
       verificationScore,

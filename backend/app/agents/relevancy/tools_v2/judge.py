@@ -253,6 +253,8 @@ def _confidence_to_score(decision: str, confidence: float) -> int:
         return int(round(_clamp_float(confidence) * 100))
     if decision == "irrelevant":
         return int(round((1.0 - _clamp_float(confidence)) * 100))
+    if decision == "low_confidence":
+        return int(round(_clamp_float(confidence) * 100))
     return 0
 
 
@@ -672,6 +674,70 @@ def _deterministic_prejudge(state: RelevancyAgentState, signals: Dict[str, objec
         )
         return _apply_confidence_policy(decision, "relevant_b2b"), "relevant_b2b"
 
+    # Affirmative fast-path: B2C retailer/storefront is a valid buyer target for a wholesaler/supplier.
+    # Fires only when targets_retailers=True (exporter explicitly seeks retail buyers) and
+    # enough deterministic signals confirm the target is a consumer-facing retail store.
+    # Confidence is kept below 0.65 so _should_call_llm_refiner always fires for
+    # industry-match verification.
+    if targets_retailers:
+        b2c_score = 0
+        b2c_match_reasons: List[str] = []
+        b2c_signal_labels: List[str] = []
+
+        if shopify_probe_detected:
+            b2c_score += 3
+            b2c_match_reasons.append("Shopify store confirmed via catalog probe.")
+            b2c_signal_labels.append("shopify_catalog")
+        if platform_ecommerce and platform_confidence >= 0.65:
+            b2c_score += 2
+            b2c_match_reasons.append(f"E-commerce platform detected ({platform_name}).")
+            b2c_signal_labels.append("platform_detect")
+        if catalog_has and catalog_mode in {"storefront", "brand_catalog"}:
+            b2c_score += 2
+            b2c_match_reasons.append(f"Catalog intelligence identifies site as {catalog_mode}.")
+            b2c_signal_labels.append("catalog_present")
+            b2c_signal_labels.append(f"catalog_mode.{catalog_mode}")
+        if (
+            business_model_primary in {"retailer", "brand"}
+            and business_model_customer == "b2c"
+            and business_model_conf >= 0.50
+        ):
+            b2c_score += 2
+            b2c_match_reasons.append("Business model intelligence confirms B2C retailer/brand.")
+            b2c_signal_labels.append("business_model_intel")
+            b2c_signal_labels.append("business_model_customer.b2c")
+        if weak_storefront_hits >= 2 and not b2b_text_hits:
+            b2c_score += 1
+            b2c_match_reasons.append("Storefront phrasing confirms consumer-facing store.")
+            if "clean_text_excerpt" not in b2c_signal_labels:
+                b2c_signal_labels.append("clean_text_excerpt")
+        if homepage_retail_evidence:
+            b2c_score += len(homepage_retail_evidence)
+            b2c_match_reasons.append("Homepage markup includes retail storefront markers.")
+            if "clean_text_excerpt" not in b2c_signal_labels:
+                b2c_signal_labels.append("clean_text_excerpt")
+
+        if b2c_score >= 3:
+            # Confidence intentionally capped at 0.62 so _should_call_llm_refiner
+            # always fires (threshold is 0.65) and the LLM can verify industry match.
+            if b2c_score >= 7:
+                b2c_confidence = 0.62
+            elif b2c_score >= 5:
+                b2c_confidence = 0.60
+            else:
+                b2c_confidence = 0.58
+            b2c_decision = _build_decision(
+                relevance_decision="relevant",
+                manual_review=True,
+                confidence=b2c_confidence,
+                relevance_reason="B2C retail storefront is a valid buyer target for this exporter.",
+                match_reasons=b2c_match_reasons[:4],
+                mismatch_reasons=[],
+                signals_used=_decision_signals(signal_tags, b2c_signal_labels),
+                business_type="B2C Retailer / Storefront",
+            )
+            return _apply_confidence_policy(b2c_decision, "relevant_b2b"), "relevant_retail_buyer"
+
     unknown_confidence = _unknown_confidence(signal_tags, has_clean_text=bool(clean_excerpt.strip()))
     unknown = _build_decision(
         relevance_decision="low_confidence",
@@ -716,17 +782,56 @@ def _merge_llm_refinement(
     payload = base.model_dump()
     candidate = llm_decision.model_dump()
 
-    if payload.get("relevance_decision") == "unknown":
-        payload["relevance_decision"] = candidate.get("relevance_decision")
+    base_decision = str(payload.get("relevance_decision") or "").strip().lower()
+    candidate_decision = str(candidate.get("relevance_decision") or "").strip().lower()
+    candidate_confidence = _clamp_float(candidate.get("confidence"))
+
+    pre_judge_undecided = base_decision in {"unknown", "low_confidence"}
+    llm_confident = (
+        candidate_decision in {"relevant", "irrelevant"}
+        and candidate_confidence >= 0.55
+    )
+
+    if pre_judge_undecided and llm_confident:
+        payload["relevance_decision"] = candidate_decision
         payload["manual_review"] = bool(candidate.get("manual_review"))
-        payload["confidence"] = _clamp_float(candidate.get("confidence"))
+        payload["confidence"] = candidate_confidence
         if candidate.get("relevance_reason"):
             payload["relevance_reason"] = _one_line(str(candidate.get("relevance_reason")))
         if candidate.get("match_reasons"):
             payload["match_reasons"] = _dedupe_limited(candidate.get("match_reasons") or [], limit=8)
         if candidate.get("mismatch_reasons"):
             payload["mismatch_reasons"] = _dedupe_limited(candidate.get("mismatch_reasons") or [], limit=8)
-    elif candidate.get("relevance_decision") == payload.get("relevance_decision"):
+        if candidate.get("business_type"):
+            payload["business_type"] = _one_line(str(candidate.get("business_type")))
+        if candidate.get("primary_niche"):
+            payload["primary_niche"] = _one_line(str(candidate.get("primary_niche")))
+        policy = "relevant_b2b" if candidate_decision == "relevant" else "irrelevant_ecommerce"
+    elif (
+        base_decision in {"relevant", "irrelevant"}
+        and bool(payload.get("manual_review"))
+        and llm_confident
+        and candidate_decision != base_decision
+    ):
+        # LLM confidently overrides a tentative (manual_review=True) pre-judge decision.
+        # This fires when the pre-judge produced a weak relevant/irrelevant and the LLM
+        # disagrees — e.g., the pre-judge said relevant for a B2C retailer but the LLM
+        # detects an industry mismatch and returns irrelevant.
+        payload["relevance_decision"] = candidate_decision
+        payload["manual_review"] = bool(candidate.get("manual_review"))
+        payload["confidence"] = candidate_confidence
+        if candidate.get("relevance_reason"):
+            payload["relevance_reason"] = _one_line(str(candidate.get("relevance_reason")))
+        if candidate.get("match_reasons"):
+            payload["match_reasons"] = _dedupe_limited(candidate.get("match_reasons") or [], limit=8)
+        if candidate.get("mismatch_reasons"):
+            payload["mismatch_reasons"] = _dedupe_limited(candidate.get("mismatch_reasons") or [], limit=8)
+        if candidate.get("business_type"):
+            payload["business_type"] = _one_line(str(candidate.get("business_type")))
+        if candidate.get("primary_niche"):
+            payload["primary_niche"] = _one_line(str(candidate.get("primary_niche")))
+        policy = "relevant_b2b" if candidate_decision == "relevant" else "irrelevant_ecommerce"
+    elif candidate_decision == base_decision:
         payload["confidence"] = _clamp_float(
             max(float(payload.get("confidence") or 0.0), float(candidate.get("confidence") or 0.0))
         )
@@ -746,7 +851,7 @@ def _merge_llm_refinement(
         limit=12,
     )
     payload["signals_used"] = _filter_signals_for_contract(combined_signals, available_signal_tags)
-    if payload.get("relevance_decision") == "unknown":
+    if str(payload.get("relevance_decision") or "").strip().lower() in {"unknown", "low_confidence"}:
         payload["manual_review"] = True
     payload["confidence"] = _clamp_float(payload.get("confidence"))
     payload["relevance_score"] = _confidence_to_score(
@@ -931,6 +1036,8 @@ def _apply_reason_code(decision: LLMRelevanceDecision, state: RelevancyAgentStat
             code = "[STOREFRONT_REJECTION]"
         else:
             code = "[INSUFFICIENT_EVIDENCE]"
+    elif rel == "low_confidence":
+        code = "[LOW_CONFIDENCE]"
     else:
         code = "[INSUFFICIENT_EVIDENCE]"
 

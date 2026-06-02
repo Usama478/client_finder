@@ -1023,7 +1023,7 @@ export default function EmailWorkspacePage() {
         <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1.5">Sending As</div>
         {!exporterProfile ? (
           <div className="text-[11px] text-muted-foreground">
-            No profile. <Link to="/app/settings" className="text-blue-400 underline">Settings</Link>
+            No profile. <Link to="/app/profile" className="text-blue-400 underline">Profile</Link>
           </div>
         ) : (
           <>
@@ -1071,7 +1071,7 @@ export default function EmailWorkspacePage() {
       {!exporterProfile ? (
         <div className="text-[12px] text-muted-foreground">
           No exporter profile configured.{" "}
-          <Link to="/app/settings" className="text-blue-400 underline">Set up in Settings</Link>
+          <Link to="/app/profile" className="text-blue-400 underline">Set up in Profile</Link>
         </div>
       ) : (
         <div className="space-y-1.5 text-[12px]">

@@ -2,10 +2,13 @@ import os
 import requests
 import time
 import logging
+from datetime import datetime
+
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
+
 from app.models.search_session import SearchSession
 from app.models.search_result import SearchResult
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +42,16 @@ def get_place_details(place_id: str):
         logger.warning(f"⚠️ Failed to fetch details for {place_id}: {e}")
     
     return {"website": None, "phone": None, "url": None}
+
+
+def _search_result_insert_values(search_result: SearchResult) -> dict:
+    """Build a PostgreSQL INSERT payload from a SearchResult instance."""
+    return {
+        column.key: getattr(search_result, column.key)
+        for column in SearchResult.__table__.columns
+        if column.key != "result_id"
+    }
+
 
 def search_google_maps(db: Session, user_id: int, query: str, page_token: str = None, context_id: int = None, session_id: int = None, ai_context: str = None, discovery_platform: str = "both"):
     """
@@ -145,9 +158,10 @@ def search_google_maps(db: Session, user_id: int, query: str, page_token: str = 
             # Create new row for current user
             search_result = SearchResult(
                 place_id=place_id,
+                source="maps",
                 user_id=user_id,
                 search_id=search_session.search_id,
-                raw_data=item, 
+                raw_data=item,
                 business_name=item.get("name"),
                 address=item.get("formatted_address"),
                 website=details["website"],
@@ -155,7 +169,7 @@ def search_google_maps(db: Session, user_id: int, query: str, page_token: str = 
                 scraping_status="pending",
                 relevance_status="pending",
                 verification_status="pending",
-                created_at=datetime.utcnow()
+                created_at=datetime.utcnow(),
             )
 
             # Copy scraped and verification data if available from another user
@@ -194,10 +208,17 @@ def search_google_maps(db: Session, user_id: int, query: str, page_token: str = 
                 search_result.relevancy_artifacts = other_user_lead.relevancy_artifacts
                 # Never copy relevance fields - they are user+context specific
 
-            db.add(search_result)
-            results_added += 1
-            continue
-
+            stmt = (
+                pg_insert(SearchResult)
+                .values(**_search_result_insert_values(search_result))
+                .on_conflict_do_nothing(
+                    constraint="uq_search_results_search_id_website",
+                )
+                .returning(SearchResult.result_id)
+            )
+            row = db.execute(stmt).fetchone()
+            if row:
+                results_added += 1
 
         db.commit()
         search_session.result_count = db.query(SearchResult).filter(

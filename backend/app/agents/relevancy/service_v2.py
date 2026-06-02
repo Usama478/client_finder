@@ -157,7 +157,7 @@ def _strict_contract_output(final_state: RelevancyAgentState) -> Dict[str, objec
 
     raw_decision = llm_output.get("relevance_decision", final_state.get("relevance_decision"))
     decision = str(raw_decision).strip().lower() if raw_decision is not None else "unknown"
-    if decision not in {"relevant", "irrelevant", "unknown"}:
+    if decision not in {"relevant", "irrelevant", "unknown", "low_confidence"}:
         decision = "unknown"
 
     raw_confidence = llm_output.get("confidence", final_state.get("confidence"))
@@ -175,7 +175,7 @@ def _strict_contract_output(final_state: RelevancyAgentState) -> Dict[str, objec
         reason = "No relevance decision available."
 
     manual_review = bool(llm_output.get("manual_review", final_state.get("manual_review")))
-    if decision == "unknown":
+    if decision in {"unknown", "low_confidence"}:
         manual_review = True
 
     return {
@@ -191,7 +191,7 @@ def _strict_contract_output(final_state: RelevancyAgentState) -> Dict[str, objec
 
 def _fallback_judge_output(final_state: RelevancyAgentState) -> Dict[str, object]:
     strict_output = _strict_contract_output(final_state)
-    strict_output["relevance_decision"] = "unknown"
+    strict_output["relevance_decision"] = "low_confidence"
     strict_output["manual_review"] = True
     strict_output["confidence"] = 0.0
     strict_output["relevance_reason"] = "Fallback decision due to missing or invalid judge output."
@@ -217,7 +217,7 @@ def _has_required_contract(output: Dict[str, object]) -> bool:
 
 def _fallback_from_final_state(final_state: RelevancyAgentState) -> Dict[str, object]:
     return {
-        "relevance_decision": final_state.get("relevance_decision") or "unknown",
+        "relevance_decision": final_state.get("relevance_decision") or "low_confidence",
         "manual_review": True,
         "confidence": 0.0,
         "relevance_reason": str(final_state.get("relevance_reason") or "No relevance decision available."),

@@ -400,14 +400,14 @@ class TestGraphSmoke:
         )
 
     def test_blocked_site_ends_manual_review(self):
-        """Blocked collection → finalize_manual_review → unknown + manual_review."""
+        """Blocked collection → finalize_manual_review → low_confidence + manual_review."""
         state = _base_state(website="https://blocked-site.example.com")
         with (
             patch(f"{_NODES_MODULE}.preclassify_target_node", side_effect=_make_preclassify_mock()),
             patch(f"{_NODES_MODULE}.collect_page_sources_node", side_effect=_make_collect_mock(blocked=True, website_exists=False, status_code=403)),
         ):
             result = relevancy_graph.invoke(state)
-        assert result["relevance_decision"] == "unknown"
+        assert result["relevance_decision"] == "low_confidence"
         assert result.get("manual_review") is True
         assert result.get("is_finalized") is True
 
@@ -423,14 +423,14 @@ class TestGraphSmoke:
         assert result.get("is_finalized") is True
 
     def test_503_site_ends_manual_review(self):
-        """503 response → finalize_manual_review → unknown + manual_review."""
+        """503 response → finalize_manual_review → low_confidence + manual_review."""
         state = _base_state(website="https://down.example.com")
         with (
             patch(f"{_NODES_MODULE}.preclassify_target_node", side_effect=_make_preclassify_mock()),
             patch(f"{_NODES_MODULE}.collect_page_sources_node", side_effect=_make_collect_mock(blocked=False, website_exists=False, status_code=503)),
         ):
             result = relevancy_graph.invoke(state)
-        assert result["relevance_decision"] == "unknown"
+        assert result["relevance_decision"] == "low_confidence"
         assert result.get("manual_review") is True
 
     def test_healthy_site_reaches_judge(self):
@@ -449,6 +449,27 @@ class TestGraphSmoke:
             result = relevancy_graph.invoke(state)
         assert result["relevance_decision"] == "irrelevant"
         assert result.get("is_finalized") is True
+
+
+# ---------------------------------------------------------------------------
+# Collect helpers
+# ---------------------------------------------------------------------------
+
+def test_detect_block_ignores_captcha_on_404():
+    """404 pages with passive reCAPTCHA snippets must not be treated as blocked."""
+    from app.agents.relevancy.tools_v2.collect import _detect_block
+
+    html = '<html><body>Page not found <script src="recaptcha"></script></body></html>'
+    blocked, reason = _detect_block(404, html, "page not found")
+    assert blocked is False
+    assert reason is None
+
+
+def test_weak_content_reason_skips_404_escalation():
+    """Gone pages should not trigger browser fallback via weak-content heuristics."""
+    from app.agents.relevancy.tools_v2.collect import _weak_content_reason
+
+    assert _weak_content_reason("https://example.com/b2b", 404, "<html></html>", "") is None
 
 
 # ---------------------------------------------------------------------------

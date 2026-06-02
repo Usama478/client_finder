@@ -115,6 +115,21 @@ export default function BusinessDetailsPage() {
     }
   };
 
+  const renderRelevanceBadge = (decision: string | null | undefined) => {
+    if (decision === "relevant") return <Badge className="bg-green-600">Passed</Badge>;
+    if (decision === "irrelevant") return <Badge className="bg-red-600">Failed</Badge>;
+    if (decision === "low_confidence" || decision === "unknown") return <Badge className="bg-amber-600">Low Confidence</Badge>;
+    return <Badge variant="outline">Pending</Badge>;
+  };
+
+  const renderVerificationBadge = (result: string | null | undefined, status: string | null | undefined) => {
+    if (result === "verified") return <Badge className="bg-green-600">Verified</Badge>;
+    if (result === "partial") return <Badge className="bg-amber-600">Partial</Badge>;
+    if (result === "manual_review") return <Badge className="bg-amber-600">Manual Review</Badge>;
+    if (!result && status === "failed") return <Badge className="bg-red-600">Failed</Badge>;
+    return <Badge variant="outline">—</Badge>;
+  };
+
   const handleGenerateEmail = async () => {
     if (!user) {
       toast.error("User session not found");
@@ -186,7 +201,7 @@ export default function BusinessDetailsPage() {
                 <Target className="h-5 w-5 text-purple-600" />
                 <span className="font-semibold">AI Relevance Score</span>
               </div>
-              <Badge className="bg-green-600">{business.relevance_decision === "relevant" ? "Passed" : "Failed"}</Badge>
+              {renderRelevanceBadge(business.relevance_decision)}
             </div>
             <div className="flex items-center gap-4 mb-2">
               <Progress value={displayRelevanceScore} className="flex-1" />
@@ -203,7 +218,7 @@ export default function BusinessDetailsPage() {
                 <ShieldCheck className="h-5 w-5 text-green-600" />
                 <span className="font-semibold">Verification Score</span>
               </div>
-              <Badge className="bg-green-600">{business.verification_result || "pending"}</Badge>
+              {renderVerificationBadge(business.verification_result, business.verification_status)}
             </div>
             <div className="flex items-center gap-4 mb-2">
               <Progress value={business.verification_score || 0} className="flex-1" />
@@ -308,7 +323,7 @@ export default function BusinessDetailsPage() {
               <div className="p-4 bg-muted rounded-lg border border-[var(--border)]">
                 <div className="flex items-center justify-between mb-3">
                   <span className="font-semibold">Score: {displayRelevanceScore}%</span>
-                  <Badge className="bg-green-600">{business.relevance_decision === "relevant" ? "Passed" : "Failed"}</Badge>
+                  {renderRelevanceBadge(business.relevance_decision)}
                 </div>
                 <Progress value={displayRelevanceScore} className="mb-2" />
                 <div className="text-sm text-muted-foreground">
@@ -380,7 +395,7 @@ export default function BusinessDetailsPage() {
                     <ShieldCheck className="h-5 w-5 text-green-600" />
                     Trust Score: {business.verification_score || 0}%
                   </span>
-                  <Badge className="bg-green-600">{business.verification_result || "pending"}</Badge>
+                  {renderVerificationBadge(business.verification_result, business.verification_status)}
                 </div>
                 <Progress value={business.verification_score || 0} className="mb-2" />
                 <div className="text-sm text-muted-foreground">Trust Level: {business.verification_score >= 70 ? "High Trust" : "Moderate"}</div>
