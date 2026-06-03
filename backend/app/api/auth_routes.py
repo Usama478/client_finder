@@ -104,11 +104,32 @@ def signup(request: Request, body: SignupRequest, db: Session = Depends(get_db))
     initialize_credits(db, user.user_id, 200)
     default_context = SearchContext(
         user_id=user.user_id,
-        name="General Buyer Search",
+        name="Default Search Context",
         prompt_text=(
-            "This is a B2B search for overseas buyers — fashion brands, boutiques, "
-            "and retailers that could place wholesale or private label orders. "
-            "Target businesses that buy finished garments in bulk."
+            """EXPORTER PROFILE
+================
+Business Type: [e.g. Manufacturer / Trader / Both]
+Products: [e.g. cotton bed sheets, terry towels, kids wear]
+Product Categories: [e.g. Home Textiles, Apparel, Sportswear]
+Country of Origin: [e.g. Pakistan]
+Export Markets: [e.g. USA, UK, Germany, Australia]
+
+WHAT I AM LOOKING FOR
+======================
+Target Buyer Type: [e.g. Wholesale importers / Retail chains / Online stores / Distributors]
+Target Business Size: [e.g. Small boutiques / Mid-size retailers / Large chains]
+Target Countries: [e.g. United States, United Kingdom, Canada]
+Preferred Niches: [e.g. luxury home goods, baby products, eco-friendly apparel]
+
+WHAT TO AVOID
+=============
+Exclude Business Types: [e.g. Marketplaces like Amazon/eBay, Dropshippers, Agencies]
+Exclude Countries: [e.g. India, China]
+
+OUTREACH CONTEXT
+================
+My Value Proposition: [e.g. ISO certified, 10 years export experience, MOQ from 500 pcs]
+Tone of Outreach: [e.g. Professional and direct / Friendly and consultative]"""
         ),
     )
     db.add(default_context)
