@@ -21,21 +21,23 @@ router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
+
+def validate_password(password: str) -> str | None:
+    if len(password) < 8:
+        return "Password must be at least 8 characters long."
+    if not re.search(r"[A-Z]", password):
+        return "Password must contain at least one uppercase letter."
+    if not re.search(r"[0-9]", password):
+        return "Password must contain at least one number."
+    if not re.search(r"[^A-Za-z0-9]", password):
+        return "Password must contain at least one special character."
+    return None
+
+
 class SignupRequest(BaseModel):
     name: str
     email: EmailStr
     password: str
-
-    @field_validator("password")
-    @classmethod
-    def password_strength(cls, v: str) -> str:
-        if len(v) < 8:
-            raise ValueError("Password must be at least 8 characters.")
-        if not re.search(r"[A-Z]", v):
-            raise ValueError("Password must contain at least one uppercase letter.")
-        if not re.search(r"\d", v):
-            raise ValueError("Password must contain at least one number.")
-        return v
 
 class LoginResponse(BaseModel):
     access_token: str
@@ -75,12 +77,15 @@ def get_current_user(
 @router.post("/signup")
 @limiter.limit("3/minute")
 def signup(request: Request, body: SignupRequest, db: Session = Depends(get_db)):
+    password_error = validate_password(body.password)
+    if password_error:
+        raise HTTPException(status_code=422, detail=password_error)
     existing = db.query(User).filter(
         User.email == body.email.lower().strip()).first()
     if existing:
         raise HTTPException(
-            status_code=400,
-            detail="Email already registered"
+            status_code=409,
+            detail="An account with this email already exists."
         )
     verification_token = secrets.token_urlsafe(32)
     verification_expires = datetime.now(timezone.utc) + timedelta(hours=1)

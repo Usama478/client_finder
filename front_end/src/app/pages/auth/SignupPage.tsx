@@ -6,8 +6,15 @@ import { Label } from "../../components/ui/label";
 import { Checkbox } from "../../components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Alert, AlertDescription } from "../../components/ui/alert";
-import { AlertCircle, CheckCircle2, ShieldCheck } from "lucide-react";
+import { AlertCircle, CheckCircle2, ShieldCheck, XCircle } from "lucide-react";
 import { useAuth } from "../../../lib/auth-context";
+
+const passwordRules = [
+  { test: (p: string) => p.length >= 8, label: "At least 8 characters" },
+  { test: (p: string) => /[A-Z]/.test(p), label: "At least one uppercase letter" },
+  { test: (p: string) => /[0-9]/.test(p), label: "At least one number" },
+  { test: (p: string) => /[^A-Za-z0-9]/.test(p), label: "At least one special character" },
+];
 
 export default function SignupPage() {
   const navigate = useNavigate();
@@ -21,12 +28,15 @@ export default function SignupPage() {
     termsAccepted: false
   });
   const [error, setError] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
+  const [passwordTouched, setPasswordTouched] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setFormError(null);
     if (formData.password !== formData.confirmPassword) {
       setError("Passwords do not match");
       return;
@@ -35,12 +45,19 @@ export default function SignupPage() {
       setError("Please accept the terms and conditions");
       return;
     }
+    if (passwordRules.some((rule) => !rule.test(formData.password))) {
+      setPasswordTouched(true);
+      setFormError("Please fix the password issues above before continuing.");
+      return;
+    }
     setLoading(true);
     try {
       const message = await signup(formData.fullName, formData.email, formData.password);
       setSuccessMessage(message);
     } catch (err: any) {
-      setError(err.message || "Signup failed. Please try again.");
+      setFormError(
+        err?.response?.data?.detail || err?.message || "Signup failed. Please try again."
+      );
       setLoading(false);
     }
   };
@@ -173,9 +190,29 @@ export default function SignupPage() {
                 type="password"
                 value={formData.password}
                 onChange={(e) => handleChange("password", e.target.value)}
+                onBlur={() => setPasswordTouched(true)}
                 required
               />
             </div>
+            {passwordTouched && (
+              <ul className="space-y-1">
+                {passwordRules.map((rule) => {
+                  const passed = rule.test(formData.password);
+                  return (
+                    <li key={rule.label} className="flex items-center gap-2 text-xs">
+                      {passed ? (
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 flex-shrink-0" />
+                      ) : (
+                        <XCircle className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />
+                      )}
+                      <span className={passed ? "text-muted-foreground" : "text-red-500"}>
+                        {rule.label}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
             {formData.password.length > 0 && (() => {
               const p = formData.password;
               let score = 1;
@@ -228,6 +265,13 @@ export default function SignupPage() {
                 </a>
               </label>
             </div>
+
+            {formError && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{formError}</AlertDescription>
+              </Alert>
+            )}
 
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? "Creating account..." : "Create account"}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import traceback
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -142,10 +143,13 @@ def generate_draft(business_id: int, request: GenerateDraftRequest, current_user
         )
         return result
     except ValueError as exc:
+        traceback.print_exc()
         raise HTTPException(status_code=404, detail=str(exc))
     except HTTPException:
+        traceback.print_exc()
         raise
     except Exception as exc:
+        traceback.print_exc()
         logger.error(
             "generate_draft FAILED business_id=%s error=%s", business_id, exc, exc_info=True
         )

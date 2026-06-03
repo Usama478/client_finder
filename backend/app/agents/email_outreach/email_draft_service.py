@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
+import traceback
 from typing import Dict, List
 
 from app.agents.email_outreach.draft_generator import (
@@ -179,6 +180,7 @@ def generate_draft_for_lead(
                 temperature=temperature,
             )
         except Exception as e:
+            traceback.print_exc()
             draft_content = {"subject": None, "body": None, "error": str(e)}
             strategy = {}
 

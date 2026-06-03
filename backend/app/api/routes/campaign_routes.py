@@ -231,8 +231,13 @@ def resume_campaign(
     ).with_for_update().first()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    if campaign.status in ("running", "pending"):
-        raise HTTPException(status_code=409, detail="Campaign is already running")
+    if campaign.status == "running":
+        raise HTTPException(status_code=400, detail="Campaign is already running")
+    if campaign.status not in ("paused", "completed", "exhausted", "failed"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Campaign cannot be resumed from status '{campaign.status}'",
+        )
     other_active = db.query(Campaign).filter(
         Campaign.user_id == current_user.user_id,
         Campaign.status.in_(["pending", "running"]),
@@ -240,19 +245,6 @@ def resume_campaign(
     ).with_for_update(skip_locked=True).first()
     if other_active:
         raise HTTPException(status_code=409, detail="You already have another active campaign. Cancel it first.")
-    pending_count = db.query(SearchResult).filter(
-        SearchResult.campaign_id == campaign_id,
-        SearchResult.campaign_status == "pending_relevance",
-    ).count()
-    can_drain = pending_count > 0
-    can_discover = (
-        (campaign.verified_count or 0) < campaign.target_count
-        and (campaign.credits_used or 0) < campaign.credit_budget
-    )
-    if not can_drain and not can_discover:
-        if (campaign.verified_count or 0) >= campaign.target_count:
-            raise HTTPException(status_code=400, detail="Target already reached")
-        raise HTTPException(status_code=400, detail="Credit budget exhausted")
     campaign.status = "running"
     campaign.error_message = None
     db.commit()
@@ -269,11 +261,12 @@ def cancel_campaign(
     campaign = db.query(Campaign).filter(
         Campaign.id == campaign_id,
         Campaign.user_id == current_user.user_id,
-    ).first()
+    ).with_for_update().first()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
+    if campaign.status != "running":
+        raise HTTPException(status_code=400, detail="Campaign is not running")
     campaign.status = "paused"
-    campaign.error_message = None
     db.commit()
     return {"status": "paused"}
 

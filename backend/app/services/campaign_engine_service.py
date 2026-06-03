@@ -243,6 +243,10 @@ def _build_seen_domains(db: Session, campaign_id: int) -> set:
     return seen
 
 
+def _fetch_campaign(db: Session, campaign_id: int) -> Optional[Campaign]:
+    return db.query(Campaign).filter(Campaign.id == campaign_id).first()
+
+
 def _finalize_campaign(db: Session, campaign: Campaign) -> None:
     if campaign.status in ("exhausted", "failed"):
         if not campaign.completed_at:
@@ -428,24 +432,31 @@ def run_campaign_resume(campaign_id: int) -> None:
 
         context_text = _get_context_text(db, campaign)
 
-        pending_leads = db.query(SearchResult).filter(
-            SearchResult.campaign_id == campaign_id,
-            SearchResult.campaign_status == "pending_relevance",
-        ).order_by(SearchResult.result_id.asc()).all()
-
-        _append_log(db, campaign, f"Found {len(pending_leads)} unprocessed candidates.")
-
-        for lead in pending_leads:
-            db.refresh(campaign)
-            if campaign.status == "paused":
-                _append_log(db, campaign, "Campaign paused by user.")
+        while True:
+            campaign = _fetch_campaign(db, campaign_id)
+            if not campaign:
                 return
-            if campaign.status == "exhausted":
-                break
-            if campaign.credits_used >= campaign.credit_budget:
+            if campaign.status != "running":
+                _append_log(db, campaign, "Campaign no longer running — stopping.")
+                return
+            if (campaign.credits_used or 0) >= campaign.credit_budget:
+                campaign.status = "exhausted"
+                db.commit()
                 _append_log(db, campaign, "Credit budget reached.", "warn")
                 break
-            if campaign.verified_count >= campaign.target_count:
+            if (campaign.verified_count or 0) >= campaign.target_count:
+                break
+
+            lead = (
+                db.query(SearchResult)
+                .filter(
+                    SearchResult.campaign_id == campaign_id,
+                    SearchResult.campaign_status == "pending_relevance",
+                )
+                .order_by(SearchResult.result_id.asc())
+                .first()
+            )
+            if not lead:
                 break
 
             if _process_candidate(
@@ -457,14 +468,21 @@ def run_campaign_resume(campaign_id: int) -> None:
                 relevance_pass_suffix="",
                 relevance_error_prefix="Relevance error",
             ):
-                db.refresh(campaign)
+                campaign = _fetch_campaign(db, campaign_id)
+                if not campaign:
+                    return
                 if campaign.status == "exhausted":
                     break
+                if campaign.status != "running":
+                    _append_log(db, campaign, "Campaign no longer running — stopping.")
+                    return
                 break
 
-        db.refresh(campaign)
-        if campaign.status == "paused":
-            _append_log(db, campaign, "Campaign paused by user.")
+        campaign = _fetch_campaign(db, campaign_id)
+        if not campaign:
+            return
+        if campaign.status != "running":
+            _append_log(db, campaign, "Campaign no longer running — stopping.")
             return
         if campaign.status == "exhausted":
             _finalize_campaign(db, campaign)
@@ -486,12 +504,12 @@ def run_campaign_resume(campaign_id: int) -> None:
                 and campaign.credits_used < campaign.credit_budget
                 and pass_number < MAX_PASSES
             ):
-                db.refresh(campaign)
-                if campaign.status == "paused":
-                    _append_log(db, campaign, "Campaign paused by user.")
+                campaign = _fetch_campaign(db, campaign_id)
+                if not campaign:
                     return
-                if campaign.status == "exhausted":
-                    break
+                if campaign.status != "running":
+                    _append_log(db, campaign, "Campaign no longer running — stopping.")
+                    return
 
                 pass_number += 1
                 campaign.current_pass = pass_number
@@ -572,17 +590,21 @@ def run_campaign_resume(campaign_id: int) -> None:
                 )
                 db.commit()
                 if campaign.credits_used >= campaign.credit_budget:
+                    campaign.status = "exhausted"
+                    db.commit()
                     _append_log(db, campaign, "Credit budget reached after discovery.", "warn")
                     break
 
                 for result_id in new_result_ids:
-                    db.refresh(campaign)
-                    if campaign.status == "paused":
-                        _append_log(db, campaign, "Campaign paused by user.")
+                    campaign = _fetch_campaign(db, campaign_id)
+                    if not campaign:
                         return
-                    if campaign.status == "exhausted":
-                        break
+                    if campaign.status != "running":
+                        _append_log(db, campaign, "Campaign no longer running — stopping.")
+                        return
                     if campaign.credits_used >= campaign.credit_budget:
+                        campaign.status = "exhausted"
+                        db.commit()
                         _append_log(db, campaign, "Credit budget reached.", "warn")
                         break
                     if campaign.verified_count >= campaign.target_count:
@@ -593,11 +615,19 @@ def run_campaign_resume(campaign_id: int) -> None:
                         continue
 
                     if _process_candidate(db, campaign, lead, context_text, campaign_id):
-                        db.refresh(campaign)
+                        campaign = _fetch_campaign(db, campaign_id)
+                        if not campaign:
+                            return
                         if campaign.status == "exhausted":
                             break
+                        if campaign.status != "running":
+                            _append_log(db, campaign, "Campaign no longer running — stopping.")
+                            return
                         break
 
+            campaign = _fetch_campaign(db, campaign_id)
+            if not campaign:
+                return
             if (
                 pass_number >= MAX_PASSES
                 and campaign.verified_count < campaign.target_count
@@ -609,7 +639,9 @@ def run_campaign_resume(campaign_id: int) -> None:
                 db.commit()
                 _append_log(db, campaign, f"Campaign stopped: max passes ({MAX_PASSES}) reached.", "warn")
 
-        _finalize_campaign(db, campaign)
+        campaign = _fetch_campaign(db, campaign_id)
+        if campaign:
+            _finalize_campaign(db, campaign)
 
     except Exception as e:
         logger.error(f"[CAMPAIGN_RESUME {campaign_id}] Fatal error: {e}", exc_info=True)
@@ -662,12 +694,13 @@ def run_campaign_engine(campaign_id: int) -> None:
             and campaign.credits_used < campaign.credit_budget
             and pass_number < MAX_PASSES
         ):
-            db.refresh(campaign)
-            if campaign.status == "paused":
-                _append_log(db, campaign, "Campaign paused by user.")
+            campaign = _fetch_campaign(db, campaign_id)
+            if not campaign:
                 return
-            if campaign.status == "exhausted":
-                break
+            if campaign.status != "running":
+                _append_log(db, campaign, "Campaign no longer running — stopping.")
+                return
+
             pass_number += 1
             campaign.current_pass = pass_number
             db.commit()
@@ -739,18 +772,22 @@ def run_campaign_engine(campaign_id: int) -> None:
             deduct_credits(db, campaign.user_id, CREDIT_COSTS["discovery_pass"], "campaign_discovery", reference_id=str(campaign_id), reference_type="campaign")
             db.commit()
             if campaign.credits_used >= campaign.credit_budget:
+                campaign.status = "exhausted"
+                db.commit()
                 _append_log(db, campaign, "Credit budget reached after discovery.", "warn")
                 break
 
             # Combined relevance → verification loop (one candidate at a time)
             for result_id in new_result_ids:
-                db.refresh(campaign)
-                if campaign.status == "paused":
-                    _append_log(db, campaign, "Campaign paused by user.")
+                campaign = _fetch_campaign(db, campaign_id)
+                if not campaign:
                     return
-                if campaign.status == "exhausted":
-                    break
+                if campaign.status != "running":
+                    _append_log(db, campaign, "Campaign no longer running — stopping.")
+                    return
                 if campaign.credits_used >= campaign.credit_budget:
+                    campaign.status = "exhausted"
+                    db.commit()
                     _append_log(db, campaign, "Credit budget reached.", "warn")
                     break
                 if campaign.verified_count >= campaign.target_count:
@@ -761,11 +798,19 @@ def run_campaign_engine(campaign_id: int) -> None:
                     continue
 
                 if _process_candidate(db, campaign, lead, context_text, campaign_id):
-                    db.refresh(campaign)
+                    campaign = _fetch_campaign(db, campaign_id)
+                    if not campaign:
+                        return
                     if campaign.status == "exhausted":
                         break
+                    if campaign.status != "running":
+                        _append_log(db, campaign, "Campaign no longer running — stopping.")
+                        return
                     break
 
+        campaign = _fetch_campaign(db, campaign_id)
+        if not campaign:
+            return
         if (
             pass_number >= MAX_PASSES
             and campaign.verified_count < campaign.target_count
@@ -777,7 +822,9 @@ def run_campaign_engine(campaign_id: int) -> None:
             db.commit()
             _append_log(db, campaign, f"Campaign stopped: max passes ({MAX_PASSES}) reached.", "warn")
 
-        _finalize_campaign(db, campaign)
+        campaign = _fetch_campaign(db, campaign_id)
+        if campaign:
+            _finalize_campaign(db, campaign)
 
     except Exception as e:
         logger.error(f"[CAMPAIGN {campaign_id}] Fatal error: {e}", exc_info=True)
