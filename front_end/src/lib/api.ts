@@ -441,6 +441,8 @@ export const api = {
 
   // Exporter profile
   getMyProfile: () => request<ExporterProfile>("/api/v1/exporter-profiles/me"),
+  listProfiles: () =>
+    request<ExporterProfile[]>("/api/v1/exporter-profiles/me"),
   createProfile: (data: any) =>
     request<ExporterProfile>("/api/v1/exporter-profiles",
       { method: "POST", body: JSON.stringify(data) }),

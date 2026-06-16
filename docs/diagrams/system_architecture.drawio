@@ -1,0 +1,195 @@
+<mxfile host="Electron" modified="2026-06-06T06:39:00.000Z" agent="Cursor" version="21.0.0" type="device">
+  <diagram id="clientfinder-sysarch" name="System Architecture">
+    <mxGraphModel dx="1000" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2080" pageHeight="1200" adaptiveColors="auto" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="CLIENT FINDER — SYSTEM ARCHITECTURE" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontStyle=1;fontSize=18;fontColor=#1a237e;" vertex="1" parent="1">
+          <mxGeometry x="600" y="24" width="900" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Layered architecture across 5 deployment tiers (mapping to logical backend layers: API · Service · Agent)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontStyle=2;fontSize=12;fontColor=#555555;" vertex="1" parent="1">
+          <mxGeometry x="600" y="66" width="900" height="24" as="geometry" />
+        </mxCell>
+
+        <mxCell id="t1lbl" value="Tier 1 — User" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontStyle=1;fontSize=13;fontColor=#1a237e;" vertex="1" parent="1">
+          <mxGeometry x="20" y="135" width="240" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="t2lbl" value="Tier 2 — Frontend (SPA)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontStyle=1;fontSize=13;fontColor=#1a237e;" vertex="1" parent="1">
+          <mxGeometry x="20" y="285" width="240" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="t3lbl" value="Tier 3 — API Layer" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontStyle=1;fontSize=13;fontColor=#1a237e;" vertex="1" parent="1">
+          <mxGeometry x="20" y="435" width="240" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="t4lbl" value="Tier 4 — Service + Agent Layer" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontStyle=1;fontSize=13;fontColor=#1a237e;" vertex="1" parent="1">
+          <mxGeometry x="20" y="585" width="240" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="t5lbl" value="Tier 5 — Data + External APIs" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontStyle=1;fontSize=13;fontColor=#1a237e;" vertex="1" parent="1">
+          <mxGeometry x="330" y="1025" width="180" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="user" value="&lt;b&gt;Browser / User&lt;/b&gt;" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="760" y="120" width="120" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="frontend" value="&lt;b&gt;Frontend SPA&lt;/b&gt;&lt;br&gt;React + Vite + TypeScript&lt;br&gt;Clients: api.ts, campaigns-api.ts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="740" y="270" width="180" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="fastapi" value="&lt;b&gt;API Layer — FastAPI&lt;/b&gt;&lt;br&gt;Route handlers (thin, no logic)&lt;br&gt;JWT auth enforced" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="740" y="420" width="180" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="service" value="&lt;b&gt;Service Layer&lt;/b&gt;&lt;br&gt;Business logic,&lt;br&gt;pipeline coordination,&lt;br&gt;AI query generation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="500" y="570" width="170" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="celery" value="&lt;b&gt;Celery Workers&lt;/b&gt;&lt;br&gt;Async task execution" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="570" width="170" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="relevance" value="&lt;b&gt;Relevance Agent&lt;/b&gt;&lt;br&gt;LangGraph — 11 nodes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="960" y="720" width="170" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="verification" value="&lt;b&gt;Verification Agent&lt;/b&gt;&lt;br&gt;LangGraph — 12 nodes" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1400" y="720" width="170" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="emaildraft" value="&lt;b&gt;Email Draft Service&lt;/b&gt;&lt;br&gt;Downstream, user-triggered&lt;br&gt;(not Celery / not LangGraph)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1640" y="720" width="180" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="playwright" value="&lt;b&gt;Playwright&lt;/b&gt;&lt;br&gt;Web scraping" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="870" width="160" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="scraperapi" value="&lt;b&gt;ScraperAPI&lt;/b&gt;&lt;br&gt;proxy fallback" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1360" y="883" width="140" height="46" as="geometry" />
+        </mxCell>
+
+        <mxCell id="gmaps" value="&lt;b&gt;Google Maps API&lt;/b&gt;&lt;br&gt;&#171;external&#187;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="520" y="1020" width="160" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="valueserp" value="&lt;b&gt;ValueSERP&lt;/b&gt;&lt;br&gt;&#171;external&#187;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="740" y="1020" width="160" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="postgres" value="&lt;b&gt;PostgreSQL&lt;/b&gt;&lt;br&gt;Primary DB&lt;br&gt;(all SearchResult state)" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;boundedLbl=1;" vertex="1" parent="1">
+          <mxGeometry x="965" y="1015" width="150" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="redis" value="&lt;b&gt;Redis&lt;/b&gt;&lt;br&gt;Celery message broker" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;boundedLbl=1;" vertex="1" parent="1">
+          <mxGeometry x="1185" y="1015" width="150" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="openai" value="&lt;b&gt;OpenAI&lt;br&gt;GPT-4o-mini&lt;/b&gt;&lt;br&gt;&#171;external&#187;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1400" y="1020" width="160" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="hunter" value="&lt;b&gt;Hunter.io&lt;/b&gt;&lt;br&gt;&#171;external&#187;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1620" y="1020" width="160" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="sendgrid" value="&lt;b&gt;SendGrid&lt;/b&gt;&lt;br&gt;&#171;external&#187;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1840" y="1020" width="160" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_user_frontend" value="browser (HTTPS)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=11;strokeColor=#555555;endArrow=classic;" edge="1" parent="1" source="user" target="frontend">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_frontend_api" value="JWT REST" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=11;strokeColor=#555555;startArrow=classic;endArrow=classic;" edge="1" parent="1" source="frontend" target="fastapi">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_frontend_poll" value="polls (campaign status)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=11;strokeColor=#9673a6;endArrow=open;dashed=1;" edge="1" parent="1" source="frontend" target="fastapi">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_api_service" value="sync" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=11;strokeColor=#555555;endArrow=classic;" edge="1" parent="1" source="fastapi" target="service">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_api_redis" value="async dispatch" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=11;strokeColor=#555555;endArrow=classic;dashed=1;" edge="1" parent="1" source="fastapi" target="redis">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_redis_celery" value="broker" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=11;strokeColor=#555555;endArrow=classic;dashed=1;" edge="1" parent="1" source="redis" target="celery">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_service_pg" value="read/write" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=11;strokeColor=#555555;startArrow=classic;endArrow=classic;" edge="1" parent="1" source="service" target="postgres">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_service_openai" value="query generation" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=11;strokeColor=#555555;endArrow=classic;" edge="1" parent="1" source="service" target="openai">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_service_gmaps" value="discovery" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=11;strokeColor=#555555;endArrow=classic;" edge="1" parent="1" source="service" target="gmaps">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_service_serp" value="discovery" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=11;strokeColor=#555555;endArrow=classic;" edge="1" parent="1" source="service" target="valueserp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_celery_rel" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=11;strokeColor=#555555;endArrow=classic;" edge="1" parent="1" source="celery" target="relevance">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_celery_ver" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=11;strokeColor=#555555;endArrow=classic;" edge="1" parent="1" source="celery" target="verification">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_rel_pw" value="scrape" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=11;strokeColor=#555555;endArrow=classic;" edge="1" parent="1" source="relevance" target="playwright">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_ver_pw" value="scrape" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=11;strokeColor=#555555;endArrow=classic;" edge="1" parent="1" source="verification" target="playwright">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_pw_scraper" value="proxy fallback (403 / CAPTCHA / Cloudflare)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;strokeColor=#9673a6;endArrow=open;dashed=1;" edge="1" parent="1" source="playwright" target="scraperapi">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_rel_openai" value="LLM reasoning" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=11;strokeColor=#555555;endArrow=classic;" edge="1" parent="1" source="relevance" target="openai">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_ver_openai" value="LLM reasoning" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=11;strokeColor=#555555;endArrow=classic;" edge="1" parent="1" source="verification" target="openai">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_rel_pg" value="read/write SearchResult" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;strokeColor=#555555;startArrow=classic;endArrow=classic;" edge="1" parent="1" source="relevance" target="postgres">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_ver_pg" value="read/write SearchResult" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;strokeColor=#555555;startArrow=classic;endArrow=classic;" edge="1" parent="1" source="verification" target="postgres">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_email_hunter" value="contact lookup (user-triggered)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=10;strokeColor=#555555;endArrow=classic;" edge="1" parent="1" source="emaildraft" target="hunter">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_email_sendgrid" value="email dispatch" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;fontSize=11;strokeColor=#555555;endArrow=classic;" edge="1" parent="1" source="emaildraft" target="sendgrid">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="legend_bg" value="&lt;b&gt;LEGEND&lt;/b&gt;" style="swimlane;startSize=24;fillColor=#f5f5f5;strokeColor=#cccccc;html=1;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="40" y="760" width="270" height="250" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_process" value="Internal Component" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="legend_bg">
+          <mxGeometry x="10" y="35" width="115" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_solution" value="LangGraph Agent" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="legend_bg">
+          <mxGeometry x="140" y="35" width="115" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_problem" value="Downstream Service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="legend_bg">
+          <mxGeometry x="10" y="70" width="115" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_ref" value="External API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="legend_bg">
+          <mxGeometry x="140" y="70" width="115" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_user" value="User Actor" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;fontStyle=1;" vertex="1" parent="legend_bg">
+          <mxGeometry x="10" y="105" width="115" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_db" value="Datastore (cylinder)" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;boundedLbl=1;" vertex="1" parent="legend_bg">
+          <mxGeometry x="140" y="103" width="115" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_notes" value="&#8212; solid = data / call flow&lt;br&gt;- - - dashed = async / proxy / poll&lt;br&gt;&#8596; double arrow = read &amp;amp; write" style="text;html=1;align=left;verticalAlign=middle;fillColor=none;strokeColor=none;fontSize=10;spacingLeft=6;" vertex="1" parent="legend_bg">
+          <mxGeometry x="10" y="150" width="250" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="scope_box" value="&lt;b&gt;Client Finder — System Architecture&lt;/b&gt;&lt;br&gt;&lt;b&gt;Author:&lt;/b&gt; FYP Team&lt;br&gt;&lt;b&gt;Date:&lt;/b&gt; 2026" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#cccccc;align=left;spacingLeft=10;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1025" width="270" height="80" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -38,7 +38,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [credits, setCredits] = useState<Credits | null>(null)
 
   const [theme, setTheme] = useState<"dark" | "light">(() => {
-    return (localStorage.getItem(THEME_KEY) as "dark" | "light") || "dark";
+    return (localStorage.getItem(THEME_KEY) as "dark" | "light") || "light";
   });
 
   useEffect(() => {

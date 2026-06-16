@@ -27,6 +27,8 @@ import ApiKeyManagementPage from "./pages/admin/ApiKeyManagementPage";
 import ThresholdConfigPage from "./pages/admin/ThresholdConfigPage";
 import CampaignEnginePage from "./pages/app/CampaignEnginePage"
 import LeadsPage from "./pages/app/LeadsPage"
+import OnboardingPage from "./pages/app/OnboardingPage"
+import SimpleSearchPage from "./pages/app/SimpleSearchPage"
 
 export const router = createBrowserRouter([
   {
@@ -49,6 +51,14 @@ export const router = createBrowserRouter([
     ],
   },
   {
+    path: "/onboarding",
+    element: (
+      <ProtectedRoute>
+        <OnboardingPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
     path: "/app",
     element: (
       <ProtectedRoute>
@@ -57,6 +67,7 @@ export const router = createBrowserRouter([
     ),
     children: [
       { index: true, Component: DashboardPage },
+      { path: "simple-search", Component: SimpleSearchPage },
       { path: "search", Component: SearchBusinessesPage },
       { path: "leads", Component: LeadsPage },
       { path: "clients", Component: ClientsPage },

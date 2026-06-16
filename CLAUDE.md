@@ -1,4 +1,6 @@
-# CLAUDE.md — client_finder Project Brain
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 Read this file before touching any code. It contains everything you need to
 avoid duplicating work, breaking existing patterns, or making changes that
@@ -9,9 +11,9 @@ contradict past decisions.
 ## What This Project Is
 
 client_finder is a B2B lead discovery SaaS. The target user is an exporter
-(e.g. a Pakistani textile manufacturer) who wants to find overseas buyers and
-retailers to prospect. The user runs campaigns, the system finds and qualifies
-businesses automatically, and the user emails verified leads directly from the app.
+who wants to find overseas buyers and retailers to prospect. The user runs
+campaigns, the system finds and qualifies businesses automatically, and the
+user emails verified leads directly from the app.
 
 ---
 
@@ -27,7 +29,7 @@ Discovery
   → results deduplicated by domain
   → SearchResult records created
 
-Relevance Agent (LangGraph, 10 nodes)
+Relevance Agent (LangGraph, 11 nodes)
   → Playwright scrapes homepage + subpages
   → ScraperAPI proxy used on blocked sites
   → catalog_intelligence.py + business_model_intelligence.py + judge.py
@@ -38,10 +40,10 @@ SERP Enrichment (runs after relevance passes)
   → 3 ValueSERP queries: LinkedIn, company info, product info
   → outputs: serp_enrichment (JSONB), linkedin_url
 
-Verification Agent (LangGraph, 11 nodes)
+Verification Agent (LangGraph, 12 nodes)
   → input_preparation → gatekeeper → site_collector → identity_resolver
     → contact_extractor → legitimacy_analyzer → product_catalog_extractor
-    → size_estimator → llm_analyst → final_contract_builder → metric_analyst
+    → size_estimator → llm_analyst → final_contract_builder → metric_analyst → dead_site_handler
   → outputs: verification_score, legitimacy_score, verified_product_catalog
 
 Email Outreach
@@ -74,6 +76,10 @@ backend/app/agents/email_outreach/ — email agent (entry: email_draft_service.p
 backend/app/api/                  — FastAPI route handlers (thin, no business logic)
 backend/app/api/routes/           — campaign routes live here
 backend/app/services/             — business logic and orchestration
+backend/app/tasks/                — Celery task wrappers (campaign_tasks.py, agent_tasks.py,
+                                     recovery.py); thin shims that open their own DB session
+                                     and call into services/ — no pipeline logic lives here
+backend/app/celery_app.py         — Celery app config (broker/backend, ack-late, retry policy)
 backend/app/models/               — SQLAlchemy models
 backend/app/db/                   — session and base
 backend/alembic/versions/         — migration files, never edit manually
@@ -82,6 +88,14 @@ front_end/src/app/pages/auth/     — auth pages
 front_end/src/lib/api.ts          — all backend API calls (non-campaign)
 front_end/src/lib/campaigns-api.ts — campaign-specific API calls
 front_end/src/app/layouts/        — AppLayout wraps all authenticated pages
+
+Large files that should never be read in full — locate the relevant range
+with Grep first, then read just that slice:
+- front_end/src/app/pages/app/SearchBusinessesPage.tsx (search UI, table, filters, polling, modals)
+- front_end/src/app/pages/app/BusinessDetailsPage.tsx (detail view with tabs)
+- front_end/src/app/pages/app/EmailWorkspacePage.tsx (email compose + thread UI)
+- backend/app/agents/verification/service.py (LangGraph orchestration)
+- backend/app/agents/relevancy/service_v2.py (relevancy pipeline)
 
 ---
 
@@ -93,7 +107,7 @@ front_end/src/app/layouts/        — AppLayout wraps all authenticated pages
 2. Every agent that writes fields to SearchResult must wipe those fields before
    rerun. Stale agent output in the DB causes silent data corruption.
 
-3. The campaign engine (campaign_engine_service.py) runs as a BackgroundTask.
+3. The campaign engine runs on Celery + Redis.
    It must use its own DB session — not the request session. Always create a
    fresh SessionLocal() inside the engine function.
 
@@ -228,13 +242,42 @@ SearchResult:    pending_relevance → running_relevance → rejected_relevance
 
 ---
 
+## Frontend Conventions
+
+- All API calls go through `src/lib/api.ts` (or `campaigns-api.ts` for campaign
+  endpoints) — never call `fetch()` directly from a page/component. The auth
+  token is attached automatically inside those files.
+- Backend base URL comes from the Vite env var `VITE_API_URL` /
+  `VITE_API_BASE_URL` (set in docker-compose), not hardcoded.
+- Components in `front_end/src/app/components/ui/` are shadcn/ui primitives —
+  treat as vendored, don't hand-edit; compose around them instead.
+- Use lucide-react for new icons and sonner for toasts, for consistency with
+  existing pages (the repo also has `@mui/icons-material` from an earlier
+  iteration — don't add new usages of it).
+
+---
+
 ## Dev Commands
 
-docker compose up --build      — full rebuild
-docker compose up              — start without rebuild (backend hot-reloads)
-alembic upgrade head           — apply migrations
-pytest backend/app/tests/      — run tests
-pytest backend/tests/          — run verification tests
+### Full stack (Docker)
+docker compose up --build                              — full rebuild (backend, celery_worker, redis, frontend, db)
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up   — dev overlay (polling reload, frontend on npm run dev)
+alembic upgrade head                                    — apply migrations (also runs automatically on backend startup)
+
+### Backend (cd backend/ first)
+pip install -r requirements.txt
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+celery -A app.celery_app:celery_app worker --loglevel=info   — run the worker outside Docker
+
+### Tests (from repo root)
+pytest backend/app/tests/                                       — run tests
+pytest backend/tests/                                            — run verification tests
+pytest backend/app/tests/test_relevancy_routing.py::test_name    — run a single test
+
+### Frontend (cd front_end/ first)
+npm run dev          — Vite dev server (localhost:5173)
+npm run build         — production build
+npm run typecheck     — tsc --noEmit, no separate lint script configured
 
 ---
 
@@ -245,23 +288,13 @@ COMPLETED:
 - Search session creation and query generation
 - Discovery via Google Maps + ValueSERP
 - Relevance agent v2 (full LangGraph pipeline)
-- Verification agent v2 (11-node LangGraph pipeline)
+- Verification agent v2 (12-node LangGraph pipeline)
 - SERP enrichment service
 - Hunter.io email finding
 - Email outreach agent + SendGrid
-- Campaign engine (automated loop with credit metering)
+- Campaign engine (Celery + Redis, with credit metering)
 - Campaign resume logic
 - Frontend: all main pages built
 - Production readiness audit executed, scoring 74/100 initially (Needs Work)
-- **Remediation & Bugfixes Applied**:
-  - Resolved Alembic schema bootstrap by generating the missing `email_drafts` table migrations.
-  - Aligned all manual/standalone endpoints (relevance, single/batch verification, Hunter lookup) to charge correct credit rates, sealing the billing leakage.
-  - Offloaded blocking database queries in `async def` route handlers to the threadpool (converted to synchronous `def` definitions).
-  - Fixed concurrency race conditions on campaign resume by applying row-level locks (`with_for_update()`).
-  - Addressed N+1 database performance queries on search sessions, client lists, and follow-up loops.
-  - Replaced mutable, thread-local dictionary caches for relevance/verification phases with database-backed columns, enabling horizontal scaling.
-  - Optimized production deployment configurations (Uvicorn workers scaled for multi-core, error output sanitization, runtime engine watchdog limits).
-- Frontend UX crashes/loading states (SearchBusinessesPage, AppLayout, BusinessDetailsPage, CampaignEnginePage)
-- API missing routes/IDOR audit
 
 

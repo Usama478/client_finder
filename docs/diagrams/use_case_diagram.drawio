@@ -1,117 +1,247 @@
-<mxfile host="Electron" modified="2026-06-03T13:05:00.000Z" agent="Cursor Agent" version="21.0.0" type="device">
+<mxfile host="Electron" modified="2026-06-03T08:30:00.000Z" agent="Cursor" version="21.0.0" type="device">
   <diagram id="clientfinder-usecase" name="Use Case Diagram">
     <mxGraphModel dx="1000" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" adaptiveColors="auto" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
 
-        <mxCell id="title" value="ClientFinder - Use Case Diagram" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontStyle=1;fontSize=18;fontColor=#1a237e;" vertex="1" parent="1">
-          <mxGeometry x="327" y="30" width="1000" height="40" as="geometry" />
+        <mxCell id="title" value="CLIENTFINDER — UML USE CASE DIAGRAM" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontStyle=1;fontSize=18;fontColor=#1a237e;" vertex="1" parent="1">
+          <mxGeometry x="427" y="30" width="800" height="40" as="geometry" />
         </mxCell>
 
-        <mxCell id="exporter_actor" value="Exporter" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=12;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="170" y="480" width="60" height="110" as="geometry" />
+        <mxCell id="actor_exporter" value="&lt;b&gt;Exporter&lt;/b&gt;&lt;br&gt;(Primary User)" style="shape=umlActor;verticalLabelPosition=bottom;labelBackgroundColor=none;verticalAlign=top;html=1;fontSize=12;fontStyle=1;outlineConnect=0;strokeColor=#6c8ebf;fillColor=#dae8fc;" vertex="1" parent="1">
+          <mxGeometry x="150" y="300" width="50" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="actor_admin" value="&lt;b&gt;Admin&lt;/b&gt;" style="shape=umlActor;verticalLabelPosition=bottom;labelBackgroundColor=none;verticalAlign=top;html=1;fontSize=12;fontStyle=1;outlineConnect=0;strokeColor=#d6b656;fillColor=#ffe6cc;" vertex="1" parent="1">
+          <mxGeometry x="150" y="600" width="50" height="100" as="geometry" />
         </mxCell>
 
-        <mxCell id="admin_actor" value="Admin" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=12;fontStyle=1;" vertex="1" parent="1">
-          <mxGeometry x="1330" y="480" width="60" height="110" as="geometry" />
+        <mxCell id="ext_maps" value="&lt;b&gt;Google Maps API&lt;/b&gt;&lt;br&gt;&#171;external&#187;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1330" y="160" width="140" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="ext_serp" value="&lt;b&gt;ValueSERP API&lt;/b&gt;&lt;br&gt;&#171;external&#187;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1330" y="290" width="140" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="ext_llm" value="&lt;b&gt;OpenAI LLM&lt;/b&gt;&lt;br&gt;&#171;external&#187;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1330" y="420" width="140" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="ext_hunter" value="&lt;b&gt;Hunter.io&lt;/b&gt;&lt;br&gt;&#171;external&#187;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1330" y="550" width="140" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="ext_sendgrid" value="&lt;b&gt;SendGrid&lt;/b&gt;&lt;br&gt;&#171;external&#187;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1330" y="680" width="140" height="50" as="geometry" />
         </mxCell>
 
-        <mxCell id="system_boundary" value="ClientFinder System" style="swimlane;startSize=40;fillColor=#f5f5f5;strokeColor=#6c8ebf;html=1;fontStyle=1;fontSize=14;verticalAlign=top;align=center;rounded=0;swimlaneFillColor=#ffffff;" vertex="1" parent="1">
-          <mxGeometry x="470" y="110" width="760" height="860" as="geometry" />
+        <mxCell id="system_boundary" value="ClientFinder System" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;align=center;fontStyle=1;fontSize=14;fontColor=#1a237e;fillColor=none;strokeColor=#6c8ebf;dashed=0;" vertex="1" parent="1">
+          <mxGeometry x="360" y="110" width="850" height="950" as="geometry" />
         </mxCell>
 
-        <mxCell id="uc1" value="Register / Login" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="system_boundary">
-          <mxGeometry x="40" y="60" width="300" height="70" as="geometry" />
+        <mxCell id="uc_auth" value="Manage Account &amp; Auth" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="420" y="170" width="180" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="uc2" value="Create Campaign" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="system_boundary">
-          <mxGeometry x="40" y="160" width="300" height="70" as="geometry" />
+        <mxCell id="uc_profile" value="Manage Exporter Profile" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="420" y="280" width="180" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="uc3" value="Set Relevance Threshold and Credit Budget" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="system_boundary">
-          <mxGeometry x="40" y="260" width="300" height="70" as="geometry" />
+        <mxCell id="uc_context" value="Manage Search Contexts" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="420" y="390" width="180" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="uc4" value="View Discovered Businesses" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="system_boundary">
-          <mxGeometry x="40" y="360" width="300" height="70" as="geometry" />
+        <mxCell id="uc_dash" value="View Dashboard &amp; Activity" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="420" y="500" width="180" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="uc5" value="Review Relevance Decisions" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="system_boundary">
-          <mxGeometry x="40" y="460" width="300" height="70" as="geometry" />
+        <mxCell id="uc_credits" value="View Credits / Billing" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="420" y="610" width="180" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="uc6" value="Review Verification Results" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="system_boundary">
-          <mxGeometry x="40" y="560" width="300" height="70" as="geometry" />
-        </mxCell>
-        <mxCell id="uc7" value="Send Email Outreach" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="system_boundary">
-          <mxGeometry x="40" y="660" width="300" height="70" as="geometry" />
-        </mxCell>
-        <mxCell id="uc8" value="View Campaign Status" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="system_boundary">
-          <mxGeometry x="40" y="760" width="300" height="70" as="geometry" />
+        <mxCell id="uc_export" value="Export Clients" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="420" y="720" width="180" height="60" as="geometry" />
         </mxCell>
 
-        <mxCell id="uc9" value="Manage Users" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="system_boundary">
-          <mxGeometry x="420" y="260" width="300" height="70" as="geometry" />
+        <mxCell id="uc_campaign" value="Create &amp; Configure Campaign" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="700" y="170" width="180" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="uc10" value="Monitor Campaigns" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="system_boundary">
-          <mxGeometry x="420" y="460" width="300" height="70" as="geometry" />
+        <mxCell id="uc_queries" value="Generate Search Queries" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="700" y="280" width="180" height="60" as="geometry" />
         </mxCell>
-
-        <mxCell id="e_exp_uc1" style="html=1;endArrow=none;startArrow=none;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="exporter_actor" target="uc1">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="uc_discovery" value="Run Discovery" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="700" y="390" width="180" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="e_exp_uc2" style="html=1;endArrow=none;startArrow=none;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="exporter_actor" target="uc2">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="uc_engine" value="Run Campaign Engine" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="700" y="500" width="180" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="e_exp_uc3" style="html=1;endArrow=none;startArrow=none;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="exporter_actor" target="uc3">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="uc_resume" value="Resume / Cancel Campaign" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="700" y="610" width="180" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="e_exp_uc4" style="html=1;endArrow=none;startArrow=none;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="exporter_actor" target="uc4">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="uc_save" value="Save Lead as Client" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="700" y="720" width="180" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="e_exp_uc5" style="html=1;endArrow=none;startArrow=none;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="exporter_actor" target="uc5">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_exp_uc6" style="html=1;endArrow=none;startArrow=none;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="exporter_actor" target="uc6">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_exp_uc7" style="html=1;endArrow=none;startArrow=none;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="exporter_actor" target="uc7">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e_exp_uc8" style="html=1;endArrow=none;startArrow=none;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="exporter_actor" target="uc8">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="uc_results" value="View Campaign Results" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="700" y="830" width="180" height="60" as="geometry" />
         </mxCell>
 
-        <mxCell id="e_adm_uc9" style="html=1;endArrow=none;startArrow=none;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="admin_actor" target="uc9">
+        <mxCell id="uc_relevance" value="Run Relevance Agent" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="980" y="170" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_enrich" value="SERP Enrichment" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="980" y="280" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_verify" value="Run Verification Agent" style="ellipse;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="980" y="390" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_findemail" value="Find Contact Email" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="980" y="500" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_draft" value="Generate Email Drafts" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="980" y="610" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_review" value="Review &amp; Approve Emails" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="980" y="720" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_send" value="Send Outreach Email" style="ellipse;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="980" y="830" width="180" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="uc_users" value="Manage Users" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="420" y="950" width="170" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_admincredits" value="Allocate User Credits" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="620" y="950" width="170" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_thresholds" value="Configure Thresholds" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="820" y="950" width="170" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_apikeys" value="Manage API Keys" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1010" y="950" width="170" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_exp_auth" style="html=1;endArrow=none;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="actor_exporter" target="uc_auth">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e_adm_uc10" style="html=1;endArrow=none;startArrow=none;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="admin_actor" target="uc10">
+        <mxCell id="e_exp_profile" style="html=1;endArrow=none;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="actor_exporter" target="uc_profile">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_exp_context" style="html=1;endArrow=none;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="actor_exporter" target="uc_context">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_exp_dash" style="html=1;endArrow=none;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="actor_exporter" target="uc_dash">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_exp_credits" style="html=1;endArrow=none;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="actor_exporter" target="uc_credits">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_exp_export" style="html=1;endArrow=none;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="actor_exporter" target="uc_export">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_exp_campaign" style="html=1;endArrow=none;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="actor_exporter" target="uc_campaign">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_exp_resume" style="html=1;endArrow=none;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="actor_exporter" target="uc_resume">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_exp_save" style="html=1;endArrow=none;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="actor_exporter" target="uc_save">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_exp_results" style="html=1;endArrow=none;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="actor_exporter" target="uc_results">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_exp_findemail" style="html=1;endArrow=none;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="actor_exporter" target="uc_findemail">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_exp_draft" style="html=1;endArrow=none;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="actor_exporter" target="uc_draft">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_exp_review" style="html=1;endArrow=none;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="actor_exporter" target="uc_review">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_adm_users" style="html=1;endArrow=none;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="actor_admin" target="uc_users">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_adm_credits" style="html=1;endArrow=none;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="actor_admin" target="uc_admincredits">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_adm_thresholds" style="html=1;endArrow=none;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="actor_admin" target="uc_thresholds">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_adm_apikeys" style="html=1;endArrow=none;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="actor_admin" target="uc_apikeys">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="i_campaign_queries" value="&#171;include&#187;" style="html=1;endArrow=open;startArrow=none;dashed=1;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#9673a6;fontSize=11;" edge="1" parent="1" source="uc_campaign" target="uc_queries">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="i_campaign_engine" value="&#171;include&#187;" style="html=1;endArrow=open;startArrow=none;dashed=1;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#9673a6;fontSize=11;" edge="1" parent="1" source="uc_campaign" target="uc_engine">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="i_engine_discovery" value="&#171;include&#187;" style="html=1;endArrow=open;startArrow=none;dashed=1;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#9673a6;fontSize=11;" edge="1" parent="1" source="uc_engine" target="uc_discovery">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="i_engine_relevance" value="&#171;include&#187;" style="html=1;endArrow=open;startArrow=none;dashed=1;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#9673a6;fontSize=11;" edge="1" parent="1" source="uc_engine" target="uc_relevance">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="i_relevance_enrich" value="&#171;include&#187;" style="html=1;endArrow=open;startArrow=none;dashed=1;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#9673a6;fontSize=11;" edge="1" parent="1" source="uc_relevance" target="uc_enrich">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="i_engine_verify" value="&#171;include&#187;" style="html=1;endArrow=open;startArrow=none;dashed=1;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#9673a6;fontSize=11;" edge="1" parent="1" source="uc_engine" target="uc_verify">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="i_draft_findemail" value="&#171;include&#187;" style="html=1;endArrow=open;startArrow=none;dashed=1;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#9673a6;fontSize=11;" edge="1" parent="1" source="uc_draft" target="uc_findemail">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="x_send_review" value="&#171;extend&#187;" style="html=1;endArrow=open;startArrow=none;dashed=1;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#b85450;fontSize=11;" edge="1" parent="1" source="uc_send" target="uc_review">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s_discovery_maps" style="html=1;endArrow=none;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="uc_discovery" target="ext_maps">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s_discovery_serp" style="html=1;endArrow=none;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="uc_discovery" target="ext_serp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s_queries_llm" style="html=1;endArrow=none;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="uc_queries" target="ext_llm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s_relevance_llm" style="html=1;endArrow=none;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="uc_relevance" target="ext_llm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s_enrich_serp" style="html=1;endArrow=none;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="uc_enrich" target="ext_serp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s_verify_llm" style="html=1;endArrow=none;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="uc_verify" target="ext_llm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s_findemail_hunter" style="html=1;endArrow=none;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="uc_findemail" target="ext_hunter">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s_send_sendgrid" style="html=1;endArrow=none;edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#555555;fontSize=12;" edge="1" parent="1" source="uc_send" target="ext_sendgrid">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
         <mxCell id="legend_bg" value="&lt;b&gt;LEGEND&lt;/b&gt;" style="swimlane;startSize=24;fillColor=#f5f5f5;strokeColor=#cccccc;html=1;fontSize=11;align=center;" vertex="1" parent="1">
-          <mxGeometry x="50" y="800" width="280" height="200" as="geometry" />
+          <mxGeometry x="40" y="760" width="270" height="230" as="geometry" />
         </mxCell>
-        <mxCell id="legend_usecase" value="Use Case" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="legend_bg">
-          <mxGeometry x="15" y="40" width="115" height="30" as="geometry" />
+        <mxCell id="legend_process" value="Account / Campaign" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="legend_bg">
+          <mxGeometry x="10" y="35" width="115" height="25" as="geometry" />
         </mxCell>
-        <mxCell id="legend_boundary" value="System Boundary" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="legend_bg">
-          <mxGeometry x="150" y="40" width="115" height="30" as="geometry" />
+        <mxCell id="legend_agent" value="AI Agents" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="legend_bg">
+          <mxGeometry x="140" y="35" width="115" height="25" as="geometry" />
         </mxCell>
-        <mxCell id="legend_actor_icon" value="" style="shape=umlActor;html=1;outlineConnect=0;fillColor=#ffffff;strokeColor=#000000;" vertex="1" parent="legend_bg">
-          <mxGeometry x="30" y="90" width="28" height="55" as="geometry" />
+        <mxCell id="legend_email" value="Email Outreach" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="legend_bg">
+          <mxGeometry x="10" y="70" width="115" height="25" as="geometry" />
         </mxCell>
-        <mxCell id="legend_actor_label" value="Actor (stick figure)" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;" vertex="1" parent="legend_bg">
-          <mxGeometry x="70" y="100" width="190" height="30" as="geometry" />
+        <mxCell id="legend_admin" value="Admin Functions" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="legend_bg">
+          <mxGeometry x="140" y="70" width="115" height="25" as="geometry" />
         </mxCell>
-        <mxCell id="legend_assoc_line" value="" style="html=1;endArrow=none;startArrow=none;strokeColor=#555555;" edge="1" parent="legend_bg">
-          <mxGeometry relative="1" as="geometry">
-            <mxPoint x="20" y="170" as="sourcePoint" />
-            <mxPoint x="60" y="170" as="targetPoint" />
-          </mxGeometry>
+        <mxCell id="legend_ref" value="Reporting / Profile" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="legend_bg">
+          <mxGeometry x="10" y="105" width="115" height="25" as="geometry" />
         </mxCell>
-        <mxCell id="legend_assoc_label" value="Association" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;" vertex="1" parent="legend_bg">
-          <mxGeometry x="70" y="155" width="190" height="30" as="geometry" />
+        <mxCell id="legend_ext" value="External System" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;dashed=1;" vertex="1" parent="legend_bg">
+          <mxGeometry x="140" y="105" width="115" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_notes" value="&#8212; solid line = association&lt;br&gt;- - - dashed = &#171;include&#187; / &#171;extend&#187;" style="text;html=1;align=left;verticalAlign=middle;fillColor=none;strokeColor=none;fontSize=11;spacingLeft=6;" vertex="1" parent="legend_bg">
+          <mxGeometry x="10" y="145" width="250" height="70" as="geometry" />
         </mxCell>
 
-        <mxCell id="scope_box" value="&lt;b&gt;Scope:&lt;/b&gt; ClientFinder - Use Case Diagram | Author: Cursor Agent | FYP 2026" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#cccccc;align=left;spacingLeft=10;fontSize=11;" vertex="1" parent="1">
-          <mxGeometry x="50" y="1040" width="280" height="80" as="geometry" />
+        <mxCell id="scope_box" value="&lt;b&gt;Scope:&lt;/b&gt; ClientFinder B2B Lead Discovery&lt;br&gt;&lt;b&gt;Diagram:&lt;/b&gt; UML Use Case&lt;br&gt;&lt;b&gt;Author:&lt;/b&gt; Cursor Agent&lt;br&gt;&lt;b&gt;Date:&lt;/b&gt; 2026-06-03" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#cccccc;align=left;spacingLeft=10;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1005" width="270" height="90" as="geometry" />
         </mxCell>
 
       </root>

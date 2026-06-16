@@ -33,6 +33,16 @@ export default function AppLayout() {
     api.credits().then(setCredits).catch(() => {})
   }, [])
 
+  useEffect(() => {
+    const done = localStorage.getItem("cf_onboarding_done")
+    if (done === "true") return
+    api.getMyProfile().then((profile) => {
+      if (!profile) {
+        navigate("/onboarding")
+      }
+    }).catch(() => {})
+  }, [])
+
   const userInitials = user?.name
     ? user.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)
     : "?";
@@ -43,7 +53,8 @@ export default function AppLayout() {
 
   const navItems = [
     { icon: LayoutDashboard, label: "Dashboard", path: "/app", badge: null },
-    { icon: Search, label: "Search Businesses", path: "/app/search", badge: null },
+    { icon: Search, label: "Simple Search", path: "/app/simple-search", badge: null },
+    { icon: Search, label: "Advanced Search", path: "/app/search", badge: null },
     { icon: LayoutList, label: "Leads Hub", path: "/app/leads", badge: null },
     { icon: Zap, label: "Campaign Engine", path: "/app/campaigns", badge: null },
     { icon: Users, label: "Clients", path: "/app/clients", badge: null, badgeGreen: false },
@@ -70,6 +81,7 @@ export default function AppLayout() {
 
   const pageTitles: Record<string, { title: string; sub: string }> = {
     "/app": { title: "Dashboard", sub: "Overview & pipeline" },
+    "/app/simple-search": { title: "Simple Search", sub: "Find international buyers instantly" },
     "/app/search": { title: "Search Businesses", sub: "Discover → Score → Verify → Decide" },
     "/app/leads": { title: "Leads Hub", sub: "All discovered leads across every search session" },
     "/app/clients": { title: "Clients", sub: "Saved & verified lead database" },
@@ -309,7 +321,7 @@ export default function AppLayout() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button onClick={() => navigate("/app/search", { state: { fresh: true } })}
+            <Button onClick={() => navigate("/app/simple-search", { state: { fresh: true } })}
               className="text-xs h-8 px-3 bg-blue-600 hover:bg-blue-700 text-white">
               + New Search
             </Button>
