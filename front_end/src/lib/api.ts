@@ -172,6 +172,8 @@ export function setToken(token: string): void {
 export function clearToken(): void {
   localStorage.removeItem("cf_token")
   localStorage.removeItem("cf_user")
+  localStorage.removeItem("cf_onboarding_done")
+  localStorage.removeItem("cf_onboarding_skipped_step1")
 }
 
 function redirectToLogin(): void {

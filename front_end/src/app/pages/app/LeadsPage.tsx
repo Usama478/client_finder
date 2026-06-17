@@ -104,19 +104,19 @@ function scoreColor(n: number, decision: string | null): string {
 
 function relevancyPill(decision: string | null) {
   if (!decision) {
-    return { label: "Pending", bg: "rgba(107,114,128,0.15)", color: "#9ca3af" };
+    return { label: "Pending", bg: "var(--muted)", color: "var(--muted-foreground)" };
   }
   if (decision === "relevant") {
-    return { label: "Relevant", bg: "rgba(34,197,94,0.12)", color: "#4ade80" };
+    return { label: "Relevant", bg: "rgba(16,185,129,0.1)", color: "var(--chart-2)" };
   }
   if (decision === "irrelevant") {
-    return { label: "Irrelevant", bg: "rgba(239,68,68,0.1)", color: "#f87171" };
+    return { label: "Irrelevant", bg: "rgba(239,68,68,0.1)", color: "var(--destructive)" };
   }
   if (decision === "low_confidence") {
-    return { label: "Low Confidence", bg: "rgba(245,158,11,0.1)", color: "#fbbf24" };
+    return { label: "Low Confidence", bg: "rgba(245,158,11,0.1)", color: "var(--chart-3)" };
   }
   if (decision === "unknown") {
-    return { label: "Low Confidence", bg: "rgba(245,158,11,0.1)", color: "#fbbf24" };
+    return { label: "Low Confidence", bg: "rgba(245,158,11,0.1)", color: "var(--chart-3)" };
   }
   return { label: humanizeStatus(decision), bg: "var(--border)", color: "var(--muted-foreground)" };
 }
@@ -124,27 +124,27 @@ function relevancyPill(decision: string | null) {
 function computeLeadStatus(lead: Lead): { label: string; bg: string; color: string } {
   const score = lead.verification_score;
   if (lead.is_saved_client && score != null && score >= 50) {
-    return { label: "Saved", bg: "rgba(20,184,166,0.15)", color: "#2dd4bf" };
+    return { label: "Saved", bg: "rgba(16,185,129,0.1)", color: "var(--chart-2)" };
   }
   if (score != null && score >= 50) {
-    return { label: "Verified", bg: "rgba(34,197,94,0.12)", color: "#4ade80" };
+    return { label: "Verified", bg: "rgba(16,185,129,0.1)", color: "var(--chart-2)" };
   }
   if (score != null && score < 50) {
-    return { label: "Failed Verification", bg: "rgba(239,68,68,0.1)", color: "#f87171" };
+    return { label: "Failed Verification", bg: "rgba(239,68,68,0.1)", color: "var(--destructive)" };
   }
   if (lead.relevance_decision === "relevant" && score == null) {
-    return { label: "Pending Verification", bg: "rgba(59,130,246,0.15)", color: "#60a5fa" };
+    return { label: "Pending Verification", bg: "rgba(59,130,246,0.1)", color: "var(--primary)" };
   }
   if (lead.relevance_decision === "irrelevant") {
-    return { label: "Rejected Relevancy", bg: "rgba(239,68,68,0.1)", color: "#f87171" };
+    return { label: "Rejected Relevancy", bg: "rgba(239,68,68,0.1)", color: "var(--destructive)" };
   }
   if (lead.relevance_decision === "low_confidence") {
-    return { label: "Site Inaccessible", bg: "rgba(245,158,11,0.1)", color: "#fbbf24" };
+    return { label: "Site Inaccessible", bg: "rgba(245,158,11,0.1)", color: "var(--chart-3)" };
   }
   if (lead.relevance_decision === "unknown") {
-    return { label: "Site Inaccessible", bg: "rgba(245,158,11,0.1)", color: "#fbbf24" };
+    return { label: "Site Inaccessible", bg: "rgba(245,158,11,0.1)", color: "var(--chart-3)" };
   }
-  return { label: "Pending Relevancy", bg: "rgba(107,114,128,0.15)", color: "#9ca3af" };
+  return { label: "Pending Relevancy", bg: "var(--muted)", color: "var(--muted-foreground)" };
 }
 
 function SourceBadge({ source }: { source: string }) {
@@ -158,9 +158,9 @@ function SourceBadge({ source }: { source: string }) {
         borderRadius: 4,
         letterSpacing: "0.04em",
         display: "inline-block",
-        background: isSerp ? "rgba(99,102,241,0.15)" : "rgba(34,197,94,0.12)",
-        color: isSerp ? "#818cf8" : "#4ade80",
-        border: `1px solid ${isSerp ? "rgba(99,102,241,0.3)" : "rgba(34,197,94,0.25)"}`,
+        background: isSerp ? "rgba(59,130,246,0.1)" : "rgba(16,185,129,0.1)",
+        color: isSerp ? "var(--primary)" : "var(--chart-2)",
+        border: `1px solid ${isSerp ? "rgba(59,130,246,0.2)" : "rgba(16,185,129,0.2)"}`,
       }}
     >
       {isSerp ? "WEB" : "MAPS"}
@@ -447,9 +447,9 @@ export default function LeadsPage() {
     fontWeight: 600,
     whiteSpace: "nowrap",
     cursor: "pointer",
-    border: active ? "1px solid #3b82f6" : "1px solid var(--border)",
-    background: active ? "rgba(59,130,246,0.15)" : "transparent",
-    color: active ? "#60a5fa" : "var(--muted-foreground)",
+    border: active ? "1px solid var(--primary)" : "1px solid var(--border)",
+    background: active ? "rgba(59,130,246,0.1)" : "transparent",
+    color: active ? "var(--primary)" : "var(--muted-foreground)",
     fontFamily: "DM Sans, sans-serif",
   });
 
@@ -468,10 +468,10 @@ export default function LeadsPage() {
   return (
     <div className="p-6 space-y-5 page-enter" style={{ background: "var(--background)", minHeight: "100%" }}>
       <div>
-        <h1 className="text-xl font-bold" style={{ color: "var(--foreground)" }}>
+        <h1 className="text-3xl font-bold text-foreground" style={{ fontFamily: "Syne, sans-serif" }}>
           Leads Hub
         </h1>
-        <p className="text-sm mt-1" style={{ color: "var(--muted-foreground)" }}>
+        <p className="text-sm text-muted-foreground mt-1">
           All discovered leads across every search session
         </p>
       </div>
@@ -583,7 +583,7 @@ export default function LeadsPage() {
         </span>
         <span
           className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full"
-          style={{ background: "rgba(59,130,246,0.15)", color: "#60a5fa" }}
+          style={{ background: "rgba(59,130,246,0.1)", color: "var(--primary)" }}
         >
           {filterLabel(filter)}
         </span>
@@ -594,10 +594,10 @@ export default function LeadsPage() {
           className="flex flex-wrap items-center gap-3 p-3 rounded-xl"
           style={{
             background: "rgba(59,130,246,0.06)",
-            border: "1px solid rgba(59,130,246,0.25)",
+            border: "1px solid rgba(59,130,246,0.2)",
           }}
         >
-          <span className="text-sm font-semibold text-blue-400">
+          <span className="text-sm font-semibold" style={{ color: "var(--primary)" }}>
             {selectedIds.length} selected
           </span>
           <div className="flex gap-2 flex-wrap">
@@ -653,7 +653,7 @@ export default function LeadsPage() {
       )}
 
       {activeRelevanceJob?.bannerVisible && (
-        <div className="p-4 rounded-xl flex items-center gap-4" style={{ background: "linear-gradient(135deg, rgba(59,130,246,0.08), rgba(139,92,246,0.08))", border: "1px solid rgba(139,92,246,0.2)" }}>
+        <div className="p-4 rounded-xl flex items-center gap-4" style={{ background: "var(--muted)", border: "1px solid var(--border)" }}>
           <span className="text-2xl">🤖</span>
           <div className="flex-1">
             <div className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>
@@ -674,7 +674,7 @@ export default function LeadsPage() {
               )}
             </div>
             <div className="mt-2 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--accent)" }}>
-              <div className="h-full rounded-full transition-all duration-300" style={{ width: `${activeRelevanceJob.progress}%`, background: "linear-gradient(90deg, #3b82f6, #8b5cf6)" }} />
+              <div className="h-full rounded-full transition-all duration-300 bg-primary" style={{ width: `${activeRelevanceJob.progress}%` }} />
             </div>
           </div>
           <div className="flex gap-2">

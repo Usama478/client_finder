@@ -599,6 +599,10 @@ export default function SearchBusinessesPage() {
 
   return (
     <div className="p-6 space-y-4 page-enter">
+      <div className="px-6 pt-6 pb-2">
+        <h1 className="text-3xl font-bold text-foreground" style={{ fontFamily: "Syne, sans-serif" }}>Advanced Search</h1>
+        <p className="text-sm text-muted-foreground mt-1">Multi-source discovery with AI relevance scoring</p>
+      </div>
       {/* Search Controls */}
       <div style={card} className="p-5">
         <div className="flex flex-wrap gap-3 items-end">

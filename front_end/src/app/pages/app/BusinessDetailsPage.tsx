@@ -61,7 +61,7 @@ export default function BusinessDetailsPage() {
   if (error) return (
     <div className="flex flex-col h-[50vh] items-center justify-center p-6 text-center">
       <AlertCircle className="h-12 w-12 text-red-500 mb-4" />
-      <h2 className="text-xl font-bold mb-2 text-white">Error Loading Business</h2>
+      <h2 className="text-xl font-bold mb-2 text-foreground">Error Loading Business</h2>
       <p className="text-muted-foreground mb-6">{error}</p>
       <Button onClick={() => navigate(-1)} variant="outline">
         <ArrowLeft className="mr-2 h-4 w-4" /> Go Back
@@ -160,7 +160,7 @@ export default function BusinessDetailsPage() {
         </Button>
         <div className="flex-1">
           <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold">{business.business_name}</h1>
+            <h1 className="text-3xl font-bold text-foreground" style={{ fontFamily: "Syne, sans-serif" }}>{business.business_name}</h1>
             <Badge variant="outline">{business.business_type}</Badge>
           </div>
           <div className="flex items-center gap-4 mt-2 text-muted-foreground">
@@ -490,20 +490,20 @@ export default function BusinessDetailsPage() {
             </CardHeader>
             <CardContent className="space-y-5">
               {!business.verified_product_catalog || Object.keys(business.verified_product_catalog).length === 0 ? (
-                <p className="text-sm" style={{ color: '#5a6478' }}>Product catalog not yet extracted.</p>
+                <p className="text-sm" style={{ color: 'var(--muted-foreground)' }}>Product catalog not yet extracted.</p>
               ) : (
                 <>
                   {Array.isArray(business.verified_product_catalog.product_categories) && business.verified_product_catalog.product_categories.length > 0 && (
                     <div>
-                      <h3 className="text-sm font-semibold mb-2" style={{ color: '#e8edf5' }}>Product Categories</h3>
+                      <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--foreground)' }}>Product Categories</h3>
                       <div className="flex flex-wrap gap-2">
                         {business.verified_product_catalog.product_categories.map((cat: string, i: number) => (
                           <span
                             key={i}
                             style={{
-                              background: '#1c2837',
-                              border: '1px solid #2d3748',
-                              color: '#e8edf5',
+                              background: 'var(--muted)',
+                              border: '1px solid var(--border)',
+                              color: 'var(--foreground)',
                               fontSize: '0.75rem',
                               borderRadius: '9999px',
                               padding: '2px 10px',
@@ -517,29 +517,29 @@ export default function BusinessDetailsPage() {
                   )}
 
                   <div className="grid grid-cols-3 gap-4">
-                    <div style={{ background: '#1c2837', border: '1px solid #2d3748', borderRadius: '8px', padding: '12px' }}>
-                      <div className="text-xs mb-1" style={{ color: '#5a6478' }}>Sells Wholesale</div>
+                    <div style={{ background: 'var(--muted)', border: '1px solid var(--border)', borderRadius: '8px', padding: '12px' }}>
+                      <div className="text-xs mb-1" style={{ color: 'var(--muted-foreground)' }}>Sells Wholesale</div>
                       <div className="font-semibold text-sm" style={{
-                        color: business.verified_product_catalog.sells_wholesale ? '#22c55e' : '#5a6478'
+                        color: business.verified_product_catalog.sells_wholesale ? '#22c55e' : 'var(--muted-foreground)'
                       }}>
                         {business.verified_product_catalog.sells_wholesale === true ? 'Yes' :
                          business.verified_product_catalog.sells_wholesale === false ? 'No' : '—'}
                       </div>
                     </div>
 
-                    <div style={{ background: '#1c2837', border: '1px solid #2d3748', borderRadius: '8px', padding: '12px' }}>
-                      <div className="text-xs mb-1" style={{ color: '#5a6478' }}>Customer Type</div>
-                      <div className="font-semibold text-sm" style={{ color: '#e8edf5' }}>
+                    <div style={{ background: 'var(--muted)', border: '1px solid var(--border)', borderRadius: '8px', padding: '12px' }}>
+                      <div className="text-xs mb-1" style={{ color: 'var(--muted-foreground)' }}>Customer Type</div>
+                      <div className="font-semibold text-sm" style={{ color: 'var(--foreground)' }}>
                         {business.verified_product_catalog.primary_customer_type || '—'}
                       </div>
                     </div>
 
-                    <div style={{ background: '#1c2837', border: '1px solid #2d3748', borderRadius: '8px', padding: '12px' }}>
-                      <div className="text-xs mb-1" style={{ color: '#5a6478' }}>Catalog Confidence</div>
+                    <div style={{ background: 'var(--muted)', border: '1px solid var(--border)', borderRadius: '8px', padding: '12px' }}>
+                      <div className="text-xs mb-1" style={{ color: 'var(--muted-foreground)' }}>Catalog Confidence</div>
                       <div className="font-semibold text-sm" style={{
                         color: business.verified_product_catalog.confidence === 'high' ? '#22c55e' :
                                business.verified_product_catalog.confidence === 'medium' ? '#f59e0b' :
-                               business.verified_product_catalog.confidence === 'low' ? '#ef4444' : '#5a6478'
+                               business.verified_product_catalog.confidence === 'low' ? '#ef4444' : 'var(--muted-foreground)'
                       }}>
                         {business.verified_product_catalog.confidence
                           ? business.verified_product_catalog.confidence.charAt(0).toUpperCase() + business.verified_product_catalog.confidence.slice(1)
@@ -564,7 +564,7 @@ export default function BusinessDetailsPage() {
             <CardContent className="space-y-5">
               {(business.linkedin_url || business.serp_enrichment?.linkedin_url) && (
                 <div>
-                  <h3 className="text-sm font-semibold mb-2" style={{ color: '#e8edf5' }}>LinkedIn</h3>
+                  <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--foreground)' }}>LinkedIn</h3>
                   <a
                     href={business.linkedin_url || business.serp_enrichment?.linkedin_url}
                     target="_blank"
@@ -573,9 +573,9 @@ export default function BusinessDetailsPage() {
                       display: 'inline-flex',
                       alignItems: 'center',
                       gap: '6px',
-                      background: '#1c2837',
-                      border: '1px solid #2d3748',
-                      color: '#e8edf5',
+                      background: 'var(--muted)',
+                      border: '1px solid var(--border)',
+                      color: 'var(--foreground)',
                       borderRadius: '6px',
                       padding: '6px 14px',
                       fontSize: '0.875rem',
@@ -590,9 +590,9 @@ export default function BusinessDetailsPage() {
 
               {(business.serp_enrichment?.company_summary || (Array.isArray(business.serp_enrichment?.company_snippets) && business.serp_enrichment.company_snippets.length > 0)) && (
                 <div>
-                  <h3 className="text-sm font-semibold mb-2" style={{ color: '#e8edf5' }}>Company Insights</h3>
+                  <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--foreground)' }}>Company Insights</h3>
                   {business.serp_enrichment?.company_summary ? (
-                    <p className="text-sm leading-relaxed" style={{ color: '#9aa3b0' }}>
+                    <p className="text-sm leading-relaxed" style={{ color: 'var(--muted-foreground)' }}>
                       {business.serp_enrichment.company_summary}
                     </p>
                   ) : (
@@ -601,7 +601,7 @@ export default function BusinessDetailsPage() {
                         .map((s: string) => s.replace(/\.\.\.Read more/gi, "").replace(/…\s*Read more/gi, "").replace(/\.\.\.$/, "").replace(/…$/, "").trim())
                         .filter((s: string) => s.length >= 40 && (s.match(/·/g) || []).length < 2)
                         .map((snippet: string, i: number) => (
-                          <li key={i} className="flex items-start gap-2 text-sm" style={{ color: '#5a6478' }}>
+                          <li key={i} className="flex items-start gap-2 text-sm" style={{ color: 'var(--muted-foreground)' }}>
                             <span style={{ color: '#3b82f6', marginTop: '2px', flexShrink: 0 }}>•</span>
                             {snippet}
                           </li>
@@ -613,9 +613,9 @@ export default function BusinessDetailsPage() {
 
               {(business.serp_enrichment?.product_summary || (Array.isArray(business.serp_enrichment?.product_snippets) && business.serp_enrichment.product_snippets.length > 0)) && (
                 <div>
-                  <h3 className="text-sm font-semibold mb-2" style={{ color: '#e8edf5' }}>Product Insights</h3>
+                  <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--foreground)' }}>Product Insights</h3>
                   {business.serp_enrichment?.product_summary ? (
-                    <p className="text-sm leading-relaxed" style={{ color: '#9aa3b0' }}>
+                    <p className="text-sm leading-relaxed" style={{ color: 'var(--muted-foreground)' }}>
                       {business.serp_enrichment.product_summary}
                     </p>
                   ) : (
@@ -624,7 +624,7 @@ export default function BusinessDetailsPage() {
                         .map((s: string) => s.replace(/\.\.\.Read more/gi, "").replace(/…\s*Read more/gi, "").replace(/\.\.\.$/, "").replace(/…$/, "").trim())
                         .filter((s: string) => s.length >= 40 && (s.match(/·/g) || []).length < 2)
                         .map((snippet: string, i: number) => (
-                          <li key={i} className="flex items-start gap-2 text-sm" style={{ color: '#5a6478' }}>
+                          <li key={i} className="flex items-start gap-2 text-sm" style={{ color: 'var(--muted-foreground)' }}>
                             <span style={{ color: '#8b5cf6', marginTop: '2px', flexShrink: 0 }}>•</span>
                             {snippet}
                           </li>
@@ -639,7 +639,7 @@ export default function BusinessDetailsPage() {
                !business.serp_enrichment?.product_summary &&
                (!Array.isArray(business.serp_enrichment?.company_snippets) || business.serp_enrichment.company_snippets.length === 0) &&
                (!Array.isArray(business.serp_enrichment?.product_snippets) || business.serp_enrichment.product_snippets.length === 0) && (
-                <p className="text-sm" style={{ color: '#5a6478' }}>No intelligence data available for this lead.</p>
+                <p className="text-sm" style={{ color: 'var(--muted-foreground)' }}>No intelligence data available for this lead.</p>
               )}
             </CardContent>
           </Card>
@@ -664,12 +664,12 @@ export default function BusinessDetailsPage() {
                 </div>
 
               {primaryContactEmail && (
-                <div className="p-4 rounded-lg" style={{ background: '#1c2837', border: '1px solid #22c55e33' }}>
+                <div className="p-4 rounded-lg" style={{ background: 'var(--muted)', border: '1px solid #22c55e33' }}>
                   <div className="flex items-center gap-3 mb-1">
                     <CheckCircle className="h-4 w-4" style={{ color: '#22c55e' }} />
-                    <span className="text-sm font-semibold" style={{ color: '#e8edf5' }}>Primary Contact Email</span>
+                    <span className="text-sm font-semibold" style={{ color: 'var(--foreground)' }}>Primary Contact Email</span>
                   </div>
-                  <div className="pl-7 font-medium" style={{ color: '#e8edf5' }}>{primaryContactEmail}</div>
+                  <div className="pl-7 font-medium" style={{ color: 'var(--foreground)' }}>{primaryContactEmail}</div>
                   <div className="pl-7 mt-1">
                     <Badge className="bg-green-600 text-xs"><CheckCircle className="h-2 w-2 mr-1" />Highest confidence</Badge>
                   </div>
@@ -771,7 +771,7 @@ export default function BusinessDetailsPage() {
                 <div className="text-center py-12">
                   <Mail className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                   <h3 className="font-semibold text-lg mb-2">No outreach yet</h3>
-                  <p className="text-gray-600 mb-6">Generate an AI-powered email to start your outreach</p>
+                  <p className="text-muted-foreground mb-6">Generate an AI-powered email to start your outreach</p>
                   <Button onClick={handleGenerateEmail}>
                     <Send className="mr-2 h-4 w-4" />
                     Generate Email Draft

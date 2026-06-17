@@ -22,7 +22,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await login(email, password);
-      navigate("/app");
+      navigate("/app/simple-search");
     } catch (err: any) {
       setError(err.message || "Invalid email or password");
       setLoading(false);

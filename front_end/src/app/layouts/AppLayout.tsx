@@ -52,8 +52,8 @@ export default function AppLayout() {
     path === "/app" ? location.pathname === "/app" : location.pathname.startsWith(path);
 
   const navItems = [
+    { icon: Search, label: "Search", path: "/app/simple-search", badge: null },
     { icon: LayoutDashboard, label: "Dashboard", path: "/app", badge: null },
-    { icon: Search, label: "Simple Search", path: "/app/simple-search", badge: null },
     { icon: Search, label: "Advanced Search", path: "/app/search", badge: null },
     { icon: LayoutList, label: "Leads Hub", path: "/app/leads", badge: null },
     { icon: Zap, label: "Campaign Engine", path: "/app/campaigns", badge: null },
@@ -81,8 +81,8 @@ export default function AppLayout() {
 
   const pageTitles: Record<string, { title: string; sub: string }> = {
     "/app": { title: "Dashboard", sub: "Overview & pipeline" },
-    "/app/simple-search": { title: "Simple Search", sub: "Find international buyers instantly" },
-    "/app/search": { title: "Search Businesses", sub: "Discover → Score → Verify → Decide" },
+    "/app/simple-search": { title: "Search", sub: "Find international buyers instantly" },
+    "/app/search": { title: "Advanced Search", sub: "Discover → Score → Verify → Decide" },
     "/app/leads": { title: "Leads Hub", sub: "All discovered leads across every search session" },
     "/app/clients": { title: "Clients", sub: "Saved & verified lead database" },
     "/app/contacts": { title: "Contacts", sub: "Contact directory" },
@@ -110,13 +110,13 @@ export default function AppLayout() {
       <Link key={item.path} to={item.path} onClick={() => mobile && setMobileMenuOpen(false)}>
         <div className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-150 relative
           ${active
-            ? "bg-blue-500/10 text-blue-400 font-medium border border-blue-500/20"
-            : "text-[#8a95a8] hover:bg-[#151a22] hover:text-[#e8edf5]"}
+            ? "bg-primary/10 text-primary font-medium border border-primary/20"
+            : "text-muted-foreground hover:bg-muted hover:text-foreground"}
           ${!sidebarOpen && !mobile ? "justify-center px-2" : ""}`}>
           <Icon className="h-4 w-4 flex-shrink-0" />
-          {(sidebarOpen || mobile) && <span className="flex-1">{item.label}</span>}
+          {(sidebarOpen || mobile) && <span className="flex-1 font-bold text-foreground">{item.label}</span>}
           {(sidebarOpen || mobile) && item.badge && (
-            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${item.badgeGreen ? "bg-emerald-500/20 text-emerald-400" : "bg-blue-500/20 text-blue-400"}`}>
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${item.badgeGreen ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400" : "bg-primary/20 text-primary"}`}>
               {item.badge}
             </span>
           )}
@@ -130,18 +130,18 @@ export default function AppLayout() {
       {/* Desktop Sidebar */}
       <aside className={`${sidebarOpen ? "w-56" : "w-14"} hidden md:flex flex-col transition-all duration-300 border-r bg-card`}>
         {/* Logo */}
-        <div className="h-14 flex items-center justify-between px-3 border-b" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
+        <div className="h-14 flex items-center justify-between px-3 border-b border-border">
           {sidebarOpen && (
-            <Link to="/app" className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg flex items-center justify-center text-white font-bold text-xs"
+            <Link to="/app" className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center text-white font-bold text-sm"
                 style={{ background: "linear-gradient(135deg, #3b82f6, #1d4ed8)", fontFamily: "Syne, sans-serif" }}>CF</div>
-              <span className="font-bold text-sm text-white" style={{ fontFamily: "Syne, sans-serif" }}>
-                Client<span className="text-blue-400">Finder</span>
+              <span className="font-bold text-lg text-foreground" style={{ fontFamily: "Syne, sans-serif", letterSpacing: "-0.02em" }}>
+                Client<span className="text-blue-500">Finder</span>
               </span>
             </Link>
           )}
           <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="h-7 w-7 text-[#5a6478] hover:text-[#e8edf5] hover:bg-[#151a22]">
+            className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-muted">
             {sidebarOpen ? <ChevronLeft className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
           </Button>
         </div>
@@ -150,25 +150,25 @@ export default function AppLayout() {
           {showAdminNav ? (
             <>
               {sidebarOpen && (
-                <Link to="/app" className="flex items-center gap-2 px-3 py-2 mb-2 text-sm text-[#8a95a8] hover:text-[#e8edf5] hover:bg-[#151a22] rounded-lg transition-all">
+                <Link to="/app" className="flex items-center gap-2 px-3 py-2 mb-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-all">
                   <ArrowLeft className="h-4 w-4" />
                   <span>Back to App</span>
                 </Link>
               )}
               {!sidebarOpen && (
-                <Link to="/app" className="flex justify-center px-2 py-2 mb-2 text-[#8a95a8] hover:text-[#e8edf5] hover:bg-[#151a22] rounded-lg transition-all">
+                <Link to="/app" className="flex justify-center px-2 py-2 mb-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-all">
                   <ArrowLeft className="h-4 w-4" />
                 </Link>
               )}
-              {sidebarOpen && <div className="px-3 py-2 text-[10px] font-semibold text-[#5a6478] uppercase tracking-widest">Admin</div>}
+              {sidebarOpen && <div className="px-3 py-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Admin</div>}
               {adminNavItems.map(item => <NavItem key={item.path} item={item} />)}
             </>
           ) : (
             <>
-              {sidebarOpen && <div className="px-3 py-2 text-[10px] font-semibold text-[#5a6478] uppercase tracking-widest">Workspace</div>}
+              {sidebarOpen && <div className="px-3 py-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Workspace</div>}
               {navItems.map(item => <NavItem key={item.path} item={item} />)}
-              <div className="mt-4 pt-3 border-t" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
-                {sidebarOpen && <div className="px-3 py-2 text-[10px] font-semibold text-[#5a6478] uppercase tracking-widest">Account</div>}
+              <div className="mt-4 pt-3 border-t border-border">
+                {sidebarOpen && <div className="px-3 py-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Account</div>}
                 {accountItems.map(item => <NavItem key={item.path} item={{ ...item, badge: null, badgeGreen: false }} />)}
               </div>
             </>
@@ -193,15 +193,15 @@ export default function AppLayout() {
                       : credits.low_credits ? "text-amber-400"
                       : "text-blue-400"
                     }`} />
-                    <span className="text-[10px] font-semibold text-[#5a6478] uppercase tracking-widest">Credits</span>
+                    <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Credits</span>
                   </div>
                   <span className={`text-xs font-bold ${
                     credits.empty ? "text-red-400"
                     : credits.low_credits ? "text-amber-400"
-                    : "text-[#e8edf5]"
+                    : "text-foreground"
                   }`}>{credits.credits_remaining}</span>
                 </div>
-                <div className="w-full h-1 rounded-full bg-[#1a2030] overflow-hidden">
+                <div className="w-full h-1 rounded-full bg-muted overflow-hidden">
                   <div
                     className={`h-1 rounded-full transition-all ${
                       credits.empty ? "bg-red-500"
@@ -238,22 +238,22 @@ export default function AppLayout() {
         )}
 
         {/* User card */}
-        <div className="p-2 border-t" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
+        <div className="p-2 border-t border-border">
           <Link to="/app/profile">
-          <div className={`flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer hover:bg-[#151a22] transition-colors ${!sidebarOpen ? "justify-center" : ""}`}>
+          <div className={`flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer hover:bg-muted transition-colors ${!sidebarOpen ? "justify-center" : ""}`}>
             <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
               style={{ background: "linear-gradient(135deg, #7c3aed, #3b82f6)" }}>{userInitials}</div>
             {sidebarOpen && (
               <div className="flex-1 min-w-0">
-                <div className="text-xs font-semibold text-[#e8edf5] truncate">{userName}</div>
-                <div className="text-[10px] text-[#5a6478]">{user?.plan || ""}</div>
+                <div className="text-xs font-semibold text-foreground truncate">{userName}</div>
+                <div className="text-[10px] text-muted-foreground">{user?.plan || ""}</div>
               </div>
             )}
           </div>
           </Link>
           <button
             onClick={() => logout()}
-            className={`mt-1 flex items-center gap-2 px-2 py-1.5 w-full rounded-lg text-red-400 hover:bg-red-500/10 transition-colors text-xs ${!sidebarOpen ? "justify-center" : ""}`}
+            className={`mt-1 flex items-center gap-2 px-2 py-1.5 w-full rounded-lg text-destructive hover:bg-destructive/10 transition-colors text-xs ${!sidebarOpen ? "justify-center" : ""}`}
           >
             <LogOut className="h-3.5 w-3.5 flex-shrink-0" />
             {sidebarOpen && <span>Sign Out</span>}
@@ -266,20 +266,20 @@ export default function AppLayout() {
         <div className="fixed inset-0 z-50 md:hidden">
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setMobileMenuOpen(false)} />
           <aside className="fixed left-0 top-0 bottom-0 w-64 flex flex-col border-r bg-card">
-            <div className="h-14 flex items-center justify-between px-4 border-b" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
+            <div className="h-14 flex items-center justify-between px-4 border-b border-border">
               <Link to="/app" className="flex items-center gap-2">
                 <div className="w-7 h-7 rounded-lg flex items-center justify-center text-white font-bold text-xs"
                   style={{ background: "linear-gradient(135deg, #3b82f6, #1d4ed8)" }}>CF</div>
                 <span className="font-bold text-sm text-white" style={{ fontFamily: "Syne, sans-serif" }}>ClientFinder</span>
               </Link>
-              <Button variant="ghost" size="icon" onClick={() => setMobileMenuOpen(false)} className="h-7 w-7 text-[#5a6478]">
+              <Button variant="ghost" size="icon" onClick={() => setMobileMenuOpen(false)} className="h-7 w-7 text-muted-foreground">
                 <X className="h-4 w-4" />
               </Button>
             </div>
             <nav className="flex-1 overflow-y-auto p-2 space-y-0.5">
               {showAdminNav ? (
                 <>
-                  <Link to="/app" className="flex items-center gap-2 px-3 py-2 mb-2 text-sm text-[#8a95a8] hover:text-[#e8edf5] hover:bg-[#151a22] rounded-lg transition-all" onClick={() => setMobileMenuOpen(false)}>
+                  <Link to="/app" className="flex items-center gap-2 px-3 py-2 mb-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-all" onClick={() => setMobileMenuOpen(false)}>
                     <ArrowLeft className="h-4 w-4" />
                     <span>Back to App</span>
                   </Link>
@@ -288,13 +288,13 @@ export default function AppLayout() {
               ) : (
                 <>
                   {navItems.map(item => <NavItem key={item.path} item={item} mobile />)}
-                  <div className="mt-4 pt-3 border-t" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
+                  <div className="mt-4 pt-3 border-t border-border">
                     {accountItems.map(item => <NavItem key={item.path} item={{ ...item, badge: null, badgeGreen: false }} mobile />)}
                   </div>
-                  <div className="mt-4 pt-3 border-t" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
+                  <div className="mt-4 pt-3 border-t border-border">
                     <button
                       onClick={() => { logout(); setMobileMenuOpen(false); }}
-                      className="flex items-center gap-3 px-3 py-2 w-full rounded-lg text-sm text-red-400 hover:bg-red-500/10 transition-colors"
+                      className="flex items-center gap-3 px-3 py-2 w-full rounded-lg text-sm text-destructive hover:bg-destructive/10 transition-colors"
                     >
                       <LogOut className="h-4 w-4 flex-shrink-0" />
                       <span>Sign Out</span>
@@ -312,12 +312,12 @@ export default function AppLayout() {
         {/* Topbar */}
         <header className="h-14 flex items-center justify-between px-4 lg:px-6 border-b flex-shrink-0 bg-card">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" className="md:hidden h-8 w-8 text-[#8a95a8]" onClick={() => setMobileMenuOpen(true)}>
+            <Button variant="ghost" size="icon" className="md:hidden h-8 w-8 text-muted-foreground" onClick={() => setMobileMenuOpen(true)}>
               <Menu className="h-4 w-4" />
             </Button>
             <div>
-              <div className="font-bold text-sm text-[#e8edf5]" style={{ fontFamily: "Syne, sans-serif" }}>{pageInfo.title}</div>
-              <div className="text-[11px] text-[#5a6478]">{pageInfo.sub}</div>
+              <div className="font-bold text-base text-foreground" style={{ fontFamily: "Syne, sans-serif" }}>{pageInfo.title}</div>
+              <div className="text-[11px] text-muted-foreground">{pageInfo.sub}</div>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -327,28 +327,28 @@ export default function AppLayout() {
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="gap-2 h-8 px-2 hover:bg-[#151a22]">
+                <Button variant="ghost" className="gap-2 h-8 px-2 hover:bg-muted">
                   <Avatar className="h-7 w-7">
                     <AvatarFallback className="text-xs font-bold" style={{ background: "linear-gradient(135deg,#7c3aed,#3b82f6)", color: "white" }}>{userInitials}</AvatarFallback>
                   </Avatar>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48 bg-card border-border">
-                <DropdownMenuLabel className="text-[#e8edf5]">{userName}</DropdownMenuLabel>
-                <DropdownMenuSeparator style={{ background: "rgba(255,255,255,0.07)" }} />
-                <DropdownMenuItem onClick={() => navigate("/app/profile")} className="text-[#8a95a8] hover:text-[#e8edf5] cursor-pointer">
+                <DropdownMenuLabel className="text-foreground">{userName}</DropdownMenuLabel>
+                <DropdownMenuSeparator className="bg-border" />
+                <DropdownMenuItem onClick={() => navigate("/app/profile")} className="text-muted-foreground hover:text-foreground cursor-pointer">
                   <UserCircle className="mr-2 h-4 w-4" /> My Profile
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigate("/app/settings")} className="text-[#8a95a8] hover:text-[#e8edf5] cursor-pointer">
+                <DropdownMenuItem onClick={() => navigate("/app/settings")} className="text-muted-foreground hover:text-foreground cursor-pointer">
                   <Settings className="mr-2 h-4 w-4" /> Settings
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigate("/app/billing")} className="text-[#8a95a8] hover:text-[#e8edf5] cursor-pointer">
+                <DropdownMenuItem onClick={() => navigate("/app/billing")} className="text-muted-foreground hover:text-foreground cursor-pointer">
                   <CreditCard className="mr-2 h-4 w-4" /> Billing
                 </DropdownMenuItem>
-                <DropdownMenuSeparator style={{ background: "rgba(255,255,255,0.07)" }} />
+                <DropdownMenuSeparator className="bg-border" />
                 <DropdownMenuItem
                   onClick={() => logout()}
-                  className="text-red-400 cursor-pointer">
+                  className="text-destructive cursor-pointer">
                   Sign Out
                 </DropdownMenuItem>
               </DropdownMenuContent>

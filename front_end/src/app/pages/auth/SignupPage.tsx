@@ -18,7 +18,7 @@ const passwordRules = [
 
 export default function SignupPage() {
   const navigate = useNavigate();
-  const { signup } = useAuth();
+  const { signup, login, refreshUser } = useAuth();
   const [formData, setFormData] = useState({
     fullName: "",
     email: "",
@@ -30,7 +30,6 @@ export default function SignupPage() {
   const [error, setError] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [passwordTouched, setPasswordTouched] = useState(false);
-  const [successMessage, setSuccessMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -52,8 +51,15 @@ export default function SignupPage() {
     }
     setLoading(true);
     try {
-      const message = await signup(formData.fullName, formData.email, formData.password);
-      setSuccessMessage(message);
+      localStorage.removeItem("cf_onboarding_done");
+      localStorage.removeItem("cf_onboarding_skipped_step1");
+      
+      await signup(formData.fullName, formData.email, formData.password);
+      await login(formData.email, formData.password);
+      if (refreshUser) {
+        await refreshUser();
+      }
+      navigate("/onboarding");
     } catch (err: any) {
       setFormError(
         err?.response?.data?.detail || err?.message || "Signup failed. Please try again."
@@ -65,27 +71,6 @@ export default function SignupPage() {
   const handleChange = (field: string, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
-
-  if (successMessage) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card className="w-full max-w-md bg-card">
-          <CardHeader className="text-center">
-            <div className="w-12 h-12 bg-green-600 rounded-lg flex items-center justify-center text-white font-bold text-xl mx-auto mb-4">
-              ✓
-            </div>
-            <CardTitle className="text-2xl">Check Your Email</CardTitle>
-            <CardDescription>{successMessage}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Link to="/auth/login">
-              <Button className="w-full">Go to Login</Button>
-            </Link>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-background flex">

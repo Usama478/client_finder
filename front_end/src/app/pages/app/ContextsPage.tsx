@@ -157,7 +157,7 @@ export default function ContextsPage() {
   const displayContexts = contexts.map((c: any) => ({
     id: String(c.context_id || c.id),
     name: c.name || c.context_name || "Context",
-    description: c.description || c.prompt_text?.slice(0, 80) || "",
+    description: c.description || "",
     criteria: c.criteria || c.prompt_text || "",
     usageCount: c.usage_count || 0,
   }));
@@ -327,7 +327,7 @@ export default function ContextsPage() {
             </CardHeader>
             <CardContent className="flex flex-col flex-1 min-h-0 pt-0 space-y-3">
               <p className="text-sm text-muted-foreground line-clamp-3 flex-1 min-h-0">
-                {context.criteria || "No criteria set"}
+                {context.description ? context.description : "Search context with custom criteria"}
               </p>
               <div className="flex gap-2 shrink-0 mt-auto">
                 <Button variant="outline" size="sm" onClick={() => {

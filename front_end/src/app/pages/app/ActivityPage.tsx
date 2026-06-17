@@ -71,11 +71,11 @@ export default function ActivityPage() {
     <div className="p-6 space-y-4 page-enter">
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-xl font-bold text-foreground"
-            style={{ fontFamily: "Syne, sans-serif" }}>Activity</div>
-          <div className="text-[12px] text-muted-foreground mt-0.5">
+          <h1 className="text-3xl font-bold text-foreground"
+            style={{ fontFamily: "Syne, sans-serif" }}>Activity</h1>
+          <p className="text-sm text-muted-foreground mt-1">
             Complete timeline of your workspace actions
-          </div>
+          </p>
         </div>
       </div>
 

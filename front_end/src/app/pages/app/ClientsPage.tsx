@@ -20,14 +20,14 @@ const safeParse = (v: any): Record<string, any> => {
 
 // ── Styles ─────────────────────────────────────────────────────────────────────
 
-const card: React.CSSProperties = { background: "#0d1117", border: "1px solid #1c2837", borderRadius: 10 };
+const card: React.CSSProperties = { background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10 };
 const btnPrimary: React.CSSProperties = { background: "#2563eb", color: "white", border: "none", borderRadius: 6, padding: "8px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "DM Sans, sans-serif", display: "flex", alignItems: "center", gap: 6 };
 const btnGhost: React.CSSProperties = { background: "transparent", color: "var(--muted-foreground)", border: "1px solid var(--border)", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 500, cursor: "pointer", fontFamily: "DM Sans, sans-serif", display: "flex", alignItems: "center", gap: 6 };
 
 // ── Small components ───────────────────────────────────────────────────────────
 
 const Badge = ({ children, color }: { children: React.ReactNode; color: "green"|"blue"|"amber"|"red"|"gray" }) => {
-  const m = { green: ["rgba(16,185,129,0.1)","var(--chart-2)"], blue: ["rgba(59,130,246,0.15)","#60a5fa"], amber: ["rgba(245,158,11,0.1)","var(--chart-3)"], red: ["rgba(239,68,68,0.1)","var(--destructive)"], gray: ["var(--border)","var(--muted-foreground)"] };
+  const m = { green: ["rgba(16,185,129,0.1)","var(--chart-2)"], blue: ["rgba(59,130,246,0.1)","var(--primary)"], amber: ["rgba(245,158,11,0.1)","var(--chart-3)"], red: ["rgba(239,68,68,0.1)","var(--destructive)"], gray: ["var(--border)","var(--muted-foreground)"] };
   const [bg,text]=m[color];
   return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold" style={{background:bg,color:text}}>{children}</span>;
 };
@@ -269,6 +269,10 @@ export default function ClientsPage() {
 
   return (
     <div className="p-6 space-y-4 page-enter">
+      <div className="px-6 pt-6 pb-2">
+        <h1 className="text-3xl font-bold text-foreground" style={{ fontFamily: "Syne, sans-serif" }}>Clients</h1>
+        <p className="text-sm text-muted-foreground mt-1">Your saved and verified lead database</p>
+      </div>
       {/* Header row */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex gap-1.5 flex-wrap">
@@ -276,8 +280,8 @@ export default function ClientsPage() {
             <button key={t.key} onClick={() => setFilter(t.key)}
               className="px-3 py-1.5 rounded-full text-[12px] font-medium transition-all"
               style={filter === t.key
-                ? { background: "rgba(59,130,246,0.15)", border: "1px solid rgba(59,130,246,0.3)", color: "#60a5fa" }
-                : { background: "var(--muted)", border: "1px solid #1c2837", color: "var(--muted-foreground)" }}>
+                ? { background: "rgba(59,130,246,0.1)", border: "1px solid var(--primary)", color: "var(--primary)" }
+                : { background: "var(--muted)", border: "1px solid var(--border)", color: "var(--muted-foreground)" }}>
               {t.label}
             </button>
           ))}
@@ -313,7 +317,7 @@ export default function ClientsPage() {
       {selectedIds.length > 0 && (
         <div className="flex flex-wrap items-center gap-3 p-3 rounded-xl"
           style={{ background: "rgba(59,130,246,0.05)", border: "1px solid rgba(59,130,246,0.2)" }}>
-          <span className="text-sm font-semibold text-blue-400">{selectedIds.length} selected</span>
+          <span className="text-sm font-semibold" style={{ color: "var(--primary)" }}>{selectedIds.length} selected</span>
           <div className="flex gap-2">
             <button style={btnGhost} disabled={exporting} onClick={() => handleExport("csv")}><Download className="h-3.5 w-3.5"/>Export CSV</button>
             <button style={btnGhost} disabled={exporting} onClick={() => handleExport("excel")}><Download className="h-3.5 w-3.5"/>Export Excel</button>
@@ -350,7 +354,7 @@ export default function ClientsPage() {
       <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 340px", alignItems: "start" }}>
 
         {/* Table */}
-        <div className="overflow-hidden rounded-xl" style={{ border: "1px solid #1c2837" }}>
+        <div className="overflow-hidden rounded-xl" style={{ border: "1px solid var(--border)" }}>
           {clientsLoading ? (
             <div className="flex justify-center items-center py-20">
               <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
@@ -361,7 +365,7 @@ export default function ClientsPage() {
             <>
               {/* Header */}
               <div className="grid text-[10px] font-semibold text-muted-foreground uppercase tracking-widest px-4 py-3"
-                style={{ gridTemplateColumns: "28px 1fr 70px 90px 130px 90px 80px", background: "var(--muted)", borderBottom: "1px solid #1c2837" }}>
+                style={{ gridTemplateColumns: "28px 1fr 70px 90px 130px 90px 80px", background: "var(--muted)", borderBottom: "1px solid var(--border)" }}>
                 <div>
                   <input
                     type="checkbox"
@@ -381,7 +385,7 @@ export default function ClientsPage() {
                     style={{
                       gridTemplateColumns: "28px 1fr 70px 90px 130px 90px 80px",
                       borderBottom: i < filtered.length - 1 ? "1px solid var(--border)" : "none",
-                      background: activeClient?.id === c.id ? "rgba(59,130,246,0.05)" : selectedIds.includes(c.id) ? "rgba(59,130,246,0.03)" : "#0d1117",
+                      background: activeClient?.id === c.id ? "rgba(59,130,246,0.05)" : selectedIds.includes(c.id) ? "rgba(59,130,246,0.03)" : "var(--background)",
                     }}
                     onClick={() => setActiveClient(c)}>
                     <div onClick={e => { e.stopPropagation(); toggle(c.id); }}>
@@ -413,9 +417,9 @@ export default function ClientsPage() {
 
         {/* Verification Details Panel */}
         {activeClient && (
-        <div className="rounded-xl overflow-hidden sticky top-4" style={{ border: "1px solid #1c2837", background: "#0d1117" }}>
+        <div className="rounded-xl overflow-hidden sticky top-4" style={{ border: "1px solid var(--border)", background: "var(--card)" }}>
           {/* Panel header */}
-          <div className="p-4 flex items-center gap-3" style={{ borderBottom: "1px solid #1c2837" }}>
+          <div className="p-4 flex items-center gap-3" style={{ borderBottom: "1px solid var(--border)" }}>
             <div className="w-14 h-14 rounded-full flex items-center justify-center text-xl font-bold flex-shrink-0"
               style={{ border: `2px solid ${ringColor}`, background: ringBg, color: ringColor, fontFamily: "Syne,sans-serif" }}>
               {activeClient?.verificationScore}
@@ -454,19 +458,19 @@ export default function ClientsPage() {
           </div>
 
           {/* AI Relevance summary */}
-          <div className="px-4 py-3" style={{ borderTop: "1px solid #1c2837" }}>
+          <div className="px-4 py-3" style={{ borderTop: "1px solid var(--border)" }}>
             <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">AI Relevance</div>
             <div className="flex items-center gap-2 mb-1">
               <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--accent)" }}>
-                <div className="h-full rounded-full" style={{ width: `${activeClient?.relevanceScore || 0}%`, background: "#8b5cf6" }}/>
+                <div className="h-full rounded-full bg-primary" style={{ width: `${activeClient?.relevanceScore || 0}%` }}/>
               </div>
-              <span className="text-[12px] font-bold text-[#8b5cf6]">{activeClient?.relevanceScore || 0}%</span>
+              <span className="text-[12px] font-bold text-primary">{activeClient?.relevanceScore || 0}%</span>
             </div>
             <div className="text-[11px] text-muted-foreground">Strong B2B profile match. Verified export market presence.</div>
           </div>
 
           {/* Actions */}
-          <div className="px-4 py-3 space-y-2" style={{ borderTop: "1px solid #1c2837" }}>
+          <div className="px-4 py-3 space-y-2" style={{ borderTop: "1px solid var(--border)" }}>
             <button style={{ ...btnPrimary, width: "100%", justifyContent: "center" }} onClick={() => navigate(`/app/email?tab=campaign&clientIds=${activeClient.id}`)}>
               <Mail className="h-3.5 w-3.5"/>Generate Outreach Email
             </button>
@@ -500,7 +504,7 @@ export default function ClientsPage() {
                 width: "100%",
                 padding: "10px 16px",
                 background: "transparent",
-                border: "1px solid #1c2837",
+                border: "1px solid var(--border)",
                 borderRadius: "6px",
                 color: "var(--foreground)",
                 fontSize: "14px",
@@ -512,7 +516,7 @@ export default function ClientsPage() {
                 cursor: "pointer",
                 transition: "all 0.2s"
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = "#1c2837"; }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "var(--muted)"; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
             >
               <Eye className="h-4 w-4" />

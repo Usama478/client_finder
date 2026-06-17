@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react"
-import { useNavigate } from "react-router"
+import { useNavigate, useLocation } from "react-router"
 import { Search, ExternalLink, RefreshCw } from "lucide-react"
 import { api, SearchSession } from "../../../lib/api"
 import { useAuth } from "../../../lib/auth-context"
@@ -63,6 +63,8 @@ export default function SimpleSearchPage() {
   const pollTimers = useRef<Record<number, ReturnType<typeof setInterval>>>({})
   const statusTimers = useRef<ReturnType<typeof setTimeout>[]>([])
 
+  const location = useLocation()
+
   useEffect(() => {
     api.sessions()
       .then(sessions => setRecentSessions(sessions || []))
@@ -87,6 +89,17 @@ export default function SimpleSearchPage() {
       statusTimers.current.forEach(clearTimeout)
     }
   }, [])
+
+  // Auto-search effect
+  useEffect(() => {
+    const state = location.state as { autoSearch?: string } | null
+    if (state?.autoSearch && user) {
+      setQuery(state.autoSearch)
+      handleSearch(state.autoSearch)
+      // Clear the state so it doesn't trigger again on reload
+      window.history.replaceState({}, document.title)
+    }
+  }, [location.state, user])
 
   const queueStatusLine = (delay: number, line: string) => {
     const timer = setTimeout(() => {
@@ -420,8 +433,13 @@ export default function SimpleSearchPage() {
     return (
       <div style={{ minHeight: "calc(100vh - 56px)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
         <div style={{ width: "100%", maxWidth: 680 }}>
-          <div style={{ fontSize: 13, color: "var(--muted-foreground)", marginBottom: 12, textAlign: "center" }}>
-            ClientFinder
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: "32px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+              <div style={{ width: "64px", height: "64px", borderRadius: "16px", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontSize: "28px", fontWeight: "bold", background: "linear-gradient(135deg, #3b82f6, #1d4ed8)", fontFamily: "Syne, sans-serif" }}>CF</div>
+              <span style={{ fontSize: "46px", fontWeight: "bold", fontFamily: "Syne, sans-serif", letterSpacing: "-0.02em" }} className="text-foreground">
+                Client<span style={{ color: "#3b82f6" }}>Finder</span>
+              </span>
+            </div>
           </div>
           {searchBarJSX}
           {statusLinesJSX}
@@ -484,6 +502,7 @@ export default function SimpleSearchPage() {
 
       {!searching && (
         <>
+          <h1 className="text-2xl font-bold text-foreground" style={{ fontFamily: "Syne, sans-serif" }}>Search Results</h1>
           <div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: "var(--foreground)" }}>

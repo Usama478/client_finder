@@ -9,7 +9,7 @@ import { CheckCircle, ArrowLeft, AlertCircle } from "lucide-react";
 import { api } from "../../../lib/api";
 
 const LeftPanel = () => (
-  <div className="hidden lg:flex w-1/2 bg-[#080a0d] border-r border-[rgba(255,255,255,0.06)] flex-col justify-between p-12 relative overflow-hidden">
+  <div className="hidden lg:flex w-1/2 bg-muted border-r border-border flex-col justify-between p-12 relative overflow-hidden">
     <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
       <svg
         width={500}
@@ -69,7 +69,7 @@ const LeftPanel = () => (
         </div>
       </div>
 
-      <div className="rounded-xl border border-[rgba(255,255,255,0.08)] bg-[#0f1218]/80 backdrop-blur-sm p-4">
+      <div className="rounded-xl border border-border bg-card/80 backdrop-blur-sm p-4">
         <div className="flex items-center gap-2 mb-3">
           <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
           <span className="text-xs font-semibold text-foreground">Security Notice</span>
@@ -124,7 +124,7 @@ export default function ResetPasswordPage() {
         <LeftPanel />
         <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-background">
           <div className="w-full max-w-sm">
-            <Card className="bg-[#0f1218] border border-[rgba(255,255,255,0.08)] shadow-2xl shadow-black/50">
+            <Card className="bg-card border border-border shadow-2xl shadow-black/10">
               <CardHeader className="text-center">
                 <div className="w-16 h-16 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center mx-auto mb-6">
                   <CheckCircle className="h-8 w-8 text-emerald-400" />
@@ -157,7 +157,7 @@ export default function ResetPasswordPage() {
             CF
           </div>
 
-          <Card className="bg-[#0f1218] border border-[rgba(255,255,255,0.08)] shadow-2xl shadow-black/50">
+          <Card className="bg-card border border-border shadow-2xl shadow-black/10">
             <CardHeader className="text-center">
               <CardTitle className="font-['Syne'] text-xl">Create new password</CardTitle>
               <CardDescription className="text-sm text-muted-foreground">
@@ -183,7 +183,7 @@ export default function ResetPasswordPage() {
                     onChange={(e) => setPassword(e.target.value)}
                     required
                     minLength={8}
-                    className="bg-[#151a22] border-[rgba(255,255,255,0.08)] focus:border-blue-500/60 focus:ring-1 focus:ring-blue-500/20 text-foreground placeholder:text-muted-foreground/50"
+                    className="bg-input border-border focus:border-blue-500/60 focus:ring-1 focus:ring-blue-500/20 text-foreground placeholder:text-muted-foreground/50"
                   />
                 </div>
 
@@ -197,7 +197,7 @@ export default function ResetPasswordPage() {
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     required
                     minLength={8}
-                    className="bg-[#151a22] border-[rgba(255,255,255,0.08)] focus:border-blue-500/60 focus:ring-1 focus:ring-blue-500/20 text-foreground placeholder:text-muted-foreground/50"
+                    className="bg-input border-border focus:border-blue-500/60 focus:ring-1 focus:ring-blue-500/20 text-foreground placeholder:text-muted-foreground/50"
                   />
                 </div>
 

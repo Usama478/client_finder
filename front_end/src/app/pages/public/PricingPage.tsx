@@ -130,7 +130,7 @@ export default function PricingPage() {
           <p className="text-muted-foreground mt-3">
             Choose the plan that fits your business. All plans include a 14-day free trial.
           </p>
-          <div className="inline-flex items-center mt-6 rounded-lg border border-[rgba(255,255,255,0.08)] bg-[#0f1218] p-1">
+          <div className="inline-flex items-center mt-6 rounded-lg border border-border bg-card p-1">
             <button className="rounded-md bg-blue-600 text-white text-sm px-4 py-1.5 font-medium">
               Monthly
             </button>
@@ -152,7 +152,7 @@ export default function PricingPage() {
               plan.highlight ? (
                 <div
                   key={i}
-                  className="rounded-xl border border-blue-500/50 bg-[#080e1a] p-8 relative"
+                  className="rounded-xl border border-blue-500/50 bg-primary/5 p-8 relative"
                   style={{
                     boxShadow:
                       "0 0 60px rgba(59,130,246,0.12), 0 0 0 1px rgba(59,130,246,0.2)",
@@ -196,7 +196,7 @@ export default function PricingPage() {
               ) : (
                 <div
                   key={i}
-                  className="rounded-xl border border-[rgba(255,255,255,0.07)] bg-[#0f1218] p-8 relative"
+                  className="rounded-xl border border-border bg-card p-8 relative"
                 >
                   <p className="text-xl font-bold font-['Syne'] text-foreground">{plan.name}</p>
                   <p className="text-sm text-muted-foreground mt-1 mb-6 min-h-[40px]">
@@ -257,7 +257,7 @@ export default function PricingPage() {
               <AccordionItem
                 key={i}
                 value={`item-${i}`}
-                className="border border-[rgba(255,255,255,0.06)] bg-[#0f1218] rounded-xl mb-3 px-2 overflow-hidden border-b-0"
+                className="border border-border bg-card rounded-xl mb-3 px-2 overflow-hidden border-b-0"
               >
                 <AccordionTrigger className="text-left hover:no-underline">
                   <div className="flex items-start gap-3">
@@ -283,7 +283,7 @@ export default function PricingPage() {
               "radial-gradient(ellipse at center, rgba(59,130,246,0.07) 0%, transparent 70%)",
           }}
         />
-        <div className="relative max-w-2xl mx-auto px-4 rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[#0f1218] p-12 text-center">
+        <div className="relative max-w-2xl mx-auto px-4 rounded-2xl border border-border bg-card p-12 text-center">
           <h2 className="font-['Syne'] text-3xl font-bold text-foreground mb-4">
             Ready to get started?
           </h2>

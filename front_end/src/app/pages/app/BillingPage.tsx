@@ -9,8 +9,8 @@ export default function BillingPage() {
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Billing</h1>
-        <p className="text-muted-foreground mt-1">Manage your subscription and usage</p>
+        <h1 className="text-3xl font-bold text-foreground" style={{ fontFamily: "Syne, sans-serif" }}>Billing</h1>
+        <p className="text-sm text-muted-foreground mt-1">Manage your subscription and usage</p>
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
@@ -25,7 +25,7 @@ export default function BillingPage() {
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-2xl font-bold">$149/month</div>
-                <div className="text-sm text-gray-600">Billed monthly • Next billing: April 15, 2026</div>
+                <div className="text-sm text-muted-foreground">Billed monthly • Next billing: April 15, 2026</div>
               </div>
               <Button variant="outline" onClick={() => toast.info("Coming soon — contact support to manage billing")}>Change Plan</Button>
             </div>

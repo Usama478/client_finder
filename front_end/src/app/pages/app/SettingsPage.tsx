@@ -32,8 +32,8 @@ export default function SettingsPage() {
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Settings</h1>
-        <p className="text-gray-600 mt-1">Manage your account and preferences</p>
+        <h1 className="text-3xl font-bold text-foreground" style={{ fontFamily: "Syne, sans-serif" }}>Settings</h1>
+        <p className="text-sm text-muted-foreground mt-1">Manage your account and preferences</p>
       </div>
 
       <Tabs defaultValue="profile" className="space-y-4">
@@ -164,21 +164,21 @@ export default function SettingsPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <div className="font-medium">Email Notifications</div>
-                  <div className="text-sm text-gray-600">Receive email updates about your activity</div>
+                  <div className="text-sm text-muted-foreground">Receive email updates about your activity</div>
                 </div>
                 <Switch checked={emailNotifications} onCheckedChange={setEmailNotifications} />
               </div>
               <div className="flex items-center justify-between">
                 <div>
                   <div className="font-medium">Search Completion</div>
-                  <div className="text-sm text-gray-600">Notify when searches complete</div>
+                  <div className="text-sm text-muted-foreground">Notify when searches complete</div>
                 </div>
                 <Switch defaultChecked />
               </div>
               <div className="flex items-center justify-between">
                 <div>
                   <div className="font-medium">Verification Results</div>
-                  <div className="text-sm text-gray-600">Notify when verification finishes</div>
+                  <div className="text-sm text-muted-foreground">Notify when verification finishes</div>
                 </div>
                 <Switch defaultChecked />
               </div>

@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react"
 import { Link, useNavigate } from "react-router";
 import { Search, Target, ShieldCheck, Users, Mail, Activity, ArrowRight, Clock } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from "recharts";
 import { useAuth } from "../../../lib/auth-context"
-import { api, DashboardStats, SearchSession, ActivityEvent } from "../../../lib/api"
+import { api, DashboardStats, SearchSession } from "../../../lib/api"
 
 function getRelativeTime(dateStr: string): string {
   const date = new Date(dateStr);
@@ -22,9 +22,10 @@ const S = {
   card: { background: "var(--card)", border: "1px solid var(--border)", borderRadius: 10 } as React.CSSProperties,
   cardHover: "transition-all duration-150 hover:border-white/12",
   label: "text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-2" as const,
+  labelStrong: "text-[10px] font-semibold uppercase tracking-widest mb-2 text-foreground/60" as const,
   value: "text-foreground" as const,
   muted: "text-muted-foreground" as const,
-  section: "text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-3" as const,
+  section: "text-[11px] font-bold uppercase tracking-widest mb-3 text-foreground/60" as const,
 };
 
 const Badge = ({ children, color }: { children: React.ReactNode; color: "green" | "blue" | "amber" | "red" | "purple" | "gray" }) => {
@@ -48,8 +49,9 @@ export default function DashboardPage() {
   const { user } = useAuth()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [sessions, setSessions] = useState<SearchSession[]>([])
-  const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([])
+  const [credits, setCredits] = useState<{ credits_remaining: number; allocated_total: number } | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [timeFilter, setTimeFilter] = useState<"7d" | "30d" | "all">("all")
 
   useEffect(() => {
     if (!user) return
@@ -57,11 +59,11 @@ export default function DashboardPage() {
     Promise.all([
       api.dashboardStats().catch(() => null),
       api.sessions().catch(() => []),
-      api.activityLog(5).catch(() => []),
-    ]).then(([s, sess, acts]) => {
+      api.credits().catch(() => null),
+    ]).then(([s, sess, creds]) => {
       setStats(s)
       setSessions(sess || [])
-      setActivityEvents(acts || [])
+      setCredits(creds)
       setIsLoading(false)
     })
   }, [user])
@@ -92,6 +94,12 @@ export default function DashboardPage() {
     { stage: "Clients",     count: stats?.total_clients ?? 0,   fill: "var(--chart-3)" },
   ];
 
+  const creditsUsed = credits ? (credits.allocated_total - credits.credits_remaining) : 0;
+  const creditsData = [
+    { name: "Used", value: creditsUsed, fill: "var(--chart-3)" },
+    { name: "Remaining", value: credits?.credits_remaining ?? 0, fill: "var(--chart-2)" },
+  ];
+
   const nextActions = [
     { icon: Target, text: `${stats?.pending_relevancy ?? 0} leads ready for AI relevance scoring`,  badge: { label: "Pending", color: "amber" as const }, path: "/app/leads?filter=pending_relevancy" },
     { icon: ShieldCheck, text: `${stats?.pending_verification ?? 0} relevant leads ready for verification`,   badge: { label: "Ready",   color: "blue"  as const }, path: "/app/leads?filter=pending_verification" },
@@ -108,6 +116,10 @@ export default function DashboardPage() {
               <div className="h-7 w-12 rounded bg-white/8 mb-2" />
             </div>
           ))}
+        </div>
+        <div style={S.card} className="p-5 animate-pulse">
+          <div className="h-3 w-32 rounded bg-white/5 mb-4" />
+          <div className="h-40 rounded-lg bg-white/5" />
         </div>
         <div style={S.card} className="p-5 animate-pulse">
           <div className="h-3 w-32 rounded bg-white/5 mb-4" />
@@ -133,6 +145,31 @@ export default function DashboardPage() {
 
   return (
     <div className="p-6 space-y-5 page-enter">
+      {/* Time Filter */}
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">Overview</span>
+        <div className="flex gap-2">
+          {([
+            { key: "7d", label: "7 days" },
+            { key: "30d", label: "30 days" },
+            { key: "all", label: "All time" },
+          ] as const).map((f) => (
+            <button
+              key={f.key}
+              onClick={() => setTimeFilter(f.key)}
+              style={timeFilter === f.key ? undefined : { borderColor: "var(--muted-foreground)" }}
+              className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-colors ${
+                timeFilter === f.key
+                  ? "bg-primary text-primary-foreground"
+                  : "border border-border text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* KPI Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {kpis.map((k, i) => {
@@ -140,7 +177,7 @@ export default function DashboardPage() {
           return (
             <div key={i} style={S.card} className={`p-4 cursor-pointer ${S.cardHover}`} onClick={() => navigate(k.path)}>
               <div className="flex items-start justify-between mb-2">
-                <div className={S.label}>{k.label}</div>
+                <div className={S.labelStrong}>{k.label}</div>
                 <div className="w-6 h-6 rounded flex items-center justify-center opacity-60" style={{ background: `${k.color}20` }}>
                   <Icon style={{ color: k.color }} className="h-3.5 w-3.5" />
                 </div>
@@ -150,6 +187,24 @@ export default function DashboardPage() {
             </div>
           );
         })}
+      </div>
+
+      {/* Funnel Hero */}
+      <div style={S.card} className="p-5">
+        <div className={S.section}>Pipeline Funnel</div>
+        <ResponsiveContainer width="100%" height={160}>
+          <BarChart data={funnel} layout="vertical" margin={{ left: 8, right: 40, top: 0, bottom: 0 }}>
+            <XAxis type="number" hide />
+            <YAxis type="category" dataKey="stage" width={90} tick={{ fill: "var(--muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} />
+            <Tooltip
+              contentStyle={{ background: "var(--muted)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--foreground)", fontSize: 12 }}
+              cursor={{ fill: "var(--border)" }}
+            />
+            <Bar dataKey="count" radius={[0, 4, 4, 0]} label={{ position: "right", fill: "var(--muted-foreground)", fontSize: 11 }}>
+              {funnel.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
       </div>
 
       {/* Pipeline */}
@@ -223,8 +278,37 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Next Actions + Funnel */}
+        {/* Credits + Next Actions */}
         <div className="space-y-4">
+          <div style={{ ...S.card, position: "relative" }} className="p-5">
+            <div className={S.section}>Credits</div>
+            {credits ? (
+              <>
+                <div style={{ position: "relative" }}>
+                  <ResponsiveContainer width="100%" height={120}>
+                    <PieChart>
+                      <Pie data={creditsData} dataKey="value" innerRadius={35} outerRadius={55} paddingAngle={2}>
+                        {creditsData.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    <div className="text-lg font-bold text-foreground" style={{ fontFamily: "Syne, sans-serif" }}>
+                      {credits.credits_remaining}
+                    </div>
+                    <div className="text-[9px] text-muted-foreground uppercase tracking-wider">left</div>
+                  </div>
+                </div>
+                <div className="text-[11px] text-muted-foreground mt-2 space-y-0.5">
+                  <div>Used: {creditsUsed}</div>
+                  <div>Total: {credits.allocated_total}</div>
+                </div>
+              </>
+            ) : (
+              <div className="h-[120px] rounded-lg bg-white/5 animate-pulse" />
+            )}
+          </div>
+
           <div style={S.card} className="p-5">
             <div className={S.section}>Next Actions</div>
             <div className="space-y-2">
@@ -242,52 +326,7 @@ export default function DashboardPage() {
               })}
             </div>
           </div>
-
-          <div style={S.card} className="p-5">
-            <div className={S.section}>Funnel Conversion</div>
-            <ResponsiveContainer width="100%" height={130}>
-              <BarChart data={funnel} layout="vertical" margin={{ left: 8, right: 30, top: 0, bottom: 0 }}>
-                <XAxis type="number" hide />
-                <YAxis type="category" dataKey="stage" width={72} tick={{ fill: "var(--muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} />
-                <Tooltip
-                  contentStyle={{ background: "var(--muted)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--foreground)", fontSize: 12 }}
-                  cursor={{ fill: "var(--border)" }}
-                />
-                <Bar dataKey="count" radius={[0, 4, 4, 0]} label={{ position: "right", fill: "var(--muted-foreground)", fontSize: 11 }}>
-                  {funnel.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
         </div>
-      </div>
-
-      {/* Activity */}
-      <div style={S.card} className="p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div className={S.section} style={{ marginBottom: 0 }}>Recent Activity</div>
-          <Link to="/app/activity" className="text-[11px] text-blue-400 hover:text-blue-300">View all →</Link>
-        </div>
-        {activityEvents.length > 0 ? (
-          <div className="space-y-0 divide-y" style={{ borderColor: "var(--border)" }}>
-            {activityEvents.map((a: ActivityEvent, i: number) => (
-              <div key={i} className="flex items-start gap-3 py-3">
-                <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
-                  style={{ background: a.color }}></div>
-                <div className="flex-1 text-[13px] text-muted-foreground">
-                  {a.text}
-                </div>
-                <div className="text-[11px] text-muted-foreground whitespace-nowrap">
-                  {a.time ? getRelativeTime(a.time) : ""}
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="py-8 text-center text-muted-foreground text-sm">
-            No recent activity.
-          </div>
-        )}
       </div>
     </div>
   );

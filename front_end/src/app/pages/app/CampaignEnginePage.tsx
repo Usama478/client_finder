@@ -290,6 +290,10 @@ export default function CampaignEnginePage() {
 
   return (
     <div className="p-6 page-enter">
+      <div className="px-6 pt-6 pb-2">
+        <h1 className="text-3xl font-bold text-foreground" style={{ fontFamily: "Syne, sans-serif" }}>Campaign Engine</h1>
+        <p className="text-sm text-muted-foreground mt-1">Automated discovery, relevance scoring, and verification</p>
+      </div>
       <div className="flex flex-col gap-5">
         <div className="w-full">
           <SetupForm

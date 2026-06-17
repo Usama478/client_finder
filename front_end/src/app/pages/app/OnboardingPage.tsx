@@ -11,7 +11,7 @@ const PRODUCT_CATEGORIES = [
 
 const BUYER_TYPES = [
   "Retailers", "Boutiques", "Wholesalers",
-  "Online Stores", "Department Stores", "Distributors",
+  "Online Stores", "Department Stores", "Distributors", "Other"
 ]
 
 const TARGET_MARKETS = [
@@ -27,7 +27,7 @@ function Chip({ label, selected, onClick }: { label: string; selected: boolean; 
       className={`rounded-full border px-3 py-1 text-sm cursor-pointer transition-colors ${
         selected
           ? "bg-blue-600 text-white border-blue-600"
-          : "bg-white text-gray-700 border-gray-300 hover:border-blue-400"
+          : "bg-background text-foreground border-border hover:border-blue-400"
       }`}
     >
       {label}
@@ -44,32 +44,31 @@ export default function OnboardingPage() {
 
   const [companyName, setCompanyName] = useState("")
   const [productCategories, setProductCategories] = useState<string[]>([])
+  const [otherProduct, setOtherProduct] = useState("")
   const [keyProducts, setKeyProducts] = useState("")
   const [companyLocation, setCompanyLocation] = useState("")
   const [step1Error, setStep1Error] = useState("")
   const [step1Saving, setStep1Saving] = useState(false)
 
   const [buyerTypes, setBuyerTypes] = useState<string[]>([])
+  const [otherBuyer, setOtherBuyer] = useState("")
   const [targetMarkets, setTargetMarkets] = useState<string[]>([])
+  const [otherMarket, setOtherMarket] = useState("")
   const [contextId, setContextId] = useState<number | null>(null)
   const [step2Error, setStep2Error] = useState("")
   const [step2Saving, setStep2Saving] = useState(false)
 
   const [searchQuery, setSearchQuery] = useState("")
-  const [searchResults, setSearchResults] = useState<any[]>([])
-  const [hasSearched, setHasSearched] = useState(false)
-  const [searching, setSearching] = useState(false)
-  const [searchError, setSearchError] = useState("")
 
   useEffect(() => {
     if (localStorage.getItem("cf_onboarding_done") === "true") {
-      navigate("/app")
+      navigate("/app/simple-search")
       return
     }
     api.getMyProfile()
       .then((profile) => {
         if (profile) {
-          navigate("/app")
+          navigate("/app/simple-search")
         } else {
           setChecking(false)
         }
@@ -83,8 +82,10 @@ export default function OnboardingPage() {
 
   useEffect(() => {
     if (step === 3 && !searchQuery) {
-      if (targetMarkets[0] && productCategories[0]) {
-        setSearchQuery(`${productCategories[0].toLowerCase()} buyers ${targetMarkets[0]}`)
+      const p = productCategories[0] === "Other" && otherProduct.trim() ? otherProduct.trim() : productCategories[0];
+      const m = targetMarkets[0] === "Other" && otherMarket.trim() ? otherMarket.trim() : targetMarkets[0];
+      if (m && p) {
+        setSearchQuery(`${p.toLowerCase()} buyers ${m}`)
       } else {
         setSearchQuery("fashion boutiques United Kingdom")
       }
@@ -102,10 +103,11 @@ export default function OnboardingPage() {
       return
     }
     setStep1Saving(true)
+    const finalCategories = productCategories.map(c => c === "Other" && otherProduct.trim() ? otherProduct.trim() : c)
     try {
       await api.createProfile({
         company_name: companyName,
-        product_categories: productCategories,
+        product_categories: finalCategories,
         key_products: keyProducts.split(",").map((s) => s.trim()).filter(Boolean),
         company_location: companyLocation || undefined,
         is_default: true,
@@ -127,12 +129,42 @@ export default function OnboardingPage() {
   const handleStep2Continue = async () => {
     setStep2Error("")
     setStep2Saving(true)
-    const buyerLabel = buyerTypes.length > 0 ? buyerTypes.join(", ") : "businesses"
-    const marketLabel = targetMarkets.length > 0 ? targetMarkets.join(", ") : "international markets"
-    const productLabel = productCategories.length > 0 ? productCategories.join(", ") : "our products"
+    const finalBuyers = buyerTypes.map(b => b === "Other" && otherBuyer.trim() ? otherBuyer.trim() : b)
+    const finalMarkets = targetMarkets.map(m => m === "Other" && otherMarket.trim() ? otherMarket.trim() : m)
+    const buyerLabel = finalBuyers.length > 0 ? finalBuyers.join(", ") : "businesses"
+    const marketLabel = finalMarkets.length > 0 ? finalMarkets.join(", ") : "international markets"
+    
+    const finalCategories = productCategories.map(c => c === "Other" && otherProduct.trim() ? otherProduct.trim() : c)
+    const productLabel = finalCategories.length > 0 ? finalCategories.join(", ") : "our products"
+    
     const prompt = `Find ${buyerLabel} in ${marketLabel} that buy ${productLabel} products for wholesale or bulk purchase.`
+    
+    const promptTextLines = [
+      "EXPORTER PROFILE",
+      `Business Type: `,
+      `Products: ${keyProducts}`,
+      `Product Categories: ${finalCategories.join(", ")}`,
+      `Country of Origin: ${companyLocation}`,
+      `Current Export Markets: `,
+      "",
+      "WHAT I AM LOOKING FOR",
+      `Target Buyer Type: ${finalBuyers.join(", ")}`,
+      `Target Business Size: `,
+      `Target Countries: ${finalMarkets.join(", ")}`,
+      `Preferred Niches: `,
+      "",
+      "WHAT TO AVOID",
+      `Exclude Business Types: `,
+      `Exclude Countries: `,
+      "",
+      "OUTREACH CONTEXT",
+      `My Value Proposition: `,
+      `Tone of Outreach: `
+    ]
+    const promptText = promptTextLines.join("\n")
+
     try {
-      const ctx = await api.createContext({ name: "Default", description: prompt, prompt_text: prompt })
+      const ctx = await api.createContext({ name: "Default", description: prompt, prompt_text: promptText })
       setContextId(ctx.id)
     } catch (err: any) {
       setStep2Error(err?.message || "Failed to save your targeting preferences, but you can continue.")
@@ -145,27 +177,13 @@ export default function OnboardingPage() {
   const handleStep2Skip = () => setStep(3)
 
   const handleSearch = async () => {
-    setSearchError("")
-    setSearching(true)
-    setHasSearched(true)
-    try {
-      const session = await api.createSession({
-        search_query: searchQuery,
-        discovery_platform: "both",
-        context_id: contextId || undefined,
-      })
-      const results = await api.results(session.search_id)
-      setSearchResults(results)
-    } catch (err: any) {
-      setSearchError(err?.message || "Search failed. Please try again.")
-    } finally {
-      setSearching(false)
-    }
+    localStorage.setItem("cf_onboarding_done", "true")
+    navigate("/app/simple-search", { state: { autoSearch: searchQuery } })
   }
 
   const finishOnboarding = () => {
     localStorage.setItem("cf_onboarding_done", "true")
-    navigate("/app")
+    navigate("/app/simple-search")
   }
 
   if (checking) {
@@ -176,7 +194,7 @@ export default function OnboardingPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 w-full max-w-lg p-8">
+      <div className="bg-background rounded-2xl shadow-sm border border-gray-200 w-full max-w-lg p-8">
         <div className="flex items-center gap-2 mb-6">
           <div
             className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-sm"
@@ -184,7 +202,7 @@ export default function OnboardingPage() {
           >
             CF
           </div>
-          <span className="font-bold text-base text-gray-900">Client Finder</span>
+          <span className="font-bold text-base text-foreground">Client Finder</span>
         </div>
 
         {credits && step === 1 && (
@@ -197,27 +215,27 @@ export default function OnboardingPage() {
           <div className="w-full h-1.5 rounded-full bg-gray-200 overflow-hidden mb-1.5">
             <div className="h-1.5 rounded-full bg-blue-600 transition-all" style={{ width: `${progressPct}%` }} />
           </div>
-          <div className="text-xs text-gray-500">Step {step} of 3</div>
+          <div className="text-xs text-muted-foreground">Step {step} of 3</div>
         </div>
 
         {step === 1 && (
           <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-1">Tell us about your company</h2>
-            <p className="text-sm text-gray-600 mb-4">This helps us find the right buyers for you.</p>
+            <h2 className="text-lg font-semibold text-foreground mb-1">Tell us about your company</h2>
+            <p className="text-sm text-muted-foreground mb-4">This helps us find the right buyers for you.</p>
 
             <div className="space-y-3">
               <div>
-                <label className="text-xs font-medium text-gray-700 block mb-1">Company name</label>
+                <label className="text-xs font-medium text-foreground block mb-1">Company name</label>
                 <Input
                   value={companyName}
                   onChange={(e) => setCompanyName(e.target.value)}
                   placeholder="e.g. Acme Textiles Ltd"
-                  className="bg-white border-gray-300 text-gray-900"
+                  className="bg-background border-border text-foreground"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-medium text-gray-700 block mb-1">Product categories</label>
+                <label className="text-xs font-medium text-foreground block mb-1">Product categories</label>
                 <div className="flex flex-wrap gap-2">
                   {PRODUCT_CATEGORIES.map((c) => (
                     <Chip
@@ -228,25 +246,33 @@ export default function OnboardingPage() {
                     />
                   ))}
                 </div>
+                {productCategories.includes("Other") && (
+                  <Input 
+                    value={otherProduct}
+                    onChange={(e) => setOtherProduct(e.target.value)}
+                    placeholder="Please specify other category..."
+                    className="mt-2 text-sm bg-background border-border text-foreground"
+                  />
+                )}
               </div>
 
               <div>
-                <label className="text-xs font-medium text-gray-700 block mb-1">Key products (comma-separated)</label>
+                <label className="text-xs font-medium text-foreground block mb-1">Key products (comma-separated)</label>
                 <Input
                   value={keyProducts}
                   onChange={(e) => setKeyProducts(e.target.value)}
                   placeholder="e.g. cotton fabric, bedsheets, towels"
-                  className="bg-white border-gray-300 text-gray-900"
+                  className="bg-background border-border text-foreground"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-medium text-gray-700 block mb-1">Company location (optional)</label>
+                <label className="text-xs font-medium text-foreground block mb-1">Company location (optional)</label>
                 <Input
                   value={companyLocation}
                   onChange={(e) => setCompanyLocation(e.target.value)}
                   placeholder="e.g. Karachi, Pakistan"
-                  className="bg-white border-gray-300 text-gray-900"
+                  className="bg-background border-border text-foreground"
                 />
               </div>
             </div>
@@ -254,7 +280,7 @@ export default function OnboardingPage() {
             {step1Error && <div className="text-xs text-red-600 mt-3">{step1Error}</div>}
 
             <div className="flex items-center justify-between mt-6">
-              <button onClick={handleStep1Skip} className="text-sm text-gray-500 hover:text-gray-700">
+              <button onClick={handleStep1Skip} className="text-sm text-muted-foreground hover:text-foreground">
                 Skip for now →
               </button>
               <Button onClick={handleStep1Continue} disabled={step1Saving} className="bg-blue-600 hover:bg-blue-700 text-white">
@@ -266,12 +292,12 @@ export default function OnboardingPage() {
 
         {step === 2 && (
           <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-1">Who are you looking for?</h2>
-            <p className="text-sm text-gray-600 mb-4">Tell us about your ideal buyers.</p>
+            <h2 className="text-lg font-semibold text-foreground mb-1">Who are you looking for?</h2>
+            <p className="text-sm text-muted-foreground mb-4">Tell us about your ideal buyers.</p>
 
             <div className="space-y-4">
               <div>
-                <label className="text-xs font-medium text-gray-700 block mb-1">Buyer types</label>
+                <label className="text-xs font-medium text-foreground block mb-1">Buyer types</label>
                 <div className="flex flex-wrap gap-2">
                   {BUYER_TYPES.map((b) => (
                     <Chip
@@ -282,10 +308,18 @@ export default function OnboardingPage() {
                     />
                   ))}
                 </div>
+                {buyerTypes.includes("Other") && (
+                  <Input 
+                    value={otherBuyer}
+                    onChange={(e) => setOtherBuyer(e.target.value)}
+                    placeholder="Please specify other buyer type..."
+                    className="mt-2 text-sm bg-background border-border text-foreground"
+                  />
+                )}
               </div>
 
               <div>
-                <label className="text-xs font-medium text-gray-700 block mb-1">Target markets</label>
+                <label className="text-xs font-medium text-foreground block mb-1">Target markets</label>
                 <div className="flex flex-wrap gap-2">
                   {TARGET_MARKETS.map((m) => (
                     <Chip
@@ -296,13 +330,21 @@ export default function OnboardingPage() {
                     />
                   ))}
                 </div>
+                {targetMarkets.includes("Other") && (
+                  <Input 
+                    value={otherMarket}
+                    onChange={(e) => setOtherMarket(e.target.value)}
+                    placeholder="Please specify other market..."
+                    className="mt-2 text-sm bg-background border-border text-foreground"
+                  />
+                )}
               </div>
             </div>
 
             {step2Error && <div className="text-xs text-red-600 mt-3">{step2Error}</div>}
 
             <div className="flex items-center justify-between mt-6">
-              <button onClick={handleStep2Skip} className="text-sm text-gray-500 hover:text-gray-700">
+              <button onClick={handleStep2Skip} className="text-sm text-muted-foreground hover:text-foreground">
                 Skip for now →
               </button>
               <Button onClick={handleStep2Continue} disabled={step2Saving} className="bg-blue-600 hover:bg-blue-700 text-white">
@@ -314,63 +356,32 @@ export default function OnboardingPage() {
 
         {step === 3 && (
           <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-1">Try your first search</h2>
-            <p className="text-sm text-gray-600 mb-4">Let's find some real buyers right now.</p>
+            <h2 className="text-lg font-semibold text-foreground mb-1">Try your first search</h2>
+            <p className="text-sm text-muted-foreground mb-4">Let's find some real buyers right now.</p>
 
             <div className="flex gap-2 mb-3">
               <Input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search for international buyers..."
-                className="bg-white border-gray-300 text-gray-900 flex-1"
+                className="bg-background border-border text-foreground flex-1"
+                onKeyDown={(e) => { if (e.key === "Enter" && searchQuery.trim()) handleSearch() }}
               />
               <Button
                 onClick={handleSearch}
-                disabled={searching || !searchQuery.trim()}
+                disabled={!searchQuery.trim()}
                 className="bg-blue-600 hover:bg-blue-700 text-white"
               >
-                {searching ? "Searching..." : "Search"}
+                Search
               </Button>
             </div>
 
-            {searchError && <div className="text-xs text-red-600 mb-3">{searchError}</div>}
-
-            {searching && (
-              <div className="flex items-center justify-center py-6">
-                <div className="h-5 w-5 rounded-full border-2 border-gray-300 border-t-blue-600 animate-spin" />
-              </div>
-            )}
-
-            {!searching && hasSearched && (
-              <div className="text-xs text-gray-500 mb-2">Found {searchResults.length} businesses</div>
-            )}
-
-            {!searching && searchResults.length > 0 && (
-              <div className="space-y-2 max-h-56 overflow-y-auto mb-4">
-                {searchResults.map((r) => (
-                  <div
-                    key={r.result_id}
-                    className="flex items-center justify-between border border-gray-200 rounded-lg px-3 py-2"
-                  >
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium text-gray-900 truncate">{r.business_name}</div>
-                      <div className="text-xs text-gray-500 truncate">{r.website || "—"}</div>
-                      {r.address && <div className="text-xs text-gray-500 truncate">{r.address}</div>}
-                    </div>
-                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 flex-shrink-0 ml-2">
-                      {r.source === "maps" ? "Maps" : "Web"}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-
             <div className="flex items-center justify-between mt-6">
-              <button onClick={finishOnboarding} className="text-sm text-gray-500 hover:text-gray-700">
+              <button onClick={finishOnboarding} className="text-sm text-muted-foreground hover:text-foreground">
                 Skip for now →
               </button>
               <Button onClick={finishOnboarding} className="bg-blue-600 hover:bg-blue-700 text-white">
-                Continue to Dashboard →
+                Continue to Search →
               </Button>
             </div>
           </div>

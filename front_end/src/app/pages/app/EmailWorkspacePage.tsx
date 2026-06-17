@@ -920,7 +920,7 @@ export default function EmailWorkspacePage() {
                 setGlobalTemplateContext(t?.content || "");
               }}
               className="flex-1 rounded-lg px-3 py-2 text-[12px] text-foreground outline-none"
-              style={{ background: "#0a0d12", border: "1px solid var(--border)" }}
+              style={{ background: "var(--background)", border: "1px solid var(--border)" }}
             >
               <option value="">None</option>
               {templates.map(t => (
@@ -954,7 +954,7 @@ export default function EmailWorkspacePage() {
           }}
           placeholder="Paste template with {{company_name}}, {{product_category}}, {{website}} placeholders..."
           className="w-full rounded-lg px-3 py-2 text-[12px] text-foreground outline-none resize-none"
-          style={{ background: "#0a0d12", border: "1px solid var(--border)", minHeight: 120, lineHeight: 1.6 }}
+          style={{ background: "var(--background)", border: "1px solid var(--border)", minHeight: 120, lineHeight: 1.6 }}
         />
         {globalTemplateContext && (
           <div className="text-[10px] text-muted-foreground mt-1 text-right">{globalTemplateContext.length} chars</div>
@@ -994,7 +994,7 @@ export default function EmailWorkspacePage() {
             onChange={e => setSaveAsName(e.target.value)}
             placeholder="Template name…"
             className="flex-1 rounded-lg px-3 py-2 text-[12px] text-foreground outline-none"
-            style={{ background: "#0a0d12", border: "1px solid var(--border)" }}
+            style={{ background: "var(--background)", border: "1px solid var(--border)" }}
             onKeyDown={e => e.key === "Enter" && handleSaveTemplate()}
             autoFocus
           />
@@ -1108,7 +1108,7 @@ export default function EmailWorkspacePage() {
 
   const CampaignClientRow = ({ client, selected, onToggle, interactive = true }: { client: any; selected: boolean; onToggle: () => void; interactive?: boolean }) => (
     <div
-      className={`px-3 flex items-center gap-3 ${interactive ? "cursor-pointer hover:bg-[#0f1420]" : ""}`}
+      className={`px-3 flex items-center gap-3 ${interactive ? "cursor-pointer hover:bg-muted" : ""}`}
       style={{ minHeight: 48, borderBottom: "1px solid var(--border)" }}
       onClick={interactive ? onToggle : undefined}
     >
@@ -1221,7 +1221,7 @@ export default function EmailWorkspacePage() {
         </div>
 
         {interactive && (
-          <div className="p-3 space-y-2" style={{ borderTop: "1px solid var(--border)", background: "#0a0d12" }}>
+          <div className="p-3 space-y-2" style={{ borderTop: "1px solid var(--border)", background: "var(--background)" }}>
             <div className="text-[12px] font-semibold text-foreground">{selectedClientIds.length} clients selected</div>
             <button
               style={{ ...btnPrimary, width: "100%", justifyContent: "center", opacity: selectedClientIds.length === 0 || !exporterProfileId || campaignGenerating ? 0.5 : 1 }}
@@ -1314,7 +1314,7 @@ export default function EmailWorkspacePage() {
                   <thead>
                     <tr
                       className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest"
-                      style={{ background: "#0a0d12", position: "sticky", top: 0, zIndex: 1 }}
+                      style={{ background: "var(--background)", position: "sticky", top: 0, zIndex: 1 }}
                     >
                       <th className="text-left px-4 py-2">Business Name</th>
                       <th className="text-left px-4 py-2">Email</th>
@@ -1331,7 +1331,7 @@ export default function EmailWorkspacePage() {
                         key={c.result_id}
                         style={{
                           borderBottom: i < filteredDashboardClients.length - 1 ? "1px solid var(--border)" : "none",
-                          background: i % 2 === 0 ? "#0d1117" : "#0f1420",
+                          background: i % 2 === 0 ? "var(--background)" : "var(--card)",
                         }}
                       >
                         <td className="px-4 py-2">
@@ -1779,7 +1779,7 @@ export default function EmailWorkspacePage() {
                       style={{ minHeight: 48, borderBottom: i < selectedClientIds.length - 1 ? "1px solid var(--border)" : "none" }}
                     >
                       <div className="w-5 h-5 flex items-center justify-center shrink-0">
-                        {draft?.status === "pending" && <div className="w-3 h-3 rounded-full bg-[#5a6478] opacity-50" />}
+                        {draft?.status === "pending" && <div className="w-3 h-3 rounded-full bg-muted-foreground opacity-50" />}
                         {draft?.status === "generating" && <RefreshCw className="h-4 w-4 text-blue-400 animate-spin" />}
                         {(draft?.status === "generated" || draft?.status === "pending_review") && <Check className="h-4 w-4 text-green-500" />}
                         {draft?.status === "no_email" && <Mail className="h-4 w-4 text-amber-400" />}
@@ -1813,7 +1813,7 @@ export default function EmailWorkspacePage() {
           <div className="flex items-center justify-between mb-4 gap-4 shrink-0">
             <button
               type="button"
-              className="text-sm text-[#5a6478] hover:text-[#e8edf5] transition-colors"
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
               onClick={() => {
                 stopDetailPolling();
                 setCampaignView("review");
@@ -1911,7 +1911,7 @@ export default function EmailWorkspacePage() {
                     Using template: {activeTemplateLabel}
                   </p>
                   {detailSessionContext && (
-                    <p className="text-xs text-[#5a6478] italic mt-1">
+                    <p className="text-xs text-muted-foreground italic mt-1">
                       Context: {detailSessionContext}
                     </p>
                   )}
@@ -2018,7 +2018,7 @@ export default function EmailWorkspacePage() {
                 <thead>
                   <tr
                     className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest"
-                    style={{ background: "#0a0d12", position: "sticky", top: 0, zIndex: 1 }}
+                    style={{ background: "var(--background)", position: "sticky", top: 0, zIndex: 1 }}
                   >
                     <th className="text-left px-3 py-2">Client</th>
                     <th className="text-left px-3 py-2">Subject</th>
@@ -2038,7 +2038,7 @@ export default function EmailWorkspacePage() {
                         key={id}
                         style={{
                           borderBottom: "1px solid var(--border)",
-                          background: i % 2 === 0 ? "#0d1117" : "#0f1420",
+                          background: i % 2 === 0 ? "var(--background)" : "var(--card)",
                         }}
                       >
                         <td className="px-3 py-2">
@@ -2135,6 +2135,10 @@ export default function EmailWorkspacePage() {
 
   return (
     <div className="p-6 space-y-5 page-enter">
+      <div className="px-6 pt-6 pb-2">
+        <h1 className="text-3xl font-bold text-foreground" style={{ fontFamily: "Syne, sans-serif" }}>Email Workspace</h1>
+        <p className="text-sm text-muted-foreground mt-1">Generate and send personalized outreach emails</p>
+      </div>
       <div className="flex gap-1.5 mb-1">
         {[
           { key: "dashboard", label: "Dashboard" },

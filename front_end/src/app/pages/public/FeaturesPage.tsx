@@ -216,7 +216,7 @@ export default function FeaturesPage() {
               return (
                 <div
                   key={i}
-                  className="group rounded-xl border border-[rgba(255,255,255,0.06)] bg-[#0f1218] p-8 hover:border-blue-500/30 transition-all duration-300"
+                  className="group rounded-xl border border-border bg-card p-8 hover:border-blue-500/30 transition-all duration-300"
                 >
                   <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center mb-6 group-hover:bg-blue-500/15 transition-colors">
                     <Icon className="h-6 w-6 text-blue-400" />
@@ -244,7 +244,7 @@ export default function FeaturesPage() {
       </section>
 
       {/* WORKFLOW STEPS */}
-      <section className="py-24 bg-[#080a0d] border-y border-[rgba(255,255,255,0.04)]">
+      <section className="py-24 bg-muted border-y border-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-4">
             <div className="flex items-center justify-center gap-2 mb-4">
@@ -265,7 +265,7 @@ export default function FeaturesPage() {
                 const Icon = item.icon;
                 return (
                   <div key={i} className="text-center">
-                    <div className="w-16 h-16 rounded-full border-2 border-blue-500/30 bg-[#0f1218] mx-auto mb-5 flex items-center justify-center relative z-10">
+                    <div className="w-16 h-16 rounded-full border-2 border-primary/30 bg-card mx-auto mb-5 flex items-center justify-center relative z-10">
                       <span className="font-['Syne'] font-bold text-lg text-blue-400">
                         {item.step}
                       </span>
@@ -299,7 +299,7 @@ export default function FeaturesPage() {
               return (
                 <div
                   key={i}
-                  className="rounded-xl border border-[rgba(255,255,255,0.06)] bg-[#0f1218] p-5 flex items-start gap-4 hover:border-blue-500/20 transition-colors"
+                  className="rounded-xl border border-border bg-card p-5 flex items-start gap-4 hover:border-blue-500/20 transition-colors"
                 >
                   <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex-shrink-0 flex items-center justify-center">
                     <Icon className="h-5 w-5 text-blue-400" />
@@ -326,7 +326,7 @@ export default function FeaturesPage() {
               "radial-gradient(ellipse at center, rgba(59,130,246,0.07) 0%, transparent 70%)",
           }}
         />
-        <div className="relative max-w-2xl mx-auto px-4 rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[#0f1218] p-12 text-center">
+        <div className="relative max-w-2xl mx-auto px-4 rounded-2xl border border-border bg-card p-12 text-center">
           <h2 className="font-['Syne'] text-3xl font-bold text-foreground mb-4">
             See it in action
           </h2>

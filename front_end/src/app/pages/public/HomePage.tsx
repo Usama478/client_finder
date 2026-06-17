@@ -251,7 +251,7 @@ export default function HomePage() {
       </section>
 
       {/* ── Positioning Banner ── */}
-      <section className="border-y border-[rgba(255,255,255,0.06)] py-12 bg-[#0f1218]">
+      <section className="border-y border-border py-12 bg-card">
         <div className="max-w-3xl mx-auto px-4 text-center">
           <p className="text-xs uppercase tracking-widest text-amber-400">Who this is built for</p>
           <p className="text-xl font-semibold text-foreground font-['Syne'] mt-2">
@@ -261,7 +261,7 @@ export default function HomePage() {
             {["🇬🇧 UK buyers", "🇩🇪 European retailers", "🇦🇺 AU/NZ boutiques"].map((chip, i) => (
               <span
                 key={i}
-                className="text-xs px-3 py-1.5 rounded-full border border-[rgba(255,255,255,0.08)] bg-[#151a22] text-muted-foreground"
+                className="text-xs px-3 py-1.5 rounded-full border border-border bg-muted text-muted-foreground"
               >
                 {chip}
               </span>
@@ -288,7 +288,7 @@ export default function HomePage() {
               return (
                 <div
                   key={i}
-                  className="group p-6 rounded-xl border border-[rgba(255,255,255,0.06)] bg-[#0f1218] hover:border-blue-500/40 hover:bg-[#0f1420] transition-all duration-300 cursor-default"
+                  className="group p-6 rounded-xl border border-border bg-card hover:border-blue-500/40 hover:bg-card/80 transition-all duration-300 cursor-default"
                 >
                   <div className="w-11 h-11 rounded-lg bg-blue-500/10 flex items-center justify-center mb-4 group-hover:bg-blue-500/15 transition-colors">
                     <Icon className="h-5 w-5 text-blue-400" />
@@ -315,7 +315,7 @@ export default function HomePage() {
             {steps.map((step, i) => (
               <div key={i}>
                 <div className="flex items-start gap-6">
-                  <div className="w-16 h-16 rounded-full flex-shrink-0 flex items-center justify-center font-bold font-['Syne'] text-lg bg-[#0f1218] border-2 border-blue-500/40 text-blue-400">
+                  <div className="w-16 h-16 rounded-full flex-shrink-0 flex items-center justify-center font-bold font-['Syne'] text-lg bg-card border-2 border-primary/40 text-primary">
                     {step.number}
                   </div>
                   <div className="flex-1 pt-3">
@@ -402,7 +402,7 @@ export default function HomePage() {
               className="absolute inset-0 rounded-2xl pointer-events-none"
               style={{ background: "radial-gradient(ellipse at center, rgba(59,130,246,0.08) 0%, transparent 70%)" }}
             />
-            <div className="relative rounded-2xl border border-[rgba(255,255,255,0.08)] bg-[#0f1218] p-12 text-center">
+            <div className="relative rounded-2xl border border-border bg-card p-12 text-center">
               <h2 className="font-['Syne'] text-3xl font-bold text-foreground mb-4">
                 Ready to find your first overseas buyer?
               </h2>
