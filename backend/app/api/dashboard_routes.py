@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from datetime import datetime, timedelta
 from app.db.session import get_db
 from app.models.search_result import SearchResult
 from app.models.search_session import SearchSession
@@ -368,3 +369,98 @@ def get_credits(db: Session = Depends(get_db),
         "low_credits": credit.credits_remaining < 20,
         "empty": credit.credits_remaining <= 0,
     }
+
+
+@router.get("/lead-quality")
+def get_lead_quality(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    rows = db.query(SearchResult.relevance_score).join(
+        SearchSession, SearchResult.search_id == SearchSession.search_id
+    ).filter(
+        SearchSession.user_id == current_user.user_id,
+        SearchResult.relevance_score.isnot(None),
+    ).all()
+
+    scores = [r.relevance_score for r in rows]
+
+    buckets_def = [
+        ("0-10",   0,  10, "low"),
+        ("10-20",  10, 20, "low"),
+        ("20-30",  20, 30, "low"),
+        ("30-40",  30, 40, "low"),
+        ("40-50",  40, 50, "mid"),
+        ("50-60",  50, 60, "mid"),
+        ("60-70",  60, 70, "mid"),
+        ("70-80",  70, 80, "high"),
+        ("80-90",  80, 90, "high"),
+        ("90-100", 90, 100, "high"),
+    ]
+
+    buckets = []
+    for label, lower, upper, tier in buckets_def:
+        if lower == 90:
+            count = sum(1 for s in scores if s >= lower and s <= upper)
+        else:
+            count = sum(1 for s in scores if s >= lower and s < upper)
+        buckets.append({"range": label, "count": count, "tier": tier})
+
+    total_scored = len(scores)
+    low_count  = sum(1 for s in scores if s < 40)
+    mid_count  = sum(1 for s in scores if 40 <= s < 70)
+    high_count = sum(1 for s in scores if s >= 70)
+
+    return {
+        "buckets": buckets,
+        "total_scored": total_scored,
+        "low_count": low_count,
+        "mid_count": mid_count,
+        "high_count": high_count,
+    }
+
+
+@router.get("/pipeline-momentum")
+def get_pipeline_momentum(
+    time: str = "30d",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    now = datetime.utcnow()
+    if time == "7d":
+        cutoff = now - timedelta(days=7)
+    elif time == "30d":
+        cutoff = now - timedelta(days=30)
+    else:
+        cutoff = None
+
+    query = db.query(SearchResult).join(
+        SearchSession, SearchResult.search_id == SearchSession.search_id
+    ).filter(SearchSession.user_id == current_user.user_id)
+
+    if cutoff:
+        query = query.filter(SearchResult.created_at >= cutoff)
+
+    results = query.all()
+
+    from collections import defaultdict
+    daily: Dict[str, Any] = defaultdict(lambda: {"discovered": 0, "relevant": 0, "verified": 0, "clients": 0})
+
+    for r in results:
+        if not r.created_at:
+            continue
+        date_str = r.created_at.strftime("%Y-%m-%d")
+        daily[date_str]["discovered"] += 1
+        if r.relevance_decision == "relevant":
+            daily[date_str]["relevant"] += 1
+        if r.verification_score is not None and r.verification_score >= 50:
+            daily[date_str]["verified"] += 1
+        if r.is_saved_client:
+            daily[date_str]["clients"] += 1
+
+    points = [
+        {"date": date, **counts}
+        for date, counts in sorted(daily.items())
+    ]
+
+    return {"points": points}

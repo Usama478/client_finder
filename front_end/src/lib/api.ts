@@ -31,6 +31,32 @@ export interface DashboardStats {
   verification_data: { name: string; value: number; color: string }[]
 }
 
+export interface LeadQualityBucket {
+  range: string
+  count: number
+  tier: "low" | "mid" | "high"
+}
+
+export interface LeadQualityData {
+  buckets: LeadQualityBucket[]
+  total_scored: number
+  low_count: number
+  mid_count: number
+  high_count: number
+}
+
+export interface MomentumPoint {
+  date: string
+  discovered: number
+  relevant: number
+  verified: number
+  clients: number
+}
+
+export interface PipelineMomentumData {
+  points: MomentumPoint[]
+}
+
 export interface SearchSession {
   search_id: number
   user_id: number
@@ -267,6 +293,9 @@ export const api = {
   dashboardStats: () => request<DashboardStats>("/api/v1/dashboard/stats"),
   activityLog: (limit = 20) => request<ActivityEvent[]>(`/api/v1/dashboard/activity?limit=${limit}`),
   credits: () => request<UserCredit>("/api/v1/dashboard/credits"),
+  leadQuality: () => request<LeadQualityData>("/api/v1/dashboard/lead-quality"),
+  pipelineMomentum: (time: string = "30d") =>
+    request<PipelineMomentumData>(`/api/v1/dashboard/pipeline-momentum?time=${time}`),
 
   // Sessions
   sessions: () => request<SearchSession[]>("/api/v1/sessions"),
